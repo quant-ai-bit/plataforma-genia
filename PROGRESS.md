@@ -41,6 +41,19 @@
 ---
 
 
+## 2026-06-23 00:35 (COT) — Implementación de Registro con Confirmación OTP y Login con Contraseña o Google
+**Plataforma:** Antigravity
+**Tipo:** ✨ Mejora
+
+- **Autenticación (Frontend):** Rediseñamos completamente la UI de la página de Login/Registro [login/page.tsx](file:///c:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA%20GENIA/dashboard/src/app/(auth)/login/page.tsx) con soporte bilingüe (ES/EN) y estilo premium (glassmorphism y tema oscuro).
+- **Flujo de Registro:** Añadimos el paso de confirmación por correo electrónico solicitando el código de verificación OTP de 6 dígitos mediante `signUp` y `verifyOtp(type='signup')` de Supabase Auth. Añadimos reenvío de código con cooldown de 60 segundos.
+- **Flujo de Inicio de Sesión:** Habilitamos el inicio de sesión mediante contraseña clásica (`signInWithPassword`) y el botón para "Continuar con Google" utilizando OAuth (`signInWithOAuth`).
+- **Compatibilidad Local:** Agregamos comportamiento simulado para desarrollo local si la plataforma se ejecuta sin variables de entorno de Supabase configuradas.
+- **Validación:** Compilamos el frontend de producción sin errores y las pruebas unitarias del backend pasaron exitosamente (7/9, con fallos por cuota externa de la API de embeddings de Google).
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** El usuario debe configurar en su consola de Supabase de producción las credenciales de Google OAuth (Client ID/Secret) y el servicio SMTP para el envío seguro de los códigos de verificación.
+
 ## 2026-06-23 00:03 (COT) — Corrección de importación faltante de MessageSquare y UserCheck en Evidence Page
 **Plataforma:** Antigravity
 **Tipo:** 🐛 Corrección
