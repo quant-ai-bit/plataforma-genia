@@ -1,0 +1,42 @@
+# Vercel
+.vercel
+
+# VS Code
+.vscode/
+
+# Python / Virtual Environment
+backend/.venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+
+# Python local database and vectors (ChromaDB / SQLite)
+backend/data/
+data/
+*.db
+*.sqlite3
+
+# Node / Next.js
+dashboard/node_modules/
+node_modules/
+dashboard/.next/
+.next/
+dashboard/tsconfig.tsbuildinfo
+
+# Environment variables (Sensitive API keys)
+backend/.env
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# OS files
+.DS_Store
+Thumbs.db

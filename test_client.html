@@ -1,0 +1,2187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLATAFORMA GENIA - Consola de Pruebas Pro</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #070b19 0%, #0d122b 50%, #080a16 100%);
+            --card-bg: rgba(22, 28, 45, 0.4);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --primary: #3b82f6;
+            --primary-glow: rgba(59, 130, 246, 0.35);
+            --secondary: #8b5cf6;
+            --secondary-glow: rgba(139, 92, 246, 0.35);
+            --accent-green: #10b981;
+            --accent-green-glow: rgba(16, 185, 129, 0.2);
+            --accent-red: #ef4444;
+            --accent-purple: #c084fc;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --font-main: 'Outfit', sans-serif;
+            --font-code: 'JetBrains Mono', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-main);
+            background: var(--bg-gradient);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        /* Scrollbar styles */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(7, 11, 25, 0.5);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(59, 130, 246, 0.3);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(59, 130, 246, 0.5);
+        }
+
+        header {
+            background: rgba(13, 18, 43, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--card-border);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            color: white;
+            box-shadow: 0 0 20px var(--primary-glow);
+            animation: pulse-glow 3s infinite alternate;
+        }
+
+        .logo-text h1 {
+            font-size: 1.25rem;
+            font-weight: 800;
+            letter-spacing: 1px;
+            background: linear-gradient(to right, #ffffff, #a7f3d0, #93c5fd);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-text p {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.4rem 0.8rem;
+            border-radius: 50px;
+            border: 1px solid var(--card-border);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--accent-red);
+            display: inline-block;
+        }
+
+        .status-dot.connected {
+            background-color: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green);
+            animation: blink 2s infinite;
+        }
+
+        .api-config {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .api-config input {
+            background: rgba(7, 11, 25, 0.8);
+            border: 1px solid var(--card-border);
+            color: white;
+            padding: 0.4rem 0.8rem;
+            border-radius: 8px;
+            font-family: var(--font-code);
+            font-size: 0.85rem;
+            width: 220px;
+            transition: all 0.3s ease;
+        }
+
+        .api-config input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: 340px 1fr;
+            gap: 1.5rem;
+            padding: 1.5rem;
+            flex: 1;
+            max-width: 1600px;
+            margin: 0 auto;
+            width: 100%;
+            height: calc(100vh - 75px);
+            min-height: 0; /* Important for grid inner scrolling */
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            overflow-y: auto;
+            min-height: 0;
+            padding-right: 5px;
+        }
+
+        .content-panel {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            gap: 1.25rem;
+            min-height: 0;
+        }
+
+        .glass-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.25rem;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            transition: transform 0.3s ease, border-color 0.3s ease;
+        }
+
+        .glass-card:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .card-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 0.5rem;
+            color: #fff;
+        }
+
+        .card-title i {
+            color: var(--primary);
+        }
+
+        /* Form styling */
+        .form-group {
+            margin-bottom: 0.85rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 0.3rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .form-control {
+            width: 100%;
+            background: rgba(7, 11, 25, 0.6);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 0.5rem 0.75rem;
+            color: white;
+            font-family: var(--font-main);
+            font-size: 0.85rem;
+            transition: all 0.3s ease;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
+            background: rgba(7, 11, 25, 0.8);
+        }
+
+        textarea.form-control {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        select.form-control {
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='white' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 30px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.55rem 1rem;
+            border-radius: 10px;
+            font-family: var(--font-main);
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+            width: 100%;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary) 0%, #2563eb 100%);
+            color: white;
+            box-shadow: 0 4px 15px var(--primary-glow);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: var(--card-border);
+            color: var(--text-main);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, var(--accent-green) 0%, #059669 100%);
+            color: white;
+        }
+
+        .btn-success:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px var(--accent-green-glow);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, var(--accent-red) 0%, #dc2626 100%);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-1px);
+        }
+
+        /* Agents list */
+        .agents-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            max-height: 250px;
+            overflow-y: auto;
+            margin-bottom: 0.5rem;
+        }
+
+        .agent-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.6rem 0.8rem;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .agent-item:hover {
+            background: rgba(59, 130, 246, 0.05);
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+
+        .agent-item.selected {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: var(--primary);
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.15);
+        }
+
+        .agent-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+            max-width: 80%;
+        }
+
+        .agent-name {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #fff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .agent-meta {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .agent-actions {
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        .agent-actions button {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0.2rem;
+            font-size: 0.8rem;
+            transition: color 0.2s ease;
+        }
+
+        .agent-actions button:hover {
+            color: var(--accent-red);
+        }
+
+        /* Navigation Tabs */
+        .tabs-header {
+            display: flex;
+            gap: 0.5rem;
+            background: rgba(13, 18, 43, 0.4);
+            padding: 0.4rem;
+            border-radius: 12px;
+            border: 1px solid var(--card-border);
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 0.5rem 1.25rem;
+            font-family: var(--font-main);
+            font-size: 0.85rem;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .tab-btn:hover {
+            color: white;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .tab-btn.active {
+            color: white;
+            background: var(--primary);
+            box-shadow: 0 4px 12px var(--primary-glow);
+        }
+
+        /* Tab Contents */
+        .tab-content {
+            display: none;
+            height: 100%;
+            min-height: 0;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Tab 1: Chat interface grid */
+        .chat-container-grid {
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            gap: 1.25rem;
+            height: 100%;
+            min-height: 0;
+        }
+
+        /* Chat Panel */
+        .chat-panel {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-height: 0;
+            background: rgba(10, 15, 30, 0.3);
+            border-radius: 16px;
+            border: 1px solid var(--card-border);
+            overflow: hidden;
+        }
+
+        .chat-header {
+            padding: 0.85rem 1.25rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-bottom: 1px solid var(--card-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-header-info h4 {
+            font-size: 0.9rem;
+            font-weight: 700;
+        }
+
+        .chat-header-info p {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-family: var(--font-code);
+        }
+
+        .chat-header-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .conv-status-badge {
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 0.2rem 0.5rem;
+            border-radius: 50px;
+            text-transform: uppercase;
+        }
+
+        .status-active {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .status-handoff {
+            background: rgba(139, 92, 246, 0.15);
+            color: var(--accent-purple);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+        }
+
+        .status-closed {
+            background: rgba(156, 163, 175, 0.15);
+            color: var(--text-muted);
+            border: 1px solid rgba(156, 163, 175, 0.3);
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            min-height: 0;
+            background: radial-gradient(circle at top, rgba(22, 28, 45, 0.15), rgba(7, 11, 25, 0));
+        }
+
+        /* Chat bubbles */
+        .msg-row {
+            display: flex;
+            width: 100%;
+        }
+
+        .msg-row.user {
+            justify-content: flex-end;
+        }
+
+        .msg-row.assistant {
+            justify-content: flex-start;
+        }
+
+        .msg-bubble {
+            max-width: 75%;
+            padding: 0.75rem 1rem;
+            border-radius: 16px;
+            font-size: 0.85rem;
+            line-height: 1.45;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+        }
+
+        .msg-row.user .msg-bubble {
+            background: linear-gradient(135deg, var(--primary) 0%, #2563eb 100%);
+            color: white;
+            border-bottom-right-radius: 2px;
+        }
+
+        .msg-row.assistant .msg-bubble {
+            background: rgba(26, 33, 54, 0.85);
+            color: var(--text-main);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-bottom-left-radius: 2px;
+        }
+
+        .msg-bubble img {
+            max-width: 100%;
+            border-radius: 8px;
+            margin-top: 0.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .msg-meta {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .msg-row.user .msg-meta {
+            justify-content: flex-end;
+        }
+
+        /* Custom bubble for Supervisor Messages */
+        .msg-row.supervisor .msg-bubble {
+            background: rgba(139, 92, 246, 0.25);
+            color: #f5f3ff;
+            border: 1px solid rgba(139, 92, 246, 0.4);
+            border-bottom-left-radius: 2px;
+        }
+
+        .msg-row.supervisor .msg-meta {
+            color: var(--accent-purple);
+        }
+
+        /* Custom bubble for System Notifications */
+        .msg-row.system-event {
+            justify-content: center;
+        }
+
+        .msg-row.system-event .msg-bubble {
+            background: rgba(245, 158, 11, 0.1);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            font-size: 0.75rem;
+            padding: 0.35rem 0.8rem;
+            text-align: center;
+            border-radius: 50px;
+            max-width: 90%;
+        }
+
+        .chat-input-form {
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.25);
+            border-top: 1px solid var(--card-border);
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+        }
+
+        .chat-input-form input {
+            flex: 1;
+            background: rgba(7, 11, 25, 0.8);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 0.65rem 1rem;
+            color: white;
+            font-family: var(--font-main);
+            font-size: 0.85rem;
+            transition: all 0.3s ease;
+        }
+
+        .chat-input-form input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 12px var(--primary-glow);
+        }
+
+        .chat-input-form button {
+            background: var(--primary);
+            border: none;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 10px var(--primary-glow);
+        }
+
+        .chat-input-form button:hover {
+            background: #2563eb;
+            transform: scale(1.05);
+        }
+
+        .chat-input-form button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Sidebar info panels */
+        .chat-info-sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
+        /* Live Lead parser */
+        .lead-fields-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+        }
+
+        .lead-field-card {
+            padding: 0.65rem 0.8rem;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+            transition: all 0.3s ease;
+        }
+
+        .lead-field-card.captured {
+            background: rgba(16, 185, 129, 0.04);
+            border-color: rgba(16, 185, 129, 0.25);
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.05);
+        }
+
+        .lead-field-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .lead-field-label {
+            color: var(--text-muted);
+        }
+
+        .lead-field-card.captured .lead-field-label {
+            color: var(--accent-green);
+        }
+
+        .lead-field-status {
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            font-weight: 700;
+            padding: 0.05rem 0.3rem;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-muted);
+        }
+
+        .lead-field-card.captured .lead-field-status {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-green);
+        }
+
+        .lead-field-val {
+            font-size: 0.8rem;
+            font-weight: 700;
+            word-break: break-all;
+        }
+
+        .lead-field-empty {
+            font-size: 0.8rem;
+            font-style: italic;
+            color: var(--text-muted);
+        }
+
+        /* Lead Info Panel */
+        .lead-meta-info {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding-top: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        /* Custom fields table */
+        .custom-data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.75rem;
+            margin-top: 0.5rem;
+        }
+
+        .custom-data-table th, .custom-data-table td {
+            padding: 0.35rem 0.5rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .custom-data-table th {
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .custom-data-table td {
+            color: var(--text-main);
+            font-weight: 700;
+        }
+
+        /* Supervisor controller */
+        .supervisor-controller {
+            background: rgba(139, 92, 246, 0.04);
+            border: 1px solid rgba(139, 92, 246, 0.15);
+        }
+
+        .supervisor-controller:hover {
+            border-color: rgba(139, 92, 246, 0.3);
+        }
+
+        .supervisor-controller .card-title i {
+            color: var(--accent-purple);
+        }
+
+        .supervisor-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin-top: 0.75rem;
+        }
+
+        /* Tab 2 & 3 content general structures */
+        .grid-two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            height: 100%;
+            min-height: 0;
+            overflow-y: auto;
+        }
+
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            background: rgba(0,0,0,0.2);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+        }
+
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+            text-align: left;
+        }
+
+        .admin-table th, .admin-table td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .admin-table th {
+            background: rgba(0,0,0,0.3);
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 0.5px;
+        }
+
+        .admin-table tbody tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        /* Document list items */
+        .doc-item {
+            background: rgba(0,0,0,0.25);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 0.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+            transition: all 0.2s ease;
+        }
+
+        .doc-item:hover {
+            border-color: rgba(59, 130, 246, 0.2);
+            background: rgba(59, 130, 246, 0.02);
+        }
+
+        .doc-details {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            max-width: 80%;
+        }
+
+        .doc-icon {
+            font-size: 1.25rem;
+            color: var(--primary);
+        }
+
+        .doc-text h5 {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: white;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .doc-text p {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .doc-delete-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0.3rem;
+            transition: color 0.2s ease;
+        }
+
+        .doc-delete-btn:hover {
+            color: var(--accent-red);
+        }
+
+        /* Animations */
+        @keyframes pulse-glow {
+            0% {
+                box-shadow: 0 0 10px var(--primary-glow);
+            }
+            100% {
+                box-shadow: 0 0 25px var(--primary-glow), 0 0 5px var(--secondary-glow);
+            }
+        }
+
+        @keyframes blink {
+            0% { opacity: 0.6; }
+            50% { opacity: 1; }
+            100% { opacity: 0.6; }
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(13, 18, 43, 0.95);
+            border: 1px solid var(--primary);
+            box-shadow: 0 5px 25px rgba(0,0,0,0.5);
+            padding: 0.8rem 1.2rem;
+            border-radius: 12px;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.85rem;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .toast-icon {
+            font-size: 1.1rem;
+        }
+
+        .toast-success {
+            border-color: var(--accent-green);
+        }
+
+        .toast-success .toast-icon {
+            color: var(--accent-green);
+        }
+
+        .toast-error {
+            border-color: var(--accent-red);
+        }
+
+        .toast-error .toast-icon {
+            color: var(--accent-red);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- HEADER DE LA PLATAFORMA -->
+    <header>
+        <div class="logo-container">
+            <div class="logo-icon">
+                <i class="fa-solid fa-brain"></i>
+            </div>
+            <div class="logo-text">
+                <h1>PLATAFORMA GENIA</h1>
+                <p>Consola de Pruebas Pro</p>
+            </div>
+        </div>
+
+        <div class="header-controls">
+            <div class="api-config">
+                <i class="fa-solid fa-server text-muted"></i>
+                <input type="text" id="backendUrl" value="http://localhost:8000" placeholder="URL de Backend">
+                <button class="btn btn-secondary" onclick="checkBackendConnection()" style="padding: 0.4rem 0.8rem; width: auto;">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                </button>
+            </div>
+            <div class="connection-status">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Desconectado</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- CONTENEDOR PRINCIPAL -->
+    <div class="main-container">
+        
+        <!-- SIDEBAR DE NAVEGACIÓN Y CONFIGURACIÓN -->
+        <div class="sidebar">
+            
+            <!-- TARJETA: LISTADO DE AGENTES -->
+            <div class="glass-card">
+                <div class="card-title">
+                    <i class="fa-solid fa-robot"></i>
+                    <span>Agentes Disponibles</span>
+                </div>
+                <div class="agents-list" id="agentsList">
+                    <div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 1rem;">
+                        Cargando agentes...
+                    </div>
+                </div>
+                <button class="btn btn-secondary" onclick="loadAgents()">
+                    <i class="fa-solid fa-rotate"></i> Actualizar Lista
+                </button>
+            </div>
+
+            <!-- TARJETA: CREACIÓN DE AGENTE -->
+            <div class="glass-card">
+                <div class="card-title">
+                    <i class="fa-solid fa-plus-circle"></i>
+                    <span>Crear Nuevo Agente</span>
+                </div>
+                <form id="createAgentForm" onsubmit="createNewAgent(event)">
+                    <div class="form-group">
+                        <label for="agentName">Nombre</label>
+                        <input type="text" id="agentName" class="form-control" placeholder="Ej. Genia Vendedor" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="agentDesc">Descripción</label>
+                        <input type="text" id="agentDesc" class="form-control" placeholder="Ej. Ventas corporativas">
+                    </div>
+                    <div class="form-group">
+                        <label for="agentProvider">Proveedor LLM</label>
+                        <select id="agentProvider" class="form-control" onchange="updateModelSelect()" required>
+                            <option value="groq">Groq (Rápido)</option>
+                            <option value="gemini">Google Gemini</option>
+                            <option value="openrouter">OpenRouter (Otros)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="agentModel">Modelo</label>
+                        <select id="agentModel" class="form-control" required>
+                            <!-- Model options dynamic -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="agentPrompt">Prompt de Sistema</label>
+                        <textarea id="agentPrompt" class="form-control" placeholder="Instrucciones para el agente y campos que debe capturar..." required>Eres un comercial experto de la agencia de IA GENIA. Tu deber es capturar amablemente los datos del lead (nombre, email y empresa) usando la función save_lead_info de inmediato al recibirlos.</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="agentPhone">Teléfono Notificaciones</label>
+                        <input type="text" id="agentPhone" class="form-control" placeholder="Ej. +573009999999">
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa-solid fa-check"></i> Crear Agente
+                    </button>
+                </form>
+            </div>
+
+        </div>
+
+        <!-- PANEL DE CONTENIDO / CONSOLA DE PRUEBAS -->
+        <div class="content-panel">
+            
+            <!-- HEADER DE TABS -->
+            <div class="tabs-header">
+                <button class="tab-btn active" onclick="switchTab('chatTab')">
+                    <i class="fa-solid fa-comments"></i> Chat Sandbox
+                </button>
+                <button class="tab-btn" onclick="switchTab('leadsTab'); loadLeadsList();">
+                    <i class="fa-solid fa-user-check"></i> Leads Capturados
+                </button>
+                <button class="tab-btn" onclick="switchTab('knowledgeTab')">
+                    <i class="fa-solid fa-book-open"></i> Base de Conocimientos
+                </button>
+            </div>
+
+            <!-- TABS CONTROLLER -->
+            <div style="flex: 1; min-height: 0;">
+                
+                <!-- TAB 1: CHAT SANDBOX -->
+                <div id="chatTab" class="tab-content active">
+                    <div class="chat-container-grid">
+                        
+                        <!-- Columna Chat -->
+                        <div class="chat-panel">
+                            <div class="chat-header">
+                                <div class="chat-header-info">
+                                    <h4 id="activeChatAgentName">Sin Agente Seleccionado</h4>
+                                    <p id="activeChatSessionId">Conversación: N/A</p>
+                                </div>
+                                <div class="chat-header-actions">
+                                    <span class="conv-status-badge status-closed" id="chatStatusBadge">Inactivo</span>
+                                    <button class="btn btn-danger" onclick="startNewChatSession()" style="width: auto; padding: 0.35rem 0.75rem; border-radius: 8px;" id="restartChatBtn" disabled>
+                                        <i class="fa-solid fa-refresh"></i> Reiniciar
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Caja de mensajes -->
+                            <div class="chat-messages" id="chatMessagesBox">
+                                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); gap: 0.75rem;">
+                                    <i class="fa-solid fa-comments-dollar" style="font-size: 2.5rem; color: rgba(255,255,255,0.08);"></i>
+                                    <p>Selecciona un agente en el menú lateral para iniciar una conversación de prueba.</p>
+                                </div>
+                            </div>
+
+                            <!-- Formulario de envío -->
+                            <form class="chat-input-form" id="chatInputForm" onsubmit="sendChatMessage(event)">
+                                <input type="text" id="chatInputField" placeholder="Escribe un mensaje al agente de IA..." disabled>
+                                <button type="submit" id="chatSendBtn" disabled>
+                                    <i class="fa-solid fa-paper-plane"></i>
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Columna Lateral de Información de la conversación -->
+                        <div class="chat-info-sidebar">
+                            
+                            <!-- Supervisor Takeover Panel -->
+                            <div class="glass-card supervisor-controller">
+                                <div class="card-title">
+                                    <i class="fa-solid fa-user-shield"></i>
+                                    <span>Toma de Control Humano</span>
+                                </div>
+                                <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.75rem; line-height: 1.35;">
+                                    Cambia el estado del chat a <b>Handoff</b> para habilitar la toma de control del supervisor humano. Esto simulará la derivación directa por parte del agente o el usuario.
+                                </p>
+                                
+                                <div class="form-group">
+                                    <label>Estado de Conversación</label>
+                                    <select id="convStatusSelect" class="form-control" onchange="updateConversationStatusAPI(this.value)" disabled>
+                                        <option value="active">Activo (LLM Responde)</option>
+                                        <option value="handoff">Handoff (Supervisor toma el control)</option>
+                                        <option value="closed">Cerrado (Chat Finalizado)</option>
+                                    </select>
+                                </div>
+
+                                <div id="supervisorMsgBox" style="display: none; padding-top: 0.5rem; border-top: 1px solid rgba(139, 92, 246, 0.2);">
+                                    <div class="form-group">
+                                        <label for="supervisorMsgInput">Enviar Mensaje como Supervisor</label>
+                                        <input type="text" id="supervisorMsgInput" class="form-control" placeholder="Escribe respuesta manual..." style="border-color: rgba(139, 92, 246, 0.3);">
+                                    </div>
+                                    <button class="btn btn-primary" onclick="sendSupervisorMessage()" style="background: linear-gradient(135deg, var(--secondary) 0%, #6d28d9 100%); border-color: rgba(139, 92, 246, 0.4); box-shadow: 0 4px 12px var(--secondary-glow);">
+                                        <i class="fa-solid fa-paper-plane"></i> Enviar a WhatsApp/Web
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Live Lead Parser -->
+                            <div class="glass-card" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+                                <div class="card-title">
+                                    <i class="fa-solid fa-id-card"></i>
+                                    <span>Lead Capturado en Vivo</span>
+                                </div>
+                                <div style="flex: 1; overflow-y: auto; padding-right: 5px;">
+                                    <div class="lead-fields-list" id="liveLeadFields">
+                                        <div style="font-size: 0.75rem; color: var(--text-muted); font-style: italic; text-align: center; padding: 1.5rem 0;">
+                                            Conversa con el agente para capturar datos en vivo.
+                                        </div>
+                                    </div>
+                                    <div id="liveLeadMeta" class="lead-meta-info" style="display: none;">
+                                        <!-- Dynamic metadata -->
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 2: LEADS CAPTURADOS (LISTADO) -->
+                <div id="leadsTab" class="tab-content">
+                    <div class="glass-card" style="height: 100%; display: flex; flex-direction: column; min-height: 0;">
+                        <div class="card-title">
+                            <i class="fa-solid fa-users"></i>
+                            <span>Historial de Leads Capturados en la Plataforma SQL</span>
+                        </div>
+                        <div class="table-responsive" style="flex: 1; overflow-y: auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha Captura</th>
+                                        <th>Nombre</th>
+                                        <th>Email</th>
+                                        <th>Teléfono</th>
+                                        <th>Canal</th>
+                                        <th>Datos Personalizados (JSON)</th>
+                                        <th>Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="leadsTableBody">
+                                    <!-- Leads loaded dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 3: BASE DE CONOCIMIENTO (RAG) -->
+                <div id="knowledgeTab" class="tab-content">
+                    <div class="grid-two-col">
+                        
+                        <!-- Columna Izquierda: Subir Documento -->
+                        <div class="glass-card">
+                            <div class="card-title">
+                                <i class="fa-solid fa-file-upload"></i>
+                                <span>Cargar Documento de Texto para RAG</span>
+                            </div>
+                            <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1.25rem; line-height: 1.4;">
+                                Sube archivos de políticas de negocio, catálogos, preguntas frecuentes o información específica. El agente indexará el contenido semánticamente en ChromaDB para responder preguntas basadas en él.
+                            </p>
+                            
+                            <form id="uploadDocForm" onsubmit="uploadKnowledgeDocument(event)">
+                                <div class="form-group">
+                                    <label for="docTitle">Título del Documento</label>
+                                    <input type="text" id="docTitle" class="form-control" placeholder="Ej. Politicas de Devolucion" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="docContent">Contenido de Texto</label>
+                                    <textarea id="docContent" class="form-control" placeholder="Ingresa la información detallada aquí..." style="min-height: 220px;" required></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-primary" id="uploadDocBtn" disabled>
+                                    <i class="fa-solid fa-cloud-arrow-up"></i> Indexar Documento en ChromaDB
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Columna Derecha: Listado de Documentos del Agente -->
+                        <div class="glass-card" style="display: flex; flex-direction: column; min-height: 0;">
+                            <div class="card-title">
+                                <i class="fa-solid fa-folder-open"></i>
+                                <span>Documentos Indexados por el Agente Seleccionado</span>
+                            </div>
+                            <div style="flex: 1; overflow-y: auto;" id="docsList">
+                                <div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 2rem 0;">
+                                    Selecciona un agente para ver sus documentos de conocimiento.
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- TOAST NOTIFICATIONS -->
+    <div class="toast" id="toastBox">
+        <i class="toast-icon fa-solid fa-circle-info"></i>
+        <span id="toastMessage">Mensaje</span>
+    </div>
+
+    <!-- LOGICA JAVASCRIPT DEL CLIENTE -->
+    <script>
+        // Model Lists configuration
+        const MODEL_PRESETS = {
+            groq: [
+                "llama-3.3-70b-versatile",
+                "llama-3.1-70b-versatile",
+                "llama-3.1-8b-instant",
+                "llama3-70b-8192",
+                "llama3-8b-8192",
+                "mixtral-8x7b-32768",
+                "gemma2-9b-it"
+            ],
+            gemini: [
+                "gemini-2.5-flash",
+                "gemini-2.0-flash",
+                "gemini-1.5-flash",
+                "gemini-1.5-pro"
+            ],
+            openrouter: [
+                "deepseek/deepseek-chat",
+                "anthropic/claude-3.5-sonnet:beta",
+                "google/gemini-2.5-flash",
+                "openai/gpt-4o-mini",
+                "openai/gpt-4o"
+            ]
+        };
+
+        // State variables
+        let backendConnected = false;
+        let agents = [];
+        let selectedAgentId = null;
+        let activeConversationId = null;
+        let activeConvStatus = "active";
+        let liveParserInterval = null;
+
+        // Initialize UI
+        document.addEventListener("DOMContentLoaded", () => {
+            updateModelSelect();
+            checkBackendConnection();
+        });
+
+        // Show Toast Helper
+        function showToast(message, type = "success") {
+            const toast = document.getElementById("toastBox");
+            const icon = toast.querySelector(".toast-icon");
+            const text = document.getElementById("toastMessage");
+
+            toast.className = "toast show";
+            text.textContent = message;
+
+            if (type === "success") {
+                toast.classList.add("toast-success");
+                icon.className = "toast-icon fa-solid fa-circle-check";
+            } else {
+                toast.classList.add("toast-error");
+                icon.className = "toast-icon fa-solid fa-circle-exclamation";
+            }
+
+            setTimeout(() => {
+                toast.classList.remove("show");
+            }, 3500);
+        }
+
+        // Check backend connection
+        async function checkBackendConnection() {
+            const url = document.getElementById("backendUrl").value.trim();
+            const statusDot = document.getElementById("statusDot");
+            const statusText = document.getElementById("statusText");
+
+            statusText.textContent = "Verificando...";
+            statusDot.className = "status-dot";
+
+            try {
+                const response = await fetch(`${url}/`);
+                if (response.ok) {
+                    backendConnected = true;
+                    statusDot.classList.add("connected");
+                    statusText.textContent = "Conectado";
+                    showToast("Conexión con Backend FastAPI establecida con éxito.");
+                    loadAgents();
+                } else {
+                    throw new Error("Bad status");
+                }
+            } catch (err) {
+                backendConnected = false;
+                statusDot.className = "status-dot";
+                statusText.textContent = "Desconectado";
+                showToast("No se pudo conectar al Backend FastAPI en " + url, "error");
+            }
+        }
+
+        // Switch Tabs
+        function switchTab(tabId) {
+            document.querySelectorAll(".tab-content").forEach(el => el.classList.remove("active"));
+            document.querySelectorAll(".tab-btn").forEach(el => el.classList.remove("active"));
+            
+            document.getElementById(tabId).classList.add("active");
+            
+            // Find button that switches to this tab
+            const btnMap = {
+                chatTab: 0,
+                leadsTab: 1,
+                knowledgeTab: 2
+            };
+            document.querySelectorAll(".tab-btn")[btnMap[tabId]].classList.add("active");
+        }
+
+        // Update model dropdown dynamically
+        function updateModelSelect() {
+            const provider = document.getElementById("agentProvider").value;
+            const modelSelect = document.getElementById("agentModel");
+            modelSelect.innerHTML = "";
+
+            const models = MODEL_PRESETS[provider] || [];
+            models.forEach(model => {
+                const opt = document.createElement("option");
+                opt.value = model;
+                opt.textContent = model;
+                modelSelect.appendChild(opt);
+            });
+        }
+
+        // Get configured backend URL
+        function getBackendUrl() {
+            return document.getElementById("backendUrl").value.trim();
+        }
+
+        // Load Agents List
+        async function loadAgents() {
+            if (!backendConnected) return;
+
+            const url = getBackendUrl();
+            const listEl = document.getElementById("agentsList");
+
+            try {
+                const response = await fetch(`${url}/api/agents/`);
+                if (!response.ok) throw new Error("Error loading agents");
+
+                agents = await response.json();
+                listEl.innerHTML = "";
+
+                if (agents.length === 0) {
+                    listEl.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 1.5rem 0;">No hay agentes creados. ¡Crea uno abajo!</div>`;
+                    return;
+                }
+
+                agents.forEach(agent => {
+                    const el = document.createElement("div");
+                    el.className = `agent-item ${selectedAgentId === agent.id ? 'selected' : ''}`;
+                    el.dataset.id = agent.id;
+                    el.onclick = () => selectAgent(agent.id);
+
+                    el.innerHTML = `
+                        <div class="agent-info">
+                            <span class="agent-name">${agent.name}</span>
+                            <span class="agent-meta">${agent.provider.toUpperCase()} • ${agent.model}</span>
+                        </div>
+                        <div class="agent-actions">
+                            <button onclick="event.stopPropagation(); deleteAgent('${agent.id}')" title="Eliminar agente">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </div>
+                    `;
+                    listEl.appendChild(el);
+                });
+
+            } catch (err) {
+                listEl.innerHTML = `<div style="text-align: center; color: var(--accent-red); font-size: 0.8rem; padding: 1rem;">Error al cargar agentes.</div>`;
+            }
+        }
+
+        // Select Agent
+        function selectAgent(agentId) {
+            selectedAgentId = agentId;
+            document.querySelectorAll(".agent-item").forEach(item => {
+                if (item.dataset.id === agentId) {
+                    item.classList.add("selected");
+                } else {
+                    item.classList.remove("selected");
+                }
+            });
+
+            const agent = agents.find(a => a.id === agentId);
+            if (agent) {
+                // Update sandbox interface
+                document.getElementById("activeChatAgentName").textContent = agent.name;
+                document.getElementById("restartChatBtn").disabled = false;
+                
+                // Reset chat session parameters
+                activeConversationId = null;
+                activeConvStatus = "active";
+                document.getElementById("activeChatSessionId").textContent = "Conversación: Nueva Sesión Pendiente";
+                document.getElementById("chatStatusBadge").className = "conv-status-badge status-closed";
+                document.getElementById("chatStatusBadge").textContent = "Inactivo";
+                
+                // Clear chatbox
+                const chatBox = document.getElementById("chatMessagesBox");
+                chatBox.innerHTML = `
+                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); gap: 0.75rem;">
+                        <i class="fa-solid fa-play" style="font-size: 2rem; color: var(--primary);"></i>
+                        <p>Agente seleccionado: <b>${agent.name}</b></p>
+                        <button class="btn btn-primary" onclick="startNewChatSession()" style="width: auto; padding: 0.5rem 1.25rem;">Iniciar Conversación</button>
+                    </div>
+                `;
+
+                // Enable upload button
+                document.getElementById("uploadDocBtn").disabled = false;
+                document.getElementById("docTitle").placeholder = `Ej. Políticas del agente ${agent.name}`;
+                
+                // Load knowledge docs
+                loadKnowledgeDocs();
+                // Clear lead view
+                clearLeadView();
+            }
+        }
+
+        // Create New Agent
+        async function createNewAgent(e) {
+            e.preventDefault();
+            if (!backendConnected) {
+                showToast("Conecta con el backend primero", "error");
+                return;
+            }
+
+            const url = getBackendUrl();
+            const name = document.getElementById("agentName").value.trim();
+            const description = document.getElementById("agentDesc").value.trim();
+            const provider = document.getElementById("agentProvider").value;
+            const model = document.getElementById("agentModel").value;
+            const system_prompt = document.getElementById("agentPrompt").value.trim();
+            const notification_phone = document.getElementById("agentPhone").value.trim();
+
+            const payload = {
+                name,
+                description,
+                provider,
+                model,
+                system_prompt,
+                channels: ["web"],
+                custom_fields: [
+                    { key: "email", label: "Correo electrónico", type: "string", required: true },
+                    { key: "phone", label: "Número telefónico", type: "string", required: false }
+                ]
+            };
+
+            if (notification_phone) {
+                payload.notification_phone = notification_phone;
+            }
+
+            try {
+                const response = await fetch(`${url}/api/agents/`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errorMsg = await response.text();
+                    throw new Error(errorMsg);
+                }
+
+                showToast("Agente creado exitosamente.");
+                document.getElementById("createAgentForm").reset();
+                updateModelSelect();
+                await loadAgents();
+            } catch (err) {
+                showToast("Error al crear agente: " + err.message, "error");
+            }
+        }
+
+        // Delete Agent
+        async function deleteAgent(agentId) {
+            if (!confirm("¿Estás seguro de que deseas eliminar este agente y todos sus datos indexados?")) return;
+            const url = getBackendUrl();
+
+            try {
+                const response = await fetch(`${url}/api/agents/${agentId}`, {
+                    method: "DELETE"
+                });
+
+                if (!response.ok) throw new Error("Error deleting agent");
+
+                showToast("Agente eliminado con éxito.");
+                if (selectedAgentId === agentId) {
+                    selectedAgentId = null;
+                    document.getElementById("activeChatAgentName").textContent = "Sin Agente Seleccionado";
+                    document.getElementById("activeChatSessionId").textContent = "Conversación: N/A";
+                    document.getElementById("restartChatBtn").disabled = true;
+                    document.getElementById("uploadDocBtn").disabled = true;
+                    document.getElementById("chatInputField").disabled = true;
+                    document.getElementById("chatSendBtn").disabled = true;
+                    
+                    document.getElementById("chatMessagesBox").innerHTML = `
+                        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); gap: 0.75rem;">
+                            <i class="fa-solid fa-comments-dollar" style="font-size: 2.5rem; color: rgba(255,255,255,0.08);"></i>
+                            <p>Selecciona un agente en el menú lateral para iniciar una conversación de prueba.</p>
+                        </div>
+                    `;
+                }
+                loadAgents();
+            } catch (err) {
+                showToast("Error al eliminar agente: " + err.message, "error");
+            }
+        }
+
+        // Start Chat Session
+        async function startNewChatSession() {
+            if (!selectedAgentId) return;
+            const url = getBackendUrl();
+
+            try {
+                // Clear any running interval
+                if (liveParserInterval) clearInterval(liveParserInterval);
+
+                const response = await fetch(`${url}/api/chat/`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        agent_id: selectedAgentId,
+                        message: "Hola"
+                    })
+                });
+
+                if (!response.ok) throw new Error("Error starting session");
+
+                const data = await response.json();
+                activeConversationId = data.conversation_id;
+                activeConvStatus = "active";
+
+                // Enable Chat input
+                document.getElementById("chatInputField").disabled = false;
+                document.getElementById("chatSendBtn").disabled = false;
+                document.getElementById("chatInputField").focus();
+
+                // Update headers
+                document.getElementById("activeChatSessionId").textContent = `ID: ${activeConversationId.slice(0, 12)}...`;
+                updateStatusBadge("active");
+
+                // Initialize Supervisor settings
+                document.getElementById("convStatusSelect").disabled = false;
+                document.getElementById("convStatusSelect").value = "active";
+                document.getElementById("supervisorMsgBox").style.display = "none";
+
+                // Display first messages
+                const chatBox = document.getElementById("chatMessagesBox");
+                chatBox.innerHTML = `
+                    <div class="msg-row user">
+                        <div class="msg-bubble">
+                            <p>Hola</p>
+                            <span class="msg-meta">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        </div>
+                    </div>
+                    <div class="msg-row assistant">
+                        <div class="msg-bubble">
+                            <p>${formatMessageContent(data.reply)}</p>
+                            <span class="msg-meta">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        </div>
+                    </div>
+                `;
+                chatBox.scrollTop = chatBox.scrollHeight;
+
+                // Start Live Lead polling
+                startLiveLeadPolling();
+                showToast("Sesión de chat iniciada.");
+
+            } catch (err) {
+                showToast("Error al iniciar chat: " + err.message, "error");
+            }
+        }
+
+        // Format message utility (for images markdown)
+        function formatMessageContent(content) {
+            if (!content) return "";
+            
+            // Reemplazar saltos de línea por <br>
+            let formatted = content.replace(/\n/g, "<br>");
+            
+            // Identificar Markdown de imágenes: ![alt](url)
+            const imgRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+            formatted = formatted.replace(imgRegex, (match, alt, url) => {
+                return `<br><img src="${url}" alt="${alt || 'Imagen del agente'}" title="${alt}" class="animate-fade-in"><br>`;
+            });
+
+            return formatted;
+        }
+
+        // Send Chat Message
+        async function sendChatMessage(e) {
+            e.preventDefault();
+            const inputEl = document.getElementById("chatInputField");
+            const message = inputEl.value.trim();
+            if (!message || !activeConversationId || !selectedAgentId) return;
+
+            // Clear input immediately
+            inputEl.value = "";
+
+            const chatBox = document.getElementById("chatMessagesBox");
+            
+            // Append User message
+            const userMsgRow = document.createElement("div");
+            userMsgRow.className = "msg-row user";
+            userMsgRow.innerHTML = `
+                <div class="msg-bubble">
+                    <p>${message}</p>
+                    <span class="msg-meta">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                </div>
+            `;
+            chatBox.appendChild(userMsgRow);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // Append thinking loader
+            const loaderRow = document.createElement("div");
+            loaderRow.className = "msg-row assistant loader-row";
+            loaderRow.innerHTML = `
+                <div class="msg-bubble" style="padding: 0.5rem 1rem; color: var(--text-muted);">
+                    <i class="fa-solid fa-circle-notch fa-spin"></i> Agente está pensando...
+                </div>
+            `;
+            chatBox.appendChild(loaderRow);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // Disable UI inputs
+            inputEl.disabled = true;
+            document.getElementById("chatSendBtn").disabled = true;
+
+            const url = getBackendUrl();
+
+            try {
+                const response = await fetch(`${url}/api/chat/`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        agent_id: selectedAgentId,
+                        message: message,
+                        conversation_id: activeConversationId
+                    })
+                });
+
+                // Remove loader
+                chatBox.querySelector(".loader-row").remove();
+
+                if (!response.ok) throw new Error("Error sending message");
+
+                const data = await response.json();
+                
+                // Check if status changed (e.g. LLM called handoff function)
+                if (data.status && data.status !== activeConvStatus) {
+                    activeConvStatus = data.status;
+                    updateStatusBadge(activeConvStatus);
+                    document.getElementById("convStatusSelect").value = activeConvStatus;
+                    triggerStatusEffects(activeConvStatus);
+                    
+                    // Add system event message
+                    const sysMsgRow = document.createElement("div");
+                    sysMsgRow.className = "msg-row system-event";
+                    sysMsgRow.innerHTML = `
+                        <div class="msg-bubble">
+                            <i class="fa-solid fa-triangle-exclamation"></i> Estado cambiado a: <b>${activeConvStatus.toUpperCase()}</b>
+                        </div>
+                    `;
+                    chatBox.appendChild(sysMsgRow);
+                }
+
+                // Append Assistant reply
+                const assistantMsgRow = document.createElement("div");
+                assistantMsgRow.className = "msg-row assistant";
+                assistantMsgRow.innerHTML = `
+                    <div class="msg-bubble">
+                        <p>${formatMessageContent(data.reply)}</p>
+                        <span class="msg-meta">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                    </div>
+                `;
+                chatBox.appendChild(assistantMsgRow);
+                chatBox.scrollTop = chatBox.scrollHeight;
+
+                // Re-enable inputs (if not closed)
+                if (activeConvStatus !== "closed") {
+                    inputEl.disabled = false;
+                    document.getElementById("chatSendBtn").disabled = false;
+                    inputEl.focus();
+                }
+
+                // Force poll lead update immediately
+                pollLeadUpdate();
+
+            } catch (err) {
+                // Remove loader if present
+                const loader = chatBox.querySelector(".loader-row");
+                if (loader) loader.remove();
+                
+                showToast("Error de comunicación: " + err.message, "error");
+                inputEl.disabled = false;
+                document.getElementById("chatSendBtn").disabled = false;
+            }
+        }
+
+        // Update status badge design
+        function updateStatusBadge(status) {
+            const badge = document.getElementById("chatStatusBadge");
+            badge.textContent = status;
+            badge.className = "conv-status-badge";
+            
+            if (status === "active") {
+                badge.classList.add("status-active");
+            } else if (status === "handoff") {
+                badge.classList.add("status-handoff");
+            } else {
+                badge.classList.add("status-closed");
+            }
+        }
+
+        // Trigger Status Effects in UI (e.g. open Supervisor panel)
+        function triggerStatusEffects(status) {
+            const sMsgBox = document.getElementById("supervisorMsgBox");
+            if (status === "handoff") {
+                sMsgBox.style.display = "block";
+                showToast("¡Handoff activado! El supervisor puede tomar el control del chat.", "success");
+            } else {
+                sMsgBox.style.display = "none";
+            }
+
+            if (status === "closed") {
+                document.getElementById("chatInputField").disabled = true;
+                document.getElementById("chatSendBtn").disabled = true;
+                showToast("Conversación cerrada.", "success");
+            } else {
+                document.getElementById("chatInputField").disabled = false;
+                document.getElementById("chatSendBtn").disabled = false;
+            }
+        }
+
+        // Update conversation status manually (Supervisor controller)
+        async function updateConversationStatusAPI(newStatus) {
+            if (!activeConversationId) return;
+            const url = getBackendUrl();
+
+            try {
+                const response = await fetch(`${url}/api/conversations/${activeConversationId}/status`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: newStatus })
+                });
+
+                if (!response.ok) throw new Error("Error updating status");
+
+                activeConvStatus = newStatus;
+                updateStatusBadge(newStatus);
+                triggerStatusEffects(newStatus);
+
+                // Append status change event in chatbox
+                const chatBox = document.getElementById("chatMessagesBox");
+                const sysMsgRow = document.createElement("div");
+                sysMsgRow.className = "msg-row system-event";
+                sysMsgRow.innerHTML = `
+                    <div class="msg-bubble">
+                        <i class="fa-solid fa-user-shield"></i> Supervisor cambió estado a: <b>${newStatus.toUpperCase()}</b>
+                    </div>
+                `;
+                chatBox.appendChild(sysMsgRow);
+                chatBox.scrollTop = chatBox.scrollHeight;
+
+            } catch (err) {
+                showToast("No se pudo cambiar el estado: " + err.message, "error");
+                // Reset select
+                document.getElementById("convStatusSelect").value = activeConvStatus;
+            }
+        }
+
+        // Send Supervisor Message (Takeover)
+        async function sendSupervisorMessage() {
+            const inputEl = document.getElementById("supervisorMsgInput");
+            const content = inputEl.value.trim();
+            if (!content || !activeConversationId) return;
+
+            inputEl.value = "";
+            const url = getBackendUrl();
+
+            try {
+                const response = await fetch(`${url}/api/conversations/${activeConversationId}/send-message`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ content: content })
+                });
+
+                if (!response.ok) throw new Error("Error sending supervisor message");
+
+                // Append Supervisor message in chat
+                const chatBox = document.getElementById("chatMessagesBox");
+                const supMsgRow = document.createElement("div");
+                supMsgRow.className = "msg-row assistant supervisor";
+                supMsgRow.innerHTML = `
+                    <div class="msg-bubble">
+                        <p><strong>[Supervisor]:</strong> ${content}</p>
+                        <span class="msg-meta">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                    </div>
+                `;
+                chatBox.appendChild(supMsgRow);
+                chatBox.scrollTop = chatBox.scrollHeight;
+
+                showToast("Mensaje enviado como Supervisor.");
+
+            } catch (err) {
+                showToast("Error al enviar mensaje de supervisor: " + err.message, "error");
+            }
+        }
+
+        // Live Lead polling logic
+        function startLiveLeadPolling() {
+            // Poll every 4 seconds
+            liveParserInterval = setInterval(pollLeadUpdate, 4000);
+            pollLeadUpdate();
+        }
+
+        async function pollLeadUpdate() {
+            if (!activeConversationId) return;
+            const url = getBackendUrl();
+
+            try {
+                const response = await fetch(`${url}/api/leads/`);
+                if (!response.ok) return;
+
+                const leads = await response.json();
+                const activeLead = leads.find(l => l.conversation_id === activeConversationId);
+
+                const fieldsEl = document.getElementById("liveLeadFields");
+                const metaEl = document.getElementById("liveLeadMeta");
+
+                if (!activeLead) {
+                    fieldsEl.innerHTML = `
+                        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.5rem 0; gap: 0.5rem; text-align: center;">
+                            <div style="position: relative; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;">
+                                <i class="fa-solid fa-spinner fa-spin text-muted" style="font-size: 1.25rem;"></i>
+                            </div>
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-style: italic;">Esperando a que el agente capture datos del lead...</span>
+                        </div>
+                    `;
+                    metaEl.style.display = "none";
+                    return;
+                }
+
+                // Lead found! Let's display the fields beautifully
+                fieldsEl.innerHTML = "";
+
+                // Display standard Name field
+                fieldsEl.appendChild(createFieldCard("Nombre Completo", activeLead.name, true));
+                
+                // Display Email field
+                fieldsEl.appendChild(createFieldCard("Correo Electrónico", activeLead.email, true));
+
+                // Display Phone field
+                fieldsEl.appendChild(createFieldCard("Teléfono de Contacto", activeLead.phone, false));
+
+                // Check custom data
+                if (activeLead.custom_data && Object.keys(activeLead.custom_data).length > 0) {
+                    const titleDiv = document.createElement("div");
+                    titleDiv.style.fontSize = "0.75rem";
+                    titleDiv.style.fontWeight = "bold";
+                    titleDiv.style.marginTop = "0.5rem";
+                    titleDiv.style.color = "var(--accent-purple)";
+                    titleDiv.textContent = "Datos Personalizados Capturados:";
+                    fieldsEl.appendChild(titleDiv);
+
+                    const table = document.createElement("table");
+                    table.className = "custom-data-table";
+                    table.innerHTML = `
+                        <thead>
+                            <tr>
+                                <th>Campo</th>
+                                <th>Valor</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    `;
+                    const tbody = table.querySelector("tbody");
+                    Object.keys(activeLead.custom_data).forEach(key => {
+                        const tr = document.createElement("tr");
+                        tr.innerHTML = `
+                            <td>${key}</td>
+                            <td>${activeLead.custom_data[key]}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                    fieldsEl.appendChild(table);
+                }
+
+                // Render Metadata
+                metaEl.style.display = "block";
+                metaEl.innerHTML = `
+                    <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                        <div><b>ID Lead:</b> <span style="font-family: var(--font-code);">${activeLead.id.slice(0, 8)}...</span></div>
+                        <div><b>Canal:</b> <span class="conv-status-badge status-active" style="font-size:0.6rem; padding: 0.1rem 0.4rem;">${activeLead.source_channel.toUpperCase()}</span></div>
+                        <div><b>Capturado a las:</b> ${new Date(activeLead.captured_at).toLocaleTimeString()}</div>
+                    </div>
+                `;
+
+            } catch (err) {
+                console.error("Error polling leads", err);
+            }
+        }
+
+        function createFieldCard(label, value, isRequired) {
+            const card = document.createElement("div");
+            const hasVal = value && value.trim() !== "";
+            card.className = `lead-field-card ${hasVal ? 'captured' : ''}`;
+
+            card.innerHTML = `
+                <div class="lead-field-header">
+                    <span class="lead-field-label">${label} ${isRequired ? '<span style="color: var(--accent-red)">*</span>' : ''}</span>
+                    <span class="lead-field-status">${hasVal ? 'Capturado' : 'Pendiente'}</span>
+                </div>
+                <span class="${hasVal ? 'lead-field-val' : 'lead-field-empty'}">
+                    ${hasVal ? value : 'Esperando dato...'}
+                </span>
+            `;
+            return card;
+        }
+
+        function clearLeadView() {
+            document.getElementById("liveLeadFields").innerHTML = `
+                <div style="font-size: 0.75rem; color: var(--text-muted); font-style: italic; text-align: center; padding: 1.5rem 0;">
+                    Conversa con el agente para capturar datos en vivo.
+                </div>
+            `;
+            document.getElementById("liveLeadMeta").style.display = "none";
+        }
+
+        // Load Global Leads Table
+        async function loadLeadsList() {
+            if (!backendConnected) return;
+            const url = getBackendUrl();
+            const body = document.getElementById("leadsTableBody");
+
+            body.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">Cargando historial de leads de SQLite...</td></tr>`;
+
+            try {
+                const response = await fetch(`${url}/api/leads/`);
+                if (!response.ok) throw new Error("Error loading global leads");
+
+                const leads = await response.json();
+                body.innerHTML = "";
+
+                if (leads.length === 0) {
+                    body.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem; font-style: italic;">No hay leads registrados aún en la base de datos SQL.</td></tr>`;
+                    return;
+                }
+
+                leads.forEach(lead => {
+                    const row = document.createElement("tr");
+                    const date = new Date(lead.captured_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+                    const customJson = lead.custom_data ? JSON.stringify(lead.custom_data) : '{}';
+
+                    row.innerHTML = `
+                        <td>${date}</td>
+                        <td style="font-weight: 700; color: #fff;">${lead.name || 'Sin Nombre'}</td>
+                        <td style="color: var(--primary); font-weight: 600;">${lead.email || 'No provisto'}</td>
+                        <td>${lead.phone || 'No provisto'}</td>
+                        <td><span class="conv-status-badge status-active" style="font-size: 0.65rem;">${lead.source_channel}</span></td>
+                        <td style="font-family: var(--font-code); font-size: 0.7rem; color: var(--text-muted); max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title='${customJson}'>${customJson}</td>
+                        <td>
+                            <button class="btn btn-secondary" onclick="deleteLead('${lead.id}')" style="width: auto; padding: 0.25rem 0.5rem; font-size: 0.75rem; border-color: rgba(239, 68, 68, 0.2); color: var(--accent-red);">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </td>
+                    `;
+                    body.appendChild(row);
+                });
+
+            } catch (err) {
+                body.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--accent-red); padding: 2rem;">Error al cargar leads: ${err.message}</td></tr>`;
+            }
+        }
+
+        // Delete Lead
+        async function deleteLead(leadId) {
+            if (!confirm("¿Seguro de que deseas eliminar este lead del historial de SQL?")) return;
+            const url = getBackendUrl();
+
+            try {
+                const response = await fetch(`${url}/api/leads/${leadId}`, {
+                    method: "DELETE"
+                });
+
+                if (!response.ok) throw new Error("Error deleting lead");
+
+                showToast("Lead eliminado del historial.");
+                loadLeadsList();
+            } catch (err) {
+                showToast("Error al eliminar lead: " + err.message, "error");
+            }
+        }
+
+        // Load Knowledge Base Documents
+        async function loadKnowledgeDocs() {
+            if (!selectedAgentId || !backendConnected) return;
+            const url = getBackendUrl();
+            const listEl = document.getElementById("docsList");
+
+            listEl.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 1.5rem 0; font-size: 0.8rem;"><i class="fa-solid fa-spinner fa-spin"></i> Cargando documentos...</div>`;
+
+            try {
+                const response = await fetch(`${url}/api/agents/${selectedAgentId}/documents`);
+                if (!response.ok) throw new Error("Error loading docs");
+
+                const docs = await response.json();
+                listEl.innerHTML = "";
+
+                if (docs.length === 0) {
+                    listEl.innerHTML = `
+                        <div style="text-align: center; color: var(--text-muted); padding: 2rem 0; font-size: 0.8rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem;">
+                            <i class="fa-solid fa-folder-open" style="font-size: 2rem; color: rgba(255,255,255,0.05)"></i>
+                            <span>Este agente no posee documentos cargados en su base de datos.</span>
+                        </div>
+                    `;
+                    return;
+                }
+
+                docs.forEach(doc => {
+                    const el = document.createElement("div");
+                    el.className = "doc-item animate-fade-in";
+                    el.innerHTML = `
+                        <div class="doc-details">
+                            <i class="fa-solid fa-file-lines doc-icon"></i>
+                            <div class="doc-text">
+                                <h5 title="${doc.filename}">${doc.filename}</h5>
+                                <p>Fragmentos: ${doc.chunk_count} • Subido: ${new Date(doc.uploaded_at).toLocaleDateString()}</p>
+                            </div>
+                        </div>
+                        <button class="doc-delete-btn" onclick="deleteDocument('${doc.id}')" title="Eliminar documento indexado">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    `;
+                    listEl.appendChild(el);
+                });
+
+            } catch (err) {
+                listEl.innerHTML = `<div style="text-align: center; color: var(--accent-red); padding: 1rem; font-size: 0.8rem;">Error al cargar documentos del agente.</div>`;
+            }
+        }
+
+        // Upload Knowledge Document (RAG)
+        async function uploadKnowledgeDocument(e) {
+            e.preventDefault();
+            if (!selectedAgentId || !backendConnected) {
+                showToast("Selecciona un agente primero", "error");
+                return;
+            }
+
+            const url = getBackendUrl();
+            const title = document.getElementById("docTitle").value.trim();
+            const content = document.getElementById("docContent").value.trim();
+            const filename = title.endsWith(".txt") ? title : `${title}.txt`;
+
+            // Prepare formData
+            const formData = new FormData();
+            const blob = new Blob([content], { type: "text/plain" });
+            formData.append("file", blob, filename);
+
+            const formEl = document.getElementById("uploadDocForm");
+            const submitBtn = formEl.querySelector("button[type='submit']");
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Procesando embeddings...`;
+
+            try {
+                const response = await fetch(`${url}/api/agents/${selectedAgentId}/documents`, {
+                    method: "POST",
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errText = await response.text();
+                    throw new Error(errText);
+                }
+
+                showToast("¡Documento indexado y guardado exitosamente!");
+                formEl.reset();
+                loadKnowledgeDocs();
+
+            } catch (err) {
+                showToast("Error al subir documento: " + err.message, "error");
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = `<i class="fa-solid fa-cloud-arrow-up"></i> Indexar Documento en ChromaDB`;
+            }
+        }
+
+        // Delete Knowledge Document
+        async function deleteDocument(docId) {
+            if (!confirm("¿Deseas desindexar y eliminar este documento de la base de datos SQL y ChromaDB?")) return;
+            const url = getBackendUrl();
+
+            try {
+                const response = await fetch(`${url}/api/documents/${docId}`, {
+                    method: "DELETE"
+                });
+
+                if (!response.ok) throw new Error("Error deleting document");
+
+                showToast("Documento desindexado y eliminado correctamente.");
+                loadKnowledgeDocs();
+                
+                // Clear active conversation if needed to avoid stale cache or simply notify
+                if (activeConversationId) {
+                    const chatBox = document.getElementById("chatMessagesBox");
+                    const sysMsgRow = document.createElement("div");
+                    sysMsgRow.className = "msg-row system-event";
+                    sysMsgRow.innerHTML = `
+                        <div class="msg-bubble">
+                            <i class="fa-solid fa-arrows-spin"></i> Base de conocimiento actualizada (Documento eliminado)
+                        </div>
+                    `;
+                    chatBox.appendChild(sysMsgRow);
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }
+
+            } catch (err) {
+                showToast("Error al eliminar documento: " + err.message, "error");
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+# Especificacion declarativa del tenant con-tranqui (Provisioning_Service).
+#
+# Este YAML describe el primer tenant/cliente de la plataforma GENIA. Lo
+# consumen, de forma equivalente e idempotente: el script de seed
+# (backend/scripts/seed_tenant.py), el endpoint admin POST /v1/admin/tenants y
+# la migracion Alembic seed_con_tranqui.
+#
+# Los valores ${VAR} se resuelven en tiempo de aprovisionamiento contra las
+# variables de entorno / Settings (nunca se incrustan secretos en este archivo).
+#
+# Feature: genia-agent-platform (Tarea 14.2)
+
+name: "con-tranqui"
+slug: "con-tranqui"
+
+system_prompt: |
+  Eres el copiloto de con-tranqui, especializado en asistir a contratistas
+  estatales colombianos. Tus funciones:
+  - Extraer y estructurar las obligaciones contractuales a partir del contrato.
+  - Hacer seguimiento de alcances, actividades y evidencias asociadas.
+  - Identificar actividades pendientes, evidencias faltantes y avance del contrato.
+  - Generar informes (Word/PDF/Excel) y apoyar tareas de supervision.
+  Responde en espanol, con precision juridica/administrativa y citando el
+  contrato cuando exista contexto recuperado (RAG).
+
+# Gemini via Vertex AI. ${VERTEX_GEMINI_MODEL} se resuelve desde el entorno.
+model: "${VERTEX_GEMINI_MODEL}"
+model_params:
+  temperature: 0.2
+  max_tokens: 2048
+
+# Catalogo de MCP_Tools habilitadas para el tenant con-tranqui.
+enabled_mcp_tools:
+  # Lectura (consulta de estado del contrato)
+  - contract.scopes.status            # estado de alcances
+  - contract.activities.pending       # actividades pendientes
+  - contract.evidences.missing        # evidencias faltantes
+  - contract.progress.summary         # avance del contrato
+  # Escritura (operacion)
+  - contract.activities.create        # crear actividad
+  - contract.activities.update        # actualizar actividad
+  - contract.evidences.register_meta  # registrar metadatos de evidencias
+  # Informes / supervision
+  - report.generate.word
+  - report.generate.pdf
+  - report.generate.excel
+  - report.supervision.generate
+
+# Nombres de variables de entorno con la URL y el token de servicio del MCP
+# remoto de con-tranqui (la invocacion saliente las resuelve en runtime).
+mcp_server_url_env: "CONTRANQUI_MCP_URL"
+mcp_service_token_env: "CONTRANQUI_MCP_SERVICE_TOKEN"
+
+# Plan de la suscripcion local (la activacion real es por cobro Bre-B verificado).
+subscription_plan: "default"
+
+# Coleccion/namespace por tenant en ChromaDB (RAG del contrato).
+knowledge_collection: "tenant_con-tranqui"
