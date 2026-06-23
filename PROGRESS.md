@@ -41,6 +41,16 @@
 ---
 
 
+## 2026-06-22 23:24 (COT) — Corrección de error de formato de fecha en Leads Page
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección
+
+- **Leads Page Fix:** Corregimos el error en tiempo de ejecución `Runtime TypeError: Invalid option : timeStyle` en la página de Leads al cambiar `toLocaleDateString` por `toLocaleString` al formatear la fecha `created_at` del lead.
+- **Archivos clave:** `dashboard/src/app/(dashboard)/leads/page.tsx`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Ninguno, todo el flujo de pruebas manuales y compilación de producción pasa limpiamente.
+
 ## 2026-06-22 23:12 (COT) — Preparación Completa para el Hackathon Build with Gemini XPRIZE
 **Plataforma:** Antigravity
 **Tipo:** ✨ Mejora | 📝 Docs
