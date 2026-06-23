@@ -41,6 +41,22 @@
 ---
 
 
+## 2026-06-22 23:12 (COT) — Preparación Completa para el Hackathon Build with Gemini XPRIZE
+**Plataforma:** Antigravity
+**Tipo:** ✨ Mejora | 📝 Docs
+
+- **GitHub & Repositorio:** Repositorio remoto público creado en `https://github.com/quant-ai-bit/plataforma-genia`. Saneamos el historial de git reemplazando secretos por placeholders en `add_envs.bat/ps1` y empujamos con éxito a la rama `main`.
+- **Documentación del Hackathon:** Creados `README.md` (bilingüe, arquitectura con Mermaid), `NARRATIVE.md` (operaciones AI-native, división del trabajo, modelo de barter de coworking y pilotos de Tutanqui), y `FINANCIALS.md` (unit economics con Vertex AI y valor del trueque de coworking).
+- **Guía de Postulación Reutilizable:** Creado `XPRIZE_SUBMISSION_GUIDE.md` para replicar el proceso de postulación a hackathons en cualquier otro proyecto.
+- **Backend (Métricas Públicas):** Implementados endpoints agregados públicos en `backend/routers/metrics.py` (`/api/metrics/summary`, `/activity`, `/providers`, `/logs`) para consumo seguro sin autenticación y registrados en `backend/main.py` junto al health check raíz con metadatos. Actualizado modelo Vertex por defecto a `gemini-2.0-flash` en `backend/config.py`.
+- **Frontend (Landing Page & Evidencia):** Creada landing page pública responsive bilingüe (ES/EN) con branding de `genia.com.co` y métricas dinámicas en `dashboard/src/app/(public)/page.tsx`. Añadida la página `/evidence` para la auditoría de logs y descarga de reportes. Movido el dashboard home de `/` a `/analytics` para evitar colisiones de rutas y corregidos sus enlaces de login y sidebar.
+- **Script de Evidencias:** Creado `scripts/export_evidence.py` para empaquetar toda la base de datos de auditoría en `evidence_package.zip`.
+- **Video del Hackathon:** Generado el cuaderno interactivo "Video hakathón" en NotebookLM (ID: `89036179-baa9-4fbc-885e-b6b27cf333fe`) con guiones y mejores herramientas gratuitas de IA para el video demo de 3 minutos.
+- **Validación:** El build del dashboard compiló exitosamente (`npm run build`). Las pruebas del backend pasaron en un 7/9 exitosamente en venv (los 2 fallos son por límite de crédito 429 externo de la API de Gemini Embeddings).
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Subir el video a YouTube y realizar la postulación en la plataforma Devpost compartiendo el link de GitHub y el paquete ZIP de evidencias generado por `scripts/export_evidence.py`.
+
 ## 2026-06-22 17:55 (COT) — Credenciales por entorno (Vertex) y secretos internos
 **Plataforma:** Kiro
 **Tipo:** 🔧 Refactor | 📝 Docs
