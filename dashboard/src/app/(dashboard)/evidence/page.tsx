@@ -12,7 +12,9 @@ import {
   Bot,
   Database,
   ArrowRight,
-  Globe
+  Globe,
+  MessageSquare,
+  UserCheck
 } from "lucide-react";
 import { authenticatedFetch } from "../../../lib/api";
 
