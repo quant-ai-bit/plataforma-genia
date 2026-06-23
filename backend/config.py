@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     # Contenido JSON del service account (ideal para Vercel / serverless).
     # Se lee solo desde el entorno (GCP_SERVICE_ACCOUNT_JSON); nunca en codigo.
     gcp_service_account_json: str = ""
-    vertex_gemini_model: str = "gemini-1.5-pro"
+    vertex_gemini_model: str = "gemini-2.0-flash"
 
     # --- Orquestacion de modelos (timeout / retry / fallback) ---
     model_timeout_s: float = 30.0

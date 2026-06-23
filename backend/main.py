@@ -119,6 +119,10 @@ app.include_router(mcp_router, prefix="/api", dependencies=[Depends(get_current_
 # Router publico B2B multi-tenant (auth por API key en sus propias dependencias).
 app.include_router(public_api_router)
 
+# Router publico de métricas para el hackathon.
+from routers.metrics import router as metrics_router
+app.include_router(metrics_router)
+
 
 
 # ── Endpoints Globales / de Utilidad ──────────────────────────────────
@@ -129,6 +133,8 @@ def read_root():
         "status": "online",
         "service": "PLATAFORMA GENIA Backend",
         "version": "1.0.0",
+        "hackathon": "Build with Gemini XPRIZE",
+        "google_cloud": True,
     }
 
 
