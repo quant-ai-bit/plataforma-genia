@@ -148,7 +148,7 @@ export default function LeadsPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-gray-500">
-                    {new Date(lead.created_at).toLocaleDateString([], { dateStyle: 'short', timeStyle: 'short' })}
+                    {new Date(lead.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
