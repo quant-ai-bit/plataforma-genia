@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useAppContext } from "../../lib/AppContext";
-import { authenticatedFetch } from "../../lib/api";
-import { DashboardMetrics } from "../../lib/types";
+import { useAppContext } from "../../../lib/AppContext";
+import { authenticatedFetch } from "../../../lib/api";
+import { DashboardMetrics } from "../../../lib/types";
 import {
   Bot,
   MessageSquare,

@@ -12,7 +12,8 @@ import {
   LogOut,
   FolderOpen,
   Settings,
-  X
+  X,
+  ShieldCheck
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -25,8 +26,8 @@ export default function Sidebar() {
   const activeAgent = activeAgentId ? agents.find(a => a.id === activeAgentId) : null;
 
   const isActive = (path: string) => {
-    if (path === "/") {
-      return pathname === "/";
+    if (path === "/analytics") {
+      return pathname === "/analytics";
     }
     return pathname.startsWith(path);
   };
@@ -73,7 +74,7 @@ export default function Sidebar() {
 
         {/* Enlaces de menú */}
         <nav className="p-4 space-y-1.5">
-          <Link href="/" className={navItemClass(isActive("/"))}>
+          <Link href="/analytics" className={navItemClass(isActive("/analytics"))}>
             <LayoutDashboard className="w-4 h-4" />
             Consola Analítica
           </Link>
@@ -118,6 +119,11 @@ export default function Sidebar() {
           <Link href="/conversations" className={navItemClass(isActive("/conversations"))}>
             <MessageSquare className="w-4 h-4" />
             Historial de Chats
+          </Link>
+
+          <Link href="/evidence" className={navItemClass(isActive("/evidence"))}>
+            <ShieldCheck className="w-4 h-4" />
+            Evidencias y Auditoría
           </Link>
 
           {isSupabaseConfigured && user && (

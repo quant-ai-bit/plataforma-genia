@@ -19,7 +19,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!isSupabaseConfigured || user) {
-        router.push("/");
+        router.push("/analytics");
       }
     }
   }, [authLoading, user, isSupabaseConfigured, router]);
@@ -50,7 +50,7 @@ export default function LoginPage() {
           password,
         });
         if (signInError) throw signInError;
-        router.push("/");
+        router.push("/analytics");
       }
     } catch (err: any) {
       setError(err.message || "Ocurrió un error en el proceso.");

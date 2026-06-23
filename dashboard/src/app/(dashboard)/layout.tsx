@@ -25,7 +25,7 @@ export default function DashboardLayout({
 
   // Page title mapping based on route path
   const getHeaderTitle = () => {
-    if (pathname === "/") return "Consola Analítica";
+    if (pathname === "/analytics") return "Consola Analítica";
     if (pathname === "/agents") return "Creador e Ingeniería de Agentes";
     if (pathname.includes("/knowledge")) return "Base de Conocimiento RAG";
     if (pathname.includes("/chat")) return "Simulador Sandbox E2E";
@@ -36,7 +36,7 @@ export default function DashboardLayout({
   };
 
   const getHeaderSub = () => {
-    if (pathname === "/") return "Estadísticas y métricas generales del ecosistema.";
+    if (pathname === "/analytics") return "Estadísticas y métricas generales del ecosistema.";
     if (pathname === "/agents") return "Crea, modifica y despliega agentes de Inteligencia Artificial.";
     if (pathname.includes("/knowledge")) return "Gestiona los documentos del almacenamiento de RAG.";
     if (pathname.includes("/chat")) return "Interactúa y pon a prueba tu agente en tiempo real.";
