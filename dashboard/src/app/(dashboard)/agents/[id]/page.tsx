@@ -26,7 +26,11 @@ import {
   CheckCircle,
   Loader2,
   FolderOpen,
-  Upload
+  Upload,
+  Eye,
+  EyeOff,
+  Copy,
+  Check
 } from "lucide-react";
 
 export default function AgentConfigPage({ params }: { params: Promise<{ id: string }> }) {
@@ -79,6 +83,29 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
   });
   const [editingFieldIndex, setEditingFieldIndex] = useState<number | null>(null);
 
+  // WhatsApp Integration State
+  const [waStatus, setWaStatus] = useState<{
+    connected: boolean;
+    phone_number_id: string | null;
+    phone_number: string | null;
+    display_name: string | null;
+    webhook_url: string | null;
+    verify_token: string | null;
+    error?: string;
+  } | null>(null);
+  const [waStatusLoading, setWaStatusLoading] = useState<boolean>(false);
+  const [waConnecting, setWaConnecting] = useState<boolean>(false);
+  const [waDisconnecting, setWaDisconnecting] = useState<boolean>(false);
+  const [showWaSecrets, setShowWaSecrets] = useState<boolean>(false);
+  const [copiedWebhook, setCopiedWebhook] = useState<boolean>(false);
+  const [copiedToken, setCopiedToken] = useState<boolean>(false);
+  const [waForm, setWaForm] = useState({
+    phone_number_id: "",
+    access_token: "",
+    app_secret: "",
+    verify_token: `genia_verify_${id ? id.split("-")[0] : "token"}`
+  });
+
   // Visual Training State
   const [kbImages, setKbImages] = useState<KbImage[]>([]);
   const [kbImagesLoading, setKbImagesLoading] = useState<boolean>(false);
@@ -116,6 +143,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
   useEffect(() => {
     if (id) {
       loadKbImages();
+      fetchWhatsAppStatus();
     }
   }, [id, isBackendOnline]);
 
@@ -140,6 +168,143 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
       console.error("Error al cargar imágenes visuales:", err);
     } finally {
       setKbImagesLoading(false);
+    }
+  };
+
+  const fetchWhatsAppStatus = async () => {
+    if (!id) return;
+    if (!isBackendOnline) {
+      setWaStatus({
+        connected: false,
+        phone_number_id: null,
+        phone_number: null,
+        display_name: null,
+        webhook_url: "/api/whatsapp/webhook",
+        verify_token: `genia_verify_${id.split("-")[0]}`
+      });
+      return;
+    }
+    setWaStatusLoading(true);
+    try {
+      const res = await authenticatedFetch(`/api/whatsapp/${id}/status`);
+      if (res.ok) {
+        const data = await res.json();
+        setWaStatus(data);
+        if (data.verify_token) {
+          setWaForm(prev => ({
+            ...prev,
+            verify_token: data.verify_token
+          }));
+        } else {
+          setWaForm(prev => ({
+            ...prev,
+            verify_token: `genia_verify_${id.split("-")[0]}`
+          }));
+        }
+        if (data.phone_number_id) {
+          setWaForm(prev => ({
+            ...prev,
+            phone_number_id: data.phone_number_id
+          }));
+        }
+      }
+    } catch (err) {
+      console.error("Error al obtener estado de WhatsApp:", err);
+    } finally {
+      setWaStatusLoading(false);
+    }
+  };
+
+  const handleConnectWhatsApp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!waForm.phone_number_id.trim() || !waForm.access_token.trim() || !waForm.app_secret.trim()) {
+      alert("Por favor, completa todos los campos requeridos para la conexión.");
+      return;
+    }
+    setWaConnecting(true);
+
+    if (!isBackendOnline) {
+      setTimeout(() => {
+        setWaStatus({
+          connected: true,
+          phone_number_id: waForm.phone_number_id,
+          phone_number: "+573001234567",
+          display_name: "Línea de Prueba Genia",
+          webhook_url: "/api/whatsapp/webhook",
+          verify_token: waForm.verify_token || `genia_verify_${id.split("-")[0]}`
+        });
+        setForm(prev => ({
+          ...prev,
+          channels: prev.channels.includes("whatsapp") ? prev.channels : [...prev.channels, "whatsapp"]
+        }));
+        alert("🔌 WhatsApp conectado en modo simulación (Mock)");
+        setWaConnecting(false);
+      }, 1000);
+      return;
+    }
+
+    try {
+      const res = await authenticatedFetch(`/api/whatsapp/${id}/connect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(waForm)
+      });
+
+      if (res.ok) {
+        alert("🔌 WhatsApp conectado exitosamente.");
+        setWaForm(prev => ({ ...prev, access_token: "", app_secret: "" }));
+        await fetchWhatsAppStatus();
+        await loadBackendData();
+      } else {
+        const data = await res.json();
+        alert(`Error al conectar WhatsApp: ${data.detail || JSON.stringify(data)}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de conexión al conectar con el backend.");
+    } finally {
+      setWaConnecting(false);
+    }
+  };
+
+  const handleDisconnectWhatsApp = async () => {
+    if (!confirm("¿Estás seguro de que deseas desconectar WhatsApp de este agente? Se eliminarán las credenciales de Meta asociadas.")) return;
+    setWaDisconnecting(true);
+
+    if (!isBackendOnline) {
+      setTimeout(() => {
+        setWaStatus({
+          connected: false,
+          phone_number_id: null,
+          phone_number: null,
+          display_name: null,
+          webhook_url: "/api/whatsapp/webhook",
+          verify_token: `genia_verify_${id.split("-")[0]}`
+        });
+        setWaDisconnecting(false);
+        alert("🔌 WhatsApp desconectado en modo simulación (Mock)");
+      }, 1000);
+      return;
+    }
+
+    try {
+      const res = await authenticatedFetch(`/api/whatsapp/${id}/disconnect`, {
+        method: "POST"
+      });
+
+      if (res.ok) {
+        alert("🔌 WhatsApp desconectado exitosamente.");
+        await fetchWhatsAppStatus();
+        await loadBackendData();
+      } else {
+        const data = await res.json();
+        alert(`Error al desconectar WhatsApp: ${data.detail || JSON.stringify(data)}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de conexión al desconectar.");
+    } finally {
+      setWaDisconnecting(false);
     }
   };
 
@@ -209,8 +374,8 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
   };
 
   // Visual Training Actions
-  const handleUploadAndGenerateTraining = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleUploadAndGenerateTraining = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) e.preventDefault();
     if (!uploadImageFile || !id || !detectedProduct || !imageDescription || !imagePrice) return;
     
     setUploadImageStep("analyzing");
@@ -263,8 +428,8 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     }
   };
 
-  const handleConfirmTraining = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleConfirmTraining = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) e.preventDefault();
     if (!id || !detectedImageId) return;
     setIsUploadingImage(true);
 
@@ -781,23 +946,261 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
 
               {/* Sub-sección WhatsApp */}
               {form.channels.includes("whatsapp") && (
-                <div className="p-4 bg-green-500/5 border border-green-500/20 rounded-xl space-y-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Phone className="w-4 h-4 text-green-400 animate-pulse" />
-                    <span className="text-xs font-bold text-green-300">Configuración WhatsApp Cloud API</span>
-                    <span className="px-1.5 py-0.5 bg-green-500/10 text-green-400 text-[8px] rounded font-bold uppercase">Activo</span>
+                <div className="p-5 bg-[#0e1324]/80 border border-green-500/10 rounded-2xl space-y-5 backdrop-blur-md shadow-lg shadow-green-500/5 transition-all">
+                  
+                  {/* Header */}
+                  <div className="flex items-center justify-between pb-3 border-b border-gray-800">
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-5 h-5 text-green-400 animate-pulse" />
+                      <div>
+                        <span className="text-sm font-bold text-white block">WhatsApp Cloud API</span>
+                        <span className="text-[10px] text-gray-400">Vincula la línea de WhatsApp de tu cliente a este agente</span>
+                      </div>
+                    </div>
+                    {waStatusLoading ? (
+                      <div className="flex items-center gap-1.5 px-2 py-0.5 bg-gray-800/40 text-gray-400 text-[10px] rounded-full">
+                        <Loader2 className="w-3 h-3 animate-spin text-green-400" />
+                        <span>Verificando...</span>
+                      </div>
+                    ) : waStatus?.connected ? (
+                      <span className="px-2.5 py-0.5 bg-green-500/10 text-green-400 border border-green-500/20 text-[10px] rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-ping"></span>
+                        Conectado
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 bg-gray-800 text-gray-400 border border-gray-700 text-[10px] rounded-full font-bold uppercase tracking-wider">
+                        Desconectado
+                      </span>
+                    )}
                   </div>
-                  <div>
-                    <label className="block text-gray-400 font-semibold mb-1">Teléfono de Notificaciones (encargado)</label>
+
+                  {/* Notification Phone (Human Backup) - Always visible */}
+                  <div className="bg-[#070b16]/60 p-4 border border-gray-850 rounded-xl space-y-2">
+                    <label className="block text-gray-300 font-semibold text-xs">Teléfono del Encargado (Notificaciones de Leads)</label>
                     <input
                       type="text"
-                      value={form.notification_phone}
+                      value={form.notification_phone || ""}
                       onChange={e => setForm(prev => ({ ...prev, notification_phone: e.target.value }))}
                       placeholder="Ej: +573001234567"
-                      className="w-full bg-[#0c101c] border border-gray-800 focus:border-green-500 rounded-xl px-4 py-2 text-white focus:outline-none text-sm"
+                      className="w-full bg-[#0c101c] border border-gray-850 focus:border-green-500 rounded-xl px-4 py-2 text-white focus:outline-none text-sm transition-all focus:ring-1 focus:ring-green-500"
                     />
-                    <p className="text-[10px] text-gray-500 mt-1">El encargado recibirá notificaciones automáticas de leads capturados.</p>
+                    <p className="text-[10px] text-gray-500">
+                      Este número recibirá alertas de WhatsApp cuando un lead requiera atención humana (Handoff) o termine su flujo.
+                    </p>
                   </div>
+
+                  {/* Connected State UI */}
+                  {waStatus?.connected ? (
+                    <div className="space-y-4">
+                      {/* Meta Line Details */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-green-500/[0.02] p-4 border border-green-500/10 rounded-xl">
+                        <div>
+                          <span className="text-gray-400 text-[10px] block">Nombre de la Línea (Meta)</span>
+                          <span className="text-white text-xs font-semibold">{waStatus.display_name || 'No disponible'}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-400 text-[10px] block">Número Telefónico</span>
+                          <span className="text-white text-xs font-semibold">{waStatus.phone_number || 'No disponible'}</span>
+                        </div>
+                        <div className="md:col-span-2">
+                          <span className="text-gray-400 text-[10px] block">Phone Number ID</span>
+                          <span className="font-mono text-gray-300 text-xs">{waStatus.phone_number_id}</span>
+                        </div>
+                      </div>
+
+                      {/* Instructions for Meta Developer Portal */}
+                      <div className="bg-[#070b16]/60 p-4 border border-gray-850 rounded-xl space-y-3">
+                        <span className="text-xs font-bold text-blue-400 block">Configuración de Webhook en Meta</span>
+                        <p className="text-[10px] text-gray-400 leading-relaxed">
+                          Para recibir los mensajes entrantes de tus clientes, asegúrate de que el webhook en el Portal de Desarrolladores de Meta esté configurado con los siguientes datos:
+                        </p>
+                        
+                        <div className="space-y-2 text-xs">
+                          <div>
+                            <span className="text-gray-400 text-[10px] block mb-1">URL de la Rellamada (Callback URL)</span>
+                            <div className="flex items-center gap-2 bg-[#0c101c] border border-gray-800 rounded-lg p-2 font-mono">
+                              <span className="text-gray-300 truncate flex-1 text-[11px]">
+                                {typeof window !== "undefined" ? `${window.location.origin}${waStatus.webhook_url}` : `https://plataforma.genia.com.co${waStatus.webhook_url}`}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const url = typeof window !== "undefined" ? `${window.location.origin}${waStatus.webhook_url}` : `https://plataforma.genia.com.co${waStatus.webhook_url}`;
+                                  navigator.clipboard.writeText(url);
+                                  setCopiedWebhook(true);
+                                  setTimeout(() => setCopiedWebhook(false), 2000);
+                                }}
+                                className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition"
+                              >
+                                {copiedWebhook ? <CheckCircle className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <span className="text-gray-400 text-[10px] block mb-1">Token de Verificación (Verify Token)</span>
+                            <div className="flex items-center gap-2 bg-[#0c101c] border border-gray-800 rounded-lg p-2 font-mono">
+                              <span className="text-gray-300 truncate flex-1 text-[11px]">
+                                {waStatus.verify_token || "Token no configurado"}
+                              </span>
+                              {waStatus.verify_token && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(waStatus.verify_token || "");
+                                    setCopiedToken(true);
+                                    setTimeout(() => setCopiedToken(false), 2000);
+                                  }}
+                                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition"
+                                >
+                                  {copiedToken ? <CheckCircle className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-start gap-1.5 text-[10px] text-amber-400 bg-amber-500/5 p-2 rounded-lg border border-amber-500/10 mt-2">
+                          <span className="font-bold">Nota:</span>
+                          <span>Debes suscribirte al campo <strong>messages</strong> en la sección Webhooks de WhatsApp del Portal de Meta.</span>
+                        </div>
+                      </div>
+
+                      {/* Disconnect Button */}
+                      <div className="flex justify-end pt-2">
+                        <button
+                          type="button"
+                          disabled={waDisconnecting}
+                          onClick={handleDisconnectWhatsApp}
+                          className="flex items-center gap-1.5 px-4 py-2 border border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/15 rounded-xl transition text-xs font-semibold cursor-pointer disabled:opacity-50"
+                        >
+                          {waDisconnecting ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              Desconectando...
+                            </>
+                          ) : (
+                            <>
+                              <X className="w-3.5 h-3.5" />
+                              Desconectar WhatsApp
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Disconnected State: Show Connection Form */
+                    <div className="space-y-4">
+                      <div className="p-3 bg-blue-500/5 border border-blue-500/10 rounded-xl space-y-1">
+                        <span className="text-xs font-bold text-blue-300 block">¿Cómo conectar tu línea de WhatsApp?</span>
+                        <p className="text-[10px] text-gray-400 leading-relaxed">
+                          Necesitas una cuenta comercial de Meta para Desarrolladores. Obtén tu <strong>Phone Number ID</strong>, un <strong>Access Token</strong> permanente de sistema y el <strong>App Secret</strong> de tu aplicación en Meta.
+                        </p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Phone Number ID (Meta) *</label>
+                          <input
+                            type="text"
+                            placeholder="Ej: 104843928471203"
+                            value={waForm.phone_number_id}
+                            onChange={e => setWaForm(prev => ({ ...prev, phone_number_id: e.target.value }))}
+                            className="w-full bg-[#0c101c] border border-gray-850 focus:border-green-500 rounded-xl px-4 py-2 text-white focus:outline-none text-xs transition-all"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-gray-400 font-semibold mb-1 text-[11px]">App Secret de Meta *</label>
+                            <div className="relative">
+                              <input
+                                type={showWaSecrets ? "text" : "password"}
+                                placeholder="Ingresa tu Meta App Secret"
+                                value={waForm.app_secret}
+                                onChange={e => setWaForm(prev => ({ ...prev, app_secret: e.target.value }))}
+                                className="w-full bg-[#0c101c] border border-gray-850 focus:border-green-500 rounded-xl pl-4 pr-10 py-2 text-white focus:outline-none text-xs transition-all font-mono"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowWaSecrets(!showWaSecrets)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition"
+                              >
+                                {showWaSecrets ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Token de Verificación del Webhook *</label>
+                            <input
+                              type="text"
+                              placeholder="Ej: genia_verify_token"
+                              value={waForm.verify_token}
+                              onChange={e => setWaForm(prev => ({ ...prev, verify_token: e.target.value }))}
+                              className="w-full bg-[#0c101c] border border-gray-850 focus:border-green-500 rounded-xl px-4 py-2 text-white focus:outline-none text-xs transition-all font-mono"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Meta Access Token Permanente *</label>
+                          <div className="relative">
+                            <textarea
+                              rows={2}
+                              placeholder="EATB..."
+                              value={waForm.access_token}
+                              onChange={e => setWaForm(prev => ({ ...prev, access_token: e.target.value }))}
+                              className="w-full bg-[#0c101c] border border-gray-850 focus:border-green-500 rounded-xl pl-4 pr-10 py-2 text-white focus:outline-none text-xs transition-all font-mono resize-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowWaSecrets(!showWaSecrets)}
+                              className="absolute right-3 top-4 text-gray-500 hover:text-white transition"
+                            >
+                              {showWaSecrets ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                          <span className="text-[9px] text-gray-500 mt-1 block">
+                            Se recomienda utilizar un Token de Acceso de Sistema Permanente (System User Access Token) para evitar que expire.
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end pt-2">
+                        <button
+                          type="button"
+                          disabled={waConnecting}
+                          onClick={handleConnectWhatsApp}
+                          className="flex items-center gap-1.5 px-5 py-2 border border-green-500/25 bg-green-500/10 text-green-400 hover:bg-green-500/15 rounded-xl transition text-xs font-semibold cursor-pointer disabled:opacity-50"
+                        >
+                          {waConnecting ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              Conectando con Meta...
+                            </>
+                          ) : (
+                            <>
+                              <Phone className="w-3.5 h-3.5" />
+                              Conectar WhatsApp
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Error banner from Meta connection */}
+                  {waStatus?.error && (
+                    <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-[10px] leading-relaxed">
+                      <span className="font-bold block mb-0.5">⚠️ Error en la conexión activa:</span>
+                      {waStatus.error}
+                      <span className="block mt-1 text-gray-400">
+                        Esto suele ocurrir si el Access Token ha expirado, fue revocado, o si la línea tiene problemas en el panel de Meta. Por favor verifica las credenciales y vuelve a conectar.
+                      </span>
+                    </div>
+                  )}
+
                 </div>
               )}
             </div>
@@ -833,7 +1236,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                   </h4>
 
                   {uploadImageStep === "select" && (
-                    <form onSubmit={handleUploadAndGenerateTraining} className="space-y-4">
+                    <div className="space-y-4">
                       {/* Image Dropzone */}
                       <div className="relative border-2 border-dashed border-gray-850 hover:border-blue-500/30 rounded-xl p-4 flex flex-col items-center justify-center gap-2 cursor-pointer text-center hover:bg-blue-500/5 transition">
                         <input
@@ -862,7 +1265,6 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                           <label className="block text-gray-400 font-semibold mb-1">Nombre del producto o espacio</label>
                           <input
                             type="text"
-                            required
                             placeholder="Ej. Sala de Juntas VIP"
                             value={detectedProduct}
                             onChange={e => setDetectedProduct(e.target.value)}
@@ -873,7 +1275,6 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                           <label className="block text-gray-400 font-semibold mb-1">Precio</label>
                           <input
                             type="text"
-                            required
                             placeholder="Ej. $50.000 COP/hora o Gratis"
                             value={imagePrice}
                             onChange={e => setImagePrice(e.target.value)}
@@ -883,7 +1284,6 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                         <div>
                           <label className="block text-gray-400 font-semibold mb-1">Descripción detallada</label>
                           <textarea
-                            required
                             rows={3}
                             placeholder="Ej. Espacio privado con capacidad para 10 personas, aire acondicionado..."
                             value={imageDescription}
@@ -894,14 +1294,15 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                       </div>
 
                       <button
-                        type="submit"
+                        type="button"
+                        onClick={() => handleUploadAndGenerateTraining()}
                         disabled={!uploadImageFile || !detectedProduct || !imageDescription || !imagePrice || isUploadingImage}
                         className="w-full flex items-center justify-center gap-1.5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white rounded-xl font-bold shadow-lg transition cursor-pointer"
                       >
                         <Sparkles className="w-4 h-4 text-yellow-350" />
                         Subir y Entrenar con IA
                       </button>
-                    </form>
+                    </div>
                   )}
 
                   {uploadImageStep === "analyzing" && (
@@ -920,7 +1321,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                   )}
 
                   {uploadImageStep === "confirm" && (
-                    <form onSubmit={handleConfirmTraining} className="space-y-4">
+                    <div className="space-y-4">
                       <div className="bg-[#070b13] border border-gray-850 rounded-xl p-3 flex gap-3 items-center">
                         {detectedImageUrl && (
                           <img
@@ -942,7 +1343,6 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                           <label className="block text-gray-400 font-semibold mb-1">Nombre Ajustado</label>
                           <input
                             type="text"
-                            required
                             value={detectedProduct}
                             onChange={e => setDetectedProduct(e.target.value)}
                             className="w-full bg-[#070b13] border border-gray-850 focus:border-blue-500 rounded-xl px-3 py-2 text-white focus:outline-none"
@@ -951,7 +1351,6 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                         <div>
                           <label className="block text-gray-400 font-semibold mb-1">Descripción del Agente</label>
                           <textarea
-                            required
                             value={imageDescription}
                             onChange={e => setImageDescription(e.target.value)}
                             rows={3}
@@ -962,7 +1361,6 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                           <label className="block text-gray-400 font-semibold mb-1">Palabras Clave (ej. gatillos)</label>
                           <input
                             type="text"
-                            required
                             value={imageKeywords}
                             onChange={e => setImageKeywords(e.target.value)}
                             placeholder="ej: sala juntas, fotos sala, precio sala"
@@ -972,7 +1370,6 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                         <div>
                           <label className="block text-gray-400 font-semibold mb-1">Instrucción para el Prompt</label>
                           <textarea
-                            required
                             value={suggestedRule}
                             onChange={e => setSuggestedRule(e.target.value)}
                             rows={4}
@@ -1009,13 +1406,14 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                           Cancelar
                         </button>
                         <button
-                          type="submit"
+                          type="button"
+                          onClick={() => handleConfirmTraining()}
                           className="flex-1 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl font-bold shadow-lg transition cursor-pointer"
                         >
                           Entrenar
                         </button>
                       </div>
-                    </form>
+                    </div>
                   )}
 
                   {uploadImageStep === "success" && (

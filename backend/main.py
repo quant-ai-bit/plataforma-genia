@@ -90,6 +90,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Middleware de registro de peticiones para depuración local ──────────
+from fastapi import Request
+import time
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    from datetime import datetime
+    start_time = time.time()
+    response = await call_next(request)
+    duration = time.time() - start_time
+    try:
+        with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/request_debug.log", "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().isoformat()}] {request.method} {request.url.path} - Status: {response.status_code} - Duration: {duration:.4f}s\n")
+    except Exception as e:
+        # write error to console if possible
+        print("Log request error:", str(e))
+    return response
+
 # ── Servir archivos de la biblioteca de imágenes ─────────────────────
 # Solo montamos si el directorio existe o se puede crear (en local dev). 
 # En producción (Vercel) usamos Supabase Storage, por lo que no es necesario local storage.

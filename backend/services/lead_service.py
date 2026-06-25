@@ -127,6 +127,7 @@ async def check_lead_completeness_and_notify(
     from models.agent import Agent
     from models.conversation import Conversation
     from services.whatsapp_service import send_whatsapp_notification
+    from services.encryption_service import decrypt as _decrypt
 
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
@@ -204,8 +205,13 @@ async def check_lead_completeness_and_notify(
         f"ID Conversación: `{conversation.id}`"
     )
 
-    # Enviar notificación de WhatsApp
-    success = await send_whatsapp_notification(agent.notification_phone, message_text)
+    # Enviar notificación de WhatsApp (usando credenciales del agente)
+    _phone_id = agent.whatsapp_phone_number_id or ""
+    _token = _decrypt(agent.whatsapp_access_token) if agent.whatsapp_access_token else ""
+    success = await send_whatsapp_notification(
+        agent.notification_phone, message_text,
+        phone_number_id=_phone_id, access_token=_token,
+    )
     if success:
         conversation.lead_notified = True
         db.commit()

@@ -178,6 +178,7 @@ async def process_conversation_message(
         if agent.notification_phone:
             try:
                 from services.whatsapp_service import send_whatsapp_notification
+                from services.encryption_service import decrypt as _decrypt
                 handoff_msg = (
                     f"⚠️ *¡Atención Requerida (Handoff)!*\n\n"
                     f"El cliente en la conversación con el agente *{agent.name}* ha solicitado hablar con un humano o se ha activado la derivación.\n\n"
@@ -187,7 +188,13 @@ async def process_conversation_message(
                     f"ID Conversación: `{conversation.id}`\n\n"
                     f"Por favor, ve al panel de control para tomar el control de la conversación."
                 )
-                await send_whatsapp_notification(agent.notification_phone, handoff_msg)
+                # Usar credenciales de WA del agente si están disponibles
+                _phone_id = agent.whatsapp_phone_number_id or ""
+                _token = _decrypt(agent.whatsapp_access_token) if agent.whatsapp_access_token else ""
+                await send_whatsapp_notification(
+                    agent.notification_phone, handoff_msg,
+                    phone_number_id=_phone_id, access_token=_token,
+                )
             except Exception as he:
                 logger.error("Error al enviar notificación de handoff: %s", str(he))
 

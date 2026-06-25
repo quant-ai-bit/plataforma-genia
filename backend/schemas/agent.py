@@ -57,6 +57,12 @@ class AgentCreate(BaseModel):
     )
     notification_phone: str | None = Field(default=None, max_length=50, description="Teléfono de WhatsApp para notificaciones del encargado")
 
+    # Credenciales WhatsApp Cloud API (por agente)
+    whatsapp_phone_number_id: str | None = Field(default=None, max_length=100, description="Phone Number ID de la app de Meta del cliente")
+    whatsapp_access_token: str | None = Field(default=None, description="Access Token permanente de la app de Meta del cliente")
+    whatsapp_app_secret: str | None = Field(default=None, description="App Secret de la app de Meta del cliente")
+    whatsapp_verify_token: str | None = Field(default=None, max_length=255, description="Token de verificación del webhook personalizado")
+
 
 class AgentUpdate(BaseModel):
     """Datos opcionales para actualizar un agente existente."""
@@ -72,6 +78,12 @@ class AgentUpdate(BaseModel):
     custom_fields: list[CustomFieldDefinition] | None = Field(default=None)
     channels: list[str] | None = Field(default=None)
     notification_phone: str | None = Field(default=None, max_length=50)
+
+    # Credenciales WhatsApp Cloud API (por agente)
+    whatsapp_phone_number_id: str | None = Field(default=None, max_length=100)
+    whatsapp_access_token: str | None = Field(default=None)
+    whatsapp_app_secret: str | None = Field(default=None)
+    whatsapp_verify_token: str | None = Field(default=None, max_length=255)
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +107,8 @@ class AgentResponse(BaseModel):
     custom_fields: list[CustomFieldDefinition]
     channels: list[str]
     notification_phone: str | None
+    whatsapp_connected: bool = False
+    whatsapp_phone_number_id: str | None = None
     created_at: datetime
     updated_at: datetime | None
 

@@ -8,7 +8,7 @@ de historial de mensajes y la activación de la captura de leads.
 from datetime import datetime, timezone, timedelta
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -87,3 +87,32 @@ async def chat_sandbox(request: ChatRequest, db: Session = Depends(get_db)):
     )
 
     return ChatResponse(reply=reply, conversation_id=conversation.id)
+
+
+@router.post("/transcribe")
+async def transcribe_audio_endpoint(
+    file: UploadFile = File(...),
+):
+    """
+    Recibe un archivo de audio y devuelve su transcripción en texto usando Whisper.
+    """
+    from services.ai_service import transcribe_audio
+
+    audio_bytes = await file.read()
+    mime_type = file.content_type or "audio/webm"
+    filename = file.filename or "recording.webm"
+
+    try:
+        text = await transcribe_audio(
+            audio_bytes=audio_bytes,
+            mime_type=mime_type,
+            filename=filename,
+        )
+        return {"text": text}
+    except Exception as e:
+        logger.error(f"Error en endpoint de transcripción: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error transcribiendo audio: {str(e)}"
+        )
+

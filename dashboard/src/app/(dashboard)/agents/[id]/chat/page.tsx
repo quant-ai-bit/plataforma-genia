@@ -11,7 +11,9 @@ import {
   Send,
   UserCheck,
   CheckCircle,
-  Loader2
+  Loader2,
+  Mic,
+  Square
 } from "lucide-react";
 
 export default function AgentChatSandbox({ params }: { params: Promise<{ id: string }> }) {
@@ -33,6 +35,10 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
   const [isChatSending, setIsChatSending] = useState<boolean>(false);
   const [liveCapturedLead, setLiveCapturedLead] = useState<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Audio Recording States
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
 
   useEffect(() => {
     const foundAgent = agents.find(a => a.id === id);
@@ -56,15 +62,154 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
   };
 
   useEffect(() => {
-    if (agent) {
+    if (agent && chatMessages.length === 0) {
       startNewChatSession();
     }
-  }, [agent]);
+  }, [agent, chatMessages.length]);
+
+  useEffect(() => {
+    // Limpiar el chat cuando cambie el agente (ID)
+    setChatConvId(null);
+    setChatMessages([]);
+    setLiveCapturedLead(null);
+  }, [id]);
+
 
   // Scroll to bottom of chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, isChatSending]);
+
+  useEffect(() => {
+    return () => {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
+    };
+  }, [mediaRecorder]);
+
+  const startRecording = async () => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("Tu navegador no soporta la grabación de audio o requiere HTTPS.");
+        return;
+      }
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(chunks, { type: "audio/webm" });
+        await handleSendAudio(audioBlob);
+        
+        // Detener todos los tracks para apagar el micrófono
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      recorder.start();
+      setMediaRecorder(recorder);
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Error al acceder al micrófono:", err);
+      alert("No se pudo acceder al micrófono. Por favor verifica los permisos.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const handleSendAudio = async (audioBlob: Blob) => {
+    setIsChatSending(true);
+    // Añadimos mensaje temporal en la interfaz
+    setChatMessages(prev => [...prev, { role: "user", content: "🎤 [Nota de voz enviada. Procesando...]" }]);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", audioBlob, "recording.webm");
+
+      const resTranscribe = await authenticatedFetch("/api/chat/transcribe", {
+        method: "POST",
+        body: formData
+      });
+
+      if (!resTranscribe.ok) {
+        throw new Error("Error en la transcripción de audio.");
+      }
+
+      const dataTranscribe = await resTranscribe.json();
+      const transcribedText = dataTranscribe.text;
+
+      if (!transcribedText || !transcribedText.trim()) {
+        setChatMessages(prev => [
+          ...prev.slice(0, -1),
+          { role: "assistant", content: "No se pudo entender la nota de voz. Intenta hablar de nuevo." }
+        ]);
+        setIsChatSending(false);
+        return;
+      }
+
+      // Reemplazamos el mensaje temporal con el texto transcrito real
+      setChatMessages(prev => [
+        ...prev.slice(0, -1),
+        { role: "user", content: `🎤 (Nota de voz): "${transcribedText}"` }
+      ]);
+
+      // Enviar el texto al agente
+      const chatPayload = {
+        agent_id: id,
+        message: transcribedText,
+        conversation_id: chatConvId
+      };
+
+      const res = await authenticatedFetch(`/api/chat/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(chatPayload)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setChatConvId(data.conversation_id);
+        setChatMessages(prev => [...prev, { role: "assistant", content: data.reply }]);
+        
+        loadBackendData();
+        loadAgentUsage(id);
+
+        setTimeout(async () => {
+          const resLeads = await authenticatedFetch(`/api/leads/`);
+          if (resLeads.ok) {
+            const currentLeads = await resLeads.json();
+            const matchingLead = currentLeads.find((l: any) => l.conversation_id === data.conversation_id);
+            if (matchingLead) {
+              setLiveCapturedLead(matchingLead);
+            }
+          }
+        }, 1000);
+      } else {
+        const data = await res.json();
+        setChatMessages(prev => [...prev, { role: "assistant", content: `Error: ${JSON.stringify(data.detail)}` }]);
+      }
+    } catch (err) {
+      console.error("Error procesando nota de voz:", err);
+      setChatMessages(prev => [
+        ...prev.slice(0, -1),
+        { role: "assistant", content: "Lo siento, tuve un problema al procesar tu nota de voz." }
+      ]);
+    } finally {
+      setIsChatSending(false);
+    }
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -297,13 +442,27 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
             <input
               type="text"
               value={chatInput}
+              disabled={isRecording}
               onChange={e => setChatInput(e.target.value)}
-              placeholder={`Chatea con ${agent.name}...`}
-              className="flex-1 bg-[#070b13] border border-gray-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition"
+              placeholder={isRecording ? "Grabando audio... Habla ahora. Haz clic en el micrófono rojo para detener y enviar." : `Chatea con ${agent.name}...`}
+              className="flex-1 bg-[#070b13] border border-gray-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition disabled:opacity-75"
             />
             <button
+              type="button"
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={isChatSending}
+              className={`p-3 rounded-xl shadow-lg transition duration-200 flex items-center justify-center cursor-pointer ${
+                isRecording 
+                  ? "bg-red-600 hover:bg-red-500 text-white animate-pulse" 
+                  : "bg-gray-800 hover:bg-gray-700 text-gray-300"
+              }`}
+              title={isRecording ? "Detener grabación y enviar" : "Grabar nota de voz"}
+            >
+              {isRecording ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            </button>
+            <button
               type="submit"
-              disabled={isChatSending || !chatInput.trim()}
+              disabled={isChatSending || !chatInput.trim() || isRecording}
               className="p-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white rounded-xl shadow-lg transition duration-200 flex items-center justify-center cursor-pointer"
             >
               <Send className="w-4 h-4" />

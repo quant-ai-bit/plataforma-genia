@@ -1,13 +1,18 @@
 export interface Agent {
   id: string;
   name: string;
+  description?: string | null;
   provider: string;
   model: string;
   system_prompt: string;
   temperature: number;
   max_tokens: number;
+  status?: string;
   notification_phone: string | null;
   custom_fields: any; // Can be array of fields or stringified JSON
+  channels?: string[];
+  whatsapp_connected?: boolean;
+  whatsapp_phone_number_id?: string | null;
   created_at?: string;
   updated_at?: string;
 }

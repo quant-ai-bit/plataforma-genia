@@ -14,6 +14,7 @@ from sqlalchemy import (
     Text,
     Float,
     Integer,
+    Boolean,
     DateTime,
     JSON,
     ForeignKey,
@@ -125,6 +126,36 @@ class Agent(Base):
         nullable=True,
         doc="Lista de MCP_Tools habilitadas para el agente (por tenant)",
     )
+
+    # --- Credenciales WhatsApp Cloud API (por agente/cliente) ---
+    whatsapp_phone_number_id = Column(
+        String(100),
+        nullable=True,
+        index=True,
+        doc="Phone Number ID de Meta para este agente (único por línea de WA)",
+    )
+    whatsapp_access_token = Column(
+        Text,
+        nullable=True,
+        doc="Access Token de Meta (cifrado con Fernet) para este agente",
+    )
+    whatsapp_app_secret = Column(
+        Text,
+        nullable=True,
+        doc="App Secret de Meta (cifrado con Fernet) para verificación de firma HMAC",
+    )
+    whatsapp_verify_token = Column(
+        String(255),
+        nullable=True,
+        doc="Token de verificación de webhook personalizado por agente",
+    )
+    whatsapp_connected = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+        doc="Si el agente tiene WhatsApp conectado y verificado",
+    )
+
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),

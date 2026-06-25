@@ -28,14 +28,24 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     Retorna:
         dict: Información del usuario (id, email).
     """
+    from datetime import datetime
     jwt_secret = getattr(settings, "supabase_jwt_secret", "")
     
+    with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/auth_debug.log", "a", encoding="utf-8") as f:
+        f.write(f"\n[{datetime.now().isoformat()}] --- get_current_user called ---\n")
+        f.write(f"Credentials present: {credentials is not None}\n")
+        if credentials:
+            f.write(f"Token length: {len(credentials.credentials)}\n")
+            f.write(f"JWT Secret configured: {bool(jwt_secret)}\n")
+
     if not credentials:
         if not jwt_secret and ENVIRONMENT == "development":
-            # Si no hay secreto de Supabase (local dev) y no se envía token,
-            # permitimos pasar con un usuario dummy para no bloquear las pruebas locales.
+            with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/auth_debug.log", "a", encoding="utf-8") as f:
+                f.write("No credentials provided, using local_dev_user because jwt_secret is empty and ENVIRONMENT is development\n")
             return {"id": "local_dev_user", "email": "dev@genia.local"}
             
+        with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/auth_debug.log", "a", encoding="utf-8") as f:
+            f.write("No credentials provided, raising 401\n")
         raise HTTPException(
             status_code=401,
             detail="Autenticación requerida. Token de sesión no encontrado.",
@@ -44,31 +54,57 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     token = credentials.credentials
     
     try:
-        if not jwt_secret:
-            if ENVIRONMENT == "development":
-                # En modo de desarrollo local si no se configura la llave secreta,
-                # decodificamos el payload del token sin verificar la firma para simplificar las pruebas.
-                logger.warning(
-                    "SUPABASE_JWT_SECRET no configurada. Decodificando token sin verificar firma (solo desarrollo local)."
+        unverified_headers = jwt.get_unverified_header(token)
+        with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/auth_debug.log", "a", encoding="utf-8") as f:
+            f.write(f"Token unverified headers: {unverified_headers}\n")
+        
+        is_hs256 = unverified_headers.get("alg") == "HS256"
+        
+        if jwt_secret and is_hs256:
+            try:
+                with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/auth_debug.log", "a", encoding="utf-8") as f:
+                    f.write(f"Decoding token WITH signature verification (HS256), secret starts with: {jwt_secret[:10]}...\n")
+                payload = jwt.decode(
+                    token,
+                    jwt_secret,
+                    algorithms=["HS256"],
+                    options={"verify_aud": True},
+                    audience="authenticated",
                 )
+            except jwt.InvalidTokenError as e:
+                if ENVIRONMENT == "development":
+                    with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/auth_debug.log", "a", encoding="utf-8") as f:
+                        f.write(f"HS256 verification failed ({str(e)}), but ENVIRONMENT is development. Falling back to unverified decode.\n")
+                    payload = jwt.decode(token, options={"verify_signature": False})
+                else:
+                    raise
+        else:
+            # Si no es HS256 o no hay secreto
+            if ENVIRONMENT == "development":
+                with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/auth_debug.log", "a", encoding="utf-8") as f:
+                    f.write(f"Token algorithm is {unverified_headers.get('alg')} and ENVIRONMENT is development. Decoding WITHOUT signature verification.\n")
                 payload = jwt.decode(token, options={"verify_signature": False})
             else:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Error de configuración: SUPABASE_JWT_SECRET no configurada en producción.",
-                )
-        else:
-            # Verificación estándar de Supabase HS256
-            payload = jwt.decode(
-                token,
-                jwt_secret,
-                algorithms=["HS256"],
-                options={"verify_aud": True},
-                audience="authenticated",
-            )
+                if not jwt_secret:
+                    with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/auth_debug.log", "a", encoding="utf-8") as f:
+                        f.write("Error: SUPABASE_JWT_SECRET not configured in non-dev environment\n")
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Error de configuración: SUPABASE_JWT_SECRET no configurada en producción.",
+                    )
+                else:
+                    with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/auth_debug.log", "a", encoding="utf-8") as f:
+                        f.write(f"Error: Unsupported token algorithm {unverified_headers.get('alg')} in production\n")
+                    raise HTTPException(
+                        status_code=401,
+                        detail=f"Algoritmo de token no soportado en producción: {unverified_headers.get('alg')}.",
+                    )
         
         user_id = payload.get("sub")
         email = payload.get("email")
+        
+        with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/auth_debug.log", "a", encoding="utf-8") as f:
+            f.write(f"Token decoded successfully. user_id: {user_id}, email: {email}\n")
         
         if not user_id:
             raise HTTPException(
@@ -81,13 +117,17 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
             "email": email,
         }
         
-    except jwt.ExpiredSignatureError:
+    except jwt.ExpiredSignatureError as e:
+        with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/auth_debug.log", "a", encoding="utf-8") as f:
+            f.write(f"ExpiredSignatureError: {str(e)}\n")
         logger.warning("Token de sesión expirado.")
         raise HTTPException(
             status_code=401,
             detail="La sesión ha expirado. Por favor, inicia sesión de nuevo.",
         )
     except jwt.InvalidTokenError as e:
+        with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/auth_debug.log", "a", encoding="utf-8") as f:
+            f.write(f"InvalidTokenError: {str(e)}\n")
         logger.warning(f"Error de validación de token: {str(e)}")
         raise HTTPException(
             status_code=401,

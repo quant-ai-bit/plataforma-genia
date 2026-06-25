@@ -535,3 +535,31 @@ async def generate_via_model_service(
     )
     service = ModelService.from_settings()
     return await service.generate(req, usage_ctx=usage_ctx)
+
+
+async def transcribe_audio(
+    audio_bytes: bytes,
+    mime_type: str = "audio/ogg",
+    filename: str = "voice.ogg",
+) -> str:
+    """
+    Transcribe bytes de audio usando la API Whisper de Groq.
+    """
+    from io import BytesIO
+
+    if not settings.groq_api_key:
+        logger.error("No se pudo transcribir audio: GROQ_API_KEY no configurada.")
+        raise ValueError("GROQ_API_KEY no configurada en las variables de entorno.")
+
+    try:
+        file_tuple = (filename, BytesIO(audio_bytes), mime_type)
+        response = await groq_client.audio.transcriptions.create(
+            file=file_tuple,
+            model="whisper-large-v3",
+            language="es",
+        )
+        return response.text
+    except Exception as e:
+        logger.error("Error en la transcripción de audio con Groq: %s", str(e), exc_info=True)
+        raise e
+

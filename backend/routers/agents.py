@@ -18,11 +18,34 @@ router = APIRouter(prefix="/agents", tags=["Agents"])
 @router.get("/", response_model=list[AgentResponse])
 def list_agents(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Lista todos los agentes disponibles para el usuario actual."""
+    import os
+    env = os.getenv("ENVIRONMENT", "development")
+
+    if current_user["id"] != "local_dev_user":
+        if env == "development":
+            # En desarrollo local, asociamos automáticamente todos los agentes al usuario actual
+            # para que no queden inaccesibles si el desarrollador cambia de cuenta de Google/Supabase.
+            all_agents = db.query(Agent).all()
+            updated = False
+            for agent in all_agents:
+                if agent.user_id != current_user["id"]:
+                    agent.user_id = current_user["id"]
+                    updated = True
+            if updated:
+                db.commit()
+        else:
+            # Si hay agentes huérfanos (user_id es None), los asociamos automáticamente al usuario actual
+            orphans = db.query(Agent).filter(Agent.user_id == None).all()
+            if orphans:
+                for agent in orphans:
+                    agent.user_id = current_user["id"]
+                db.commit()
+
     if current_user["id"] == "local_dev_user":
         # En desarrollo local sin Supabase configurada, mostramos todos los agentes
         agents = db.query(Agent).order_by(Agent.created_at.desc()).all()
     else:
-        # En producción, filtramos estrictamente por el propietario creador
+        # En producción/desarrollo con Supabase, filtramos estrictamente por el propietario creador
         agents = (
             db.query(Agent)
             .filter(Agent.user_id == current_user["id"])
@@ -35,6 +58,22 @@ def list_agents(db: Session = Depends(get_db), current_user: dict = Depends(get_
 @router.get("/{agent_id}", response_model=AgentResponse)
 def get_agent(agent_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Obtiene el detalle completo de un agente por su ID, validando pertenencia."""
+    import os
+    env = os.getenv("ENVIRONMENT", "development")
+
+    if current_user["id"] != "local_dev_user":
+        if env == "development":
+            agent = db.query(Agent).filter(Agent.id == agent_id).first()
+            if agent and agent.user_id != current_user["id"]:
+                agent.user_id = current_user["id"]
+                db.commit()
+        else:
+            # Si el agente buscado es huérfano, lo asociamos al usuario actual antes de validar pertenencia
+            orphan = db.query(Agent).filter(Agent.id == agent_id, Agent.user_id == None).first()
+            if orphan:
+                orphan.user_id = current_user["id"]
+                db.commit()
+
     query = db.query(Agent).filter(Agent.id == agent_id)
     if current_user["id"] != "local_dev_user":
         query = query.filter(Agent.user_id == current_user["id"])

@@ -38,7 +38,7 @@ export default function DashboardPage() {
     setLoading(true);
     if (isBackendOnline) {
       try {
-        const res = await authenticatedFetch(`/api/metrics`);
+        const res = await authenticatedFetch(`/api/dashboard/metrics`);
         if (res.ok) {
           const data = await res.json();
           setMetrics(data);

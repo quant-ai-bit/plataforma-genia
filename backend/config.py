@@ -91,6 +91,12 @@ class Settings(BaseSettings):
             "openai/gpt-4o",
         ]
 
+    # --- Cifrado de credenciales sensibles (WhatsApp, etc.) ---
+    # Clave Fernet para cifrar/descifrar credenciales almacenadas en la DB.
+    # Generar con: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Se lee desde la variable de entorno ENCRYPTION_KEY.
+    encryption_key: str = ""
+
     # --- Seguridad / API publica multi-tenant ---
     # Pepper secreto para el hashing de API keys (SHA-256 + pepper).
     # Se carga desde la variable de entorno API_KEY_PEPPER (nunca hardcodear).
