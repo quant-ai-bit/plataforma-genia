@@ -79,7 +79,9 @@ def verify_webhook(
     recibido. Si no se encuentra ninguno, se compara con el token global por
     retrocompatibilidad.
     """
+    logger.info(f"[WEBHOOK_VERIFY] mode: {mode}, token: {token}, challenge: {challenge}")
     if mode != "subscribe":
+        logger.warning(f"[WEBHOOK_VERIFY] Rejected mode: {mode}")
         return Response(status_code=status.HTTP_403_FORBIDDEN)
 
     # 1. Buscar agente por verify_token personalizado

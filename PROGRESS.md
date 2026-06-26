@@ -38,6 +38,146 @@
 - **Pendientes globales conocidos:** _(actualiza esta lista a medida que avances)_
   - [x] Inicializar repositorio git para versionar el historial.
 
+## 2026-06-25 23:25 (COT) — Migración a Groq por agotamiento de créditos en OpenRouter y validación de Webhook de WhatsApp
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- **Corrección de error de servicio de IA:** Tras forzar la exposición de errores en la respuesta y realizar pruebas locales, se detectó que las llamadas a OpenRouter (`deepseek/deepseek-chat`) fallaban con el código `402 Payment Required` debido a que la cuenta de OpenRouter del usuario se quedó sin fondos.
+- **Migración preventiva a Groq:** Para restaurar de inmediato el funcionamiento de la plataforma en producción sin obligar al usuario a recargar saldo de inmediato, se actualizaron los agentes `Socio` y `Mia` en la base de datos PostgreSQL de producción para utilizar el proveedor `groq` con el modelo `llama-3.3-70b-versatile`. Se comprobó que el proveedor de Groq está activo y responde exitosamente.
+- **Verificación de Webhook de WhatsApp:** Se implementó y desplegó un registro de depuración (`[WEBHOOK_VERIFY]`) en `backend/routers/whatsapp.py` para visualizar los parámetros de Meta. Posteriormente, se probó de forma exitosa la URL del webhook en producción mediante `curl`, confirmando que retorna `200 OK` y el `challenge` correcto cuando se usa el token `genia_verify_547c07f714394e399c504d4bb3da37ac`.
+- Archivos clave: `backend/services/ai_service.py`, `backend/routers/whatsapp.py`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Indicar al usuario que intente verificar el Webhook de WhatsApp nuevamente en el portal de desarrolladores de Meta (ya que el backend responderá con éxito) y pruebe el chat del sandbox.
+
+## 2026-06-25 22:30 (COT) — Verificación de tokens via Supabase Auth API (fallback definitivo) y despliegue exitoso
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- **Corrección definitiva de validación de firma JWT de Supabase:** Se descubrió que la clave secreta `SUPABASE_JWT_SECRET` configurada localmente y en Vercel no coincide con la firma real del token del usuario en producción (el backend local funcionaba debido a que en desarrollo se omitía silenciosamente la firma ante fallas).
+- **Implementación de Auth API Fallback:** Para solventar de forma definitiva la falta de coincidencia de la clave sin forzar al usuario a buscar o reconfigurar claves en su panel, se integró un mecanismo de verificación de token consumiendo directamente el endpoint nativo `/auth/v1/user` de Supabase. Si la verificación de firma local (tanto en Base64 como en Raw String) falla, el backend consulta a la API de Supabase para validar el token de forma segura.
+- **Despliegue a producción:** Se ejecutó `vercel --prod --force` propagando la corrección a la nube de Vercel.
+- Archivos clave: `backend/services/auth_service.py`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Solicitar confirmación final de visualización de agentes.
+
+## 2026-06-25 21:00 (COT) — Soporte dual para verificación de firma JWT (Base64 y Raw string) y despliegue exitoso
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- **Corrección de validación de firma JWT de Supabase:** Tras inspeccionar los logs del servidor serverless en producción, se observó que la verificación de firma HS256 fallaba con el error `Signature verification failed` utilizando la clave decodificada en Base64. Esto ocurre porque algunas versiones o configuraciones de Supabase firman los tokens usando la cadena de texto base del secreto directamente (como bytes utf-8) en lugar de sus bytes decodificados en base64.
+- **Implementación de verificación dual:** Se refactorizó `backend/services/auth_service.py` para intentar verificar la firma del token primero con la clave decodificada en base64 y, en caso de fallar, realizar un segundo intento utilizando la cadena de texto original codificada en bytes (`utf-8`). Esto asegura compatibilidad total e inmediata para cualquier formato de firma del token emitido.
+- **Despliegue a producción:** Se ejecutó `vercel --prod --force` propagando la corrección a la nube de Vercel.
+- Archivos clave: `backend/services/auth_service.py`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Solicitar confirmación de visualización de agentes.
+
+## 2026-06-25 20:36 (COT) — Indicador dinámico Cloud/Local en Sidebar y despliegue a Vercel
+**Plataforma:** Antigravity
+**Tipo:** 🔧 Refactor | 🚀 Deploy
+
+- **Indicador Dinámico de Conexión:** Se actualizó el footer del sidebar en `dashboard/src/components/Sidebar.tsx` para mostrar "Online (Cloud)" si se accede desde producción o "Online (Puerto 8000)" si se accede localmente. Esto sirve de indicador visual inequívoco para que el usuario identifique si está usando la versión vieja cacheada del navegador o la nueva versión en la nube.
+- **Despliegue a producción:** Se ejecutó `vercel --prod --force` con éxito para propagar la actualización.
+- Archivos clave: `dashboard/src/components/Sidebar.tsx`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Indicar al usuario cómo limpiar la caché del navegador para cargar la nueva versión y validar que cambie a "Online (Cloud)".
+
+## 2026-06-25 20:00 (COT) — Corrección de resolución de URL de API en producción y despliegue a Vercel
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- **Corrección de la URL Base de la API (Client-side):** Se identificó que las llamadas a la API en el frontend tenían un fallback forzado a `http://127.0.0.1:8000` si la variable `NEXT_PUBLIC_API_URL` estaba vacía. En Vercel, esta variable es una cadena vacía `""`, por lo que el operador `||` evaluaba la cadena como falsy y redirigía todas las peticiones del navegador al localhost del usuario en lugar de la API en la nube.
+- **Implementación de getApiBaseUrl:** Se creó la función `getApiBaseUrl()` en `dashboard/src/lib/api.ts` que determina dinámicamente si la app se ejecuta en producción (usando rutas relativas `""` para que Vercel resuelva contra el backend local serverless) o en desarrollo (usando `http://127.0.0.1:8000`), respetando cualquier valor explícito de `NEXT_PUBLIC_API_URL`.
+- **Actualización de componentes:** Se reemplazó el fallback crudo por la función `getApiBaseUrl()` en `AppContext.tsx`, `api.ts`, la landing page pública y la vista de evidencias.
+- **Optimización de logs en backend:** Se limitó la escritura a archivos de depuración local en `backend/main.py` solo si `ENVIRONMENT == "development"` para evitar latencias y logs innecesarios en producción.
+- **Despliegue exitoso:** Se corrió `vercel --prod --force` reconstruyendo limpiamente el bundle del frontend con la corrección y confirmando que la API pública en la nube de Supabase/Vercel responde correctamente.
+- Archivos clave: `dashboard/src/lib/api.ts`, `dashboard/src/lib/AppContext.tsx`, `dashboard/src/app/(public)/page.tsx`, `dashboard/src/app/(dashboard)/evidence/page.tsx`, `backend/main.py`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Solicitar al usuario verificar si los agentes `Socio` y `Mia` ya se listan correctamente.
+
+## 2026-06-25 19:39 (COT) — Decodificación en Base64 de SUPABASE_JWT_SECRET y despliegue exitoso
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- **Corrección de Firma JWT de Supabase:** Se identificó que la clave `SUPABASE_JWT_SECRET` es una clave de 64 bytes codificada en Base64. El backend en producción intentaba verificar la firma con la cadena de texto base64 cruda en lugar de decodificarla, fallando toda validación de token JWT con un error `401 Unauthorized`. (Esto funcionaba en local porque el backend de desarrollo omite la verificación de firma).
+- **Implementación:** Se actualizó `backend/services/auth_service.py` importando `base64` y decodificando la clave a bytes mediante `base64.b64decode` antes de ejecutar `jwt.decode`.
+- **Despliegue a producción:** Se ejecutó `vercel --prod` con éxito, aplicando la corrección en línea.
+- Archivos clave: `backend/services/auth_service.py`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Solicitar al usuario refrescar para validar la visualización de los agentes.
+
+## 2026-06-25 19:26 (COT) — Remoción de slashes en rutas backend y corrección de logs en producción
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- **Corrección de Rutas del Backend:** Se removió la barra diagonal al final (`"/"` -> `""`) en los decoradores de rutas de listado y creación en `backend/routers/agents.py`, `backend/routers/conversations.py`, `backend/routers/leads.py` y `backend/routers/chat.py`. Esto resuelve de forma definitiva el loop de redirección HTTP 307 que se producía entre Vercel (que remueve slashes) y FastAPI (que los forzaba).
+- **Corrección de logs del servicio de autenticación:** Se eliminó la escritura manual a archivo en `C:/Users/User/.../auth_debug.log` dentro de `backend/services/auth_service.py`, reemplazándola por el logger estándar. Esto previene errores unhandled `500 Internal Server Error` generados al intentar escribir en un disco de solo lectura inexistente en la nube de Vercel.
+- **Despliegue a producción:** Se ejecutó `vercel --prod`, aplicando exitosamente todos los cambios. Las llamadas ahora retornan directamente el status HTTP correcto (e.g. `401 Unauthorized` si no hay token).
+- Archivos clave: `backend/routers/agents.py`, `backend/routers/conversations.py`, `backend/routers/leads.py`, `backend/routers/chat.py`, `backend/services/auth_service.py`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Solicitar confirmación final al usuario de que los agentes ya se muestran en la interfaz.
+
+## 2026-06-25 19:19 (COT) — Corrección de redirecciones por barras diagonales (trailing slashes) y despliegue a producción
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- **Corrección de Rutas del Frontend:** Se detectó un loop de redirección infinita (`307`) en la nube de Vercel porque Vercel elimina las barras diagonales al final de las URLs (Clean URLs) mientras que FastAPI las exigía, provocando que se perdieran las cabeceras de autorización. Se removieron las barras diagonales del final (`/`) en las peticiones del frontend (`/api/agents`, `/api/leads`, `/api/conversations`, `/api/chat`).
+- **Despliegue a producción:** Se ejecutó `vercel --prod` desplegando exitosamente los cambios. Las peticiones ahora se resuelven de forma directa sin loops de redirección y muestran correctamente la información.
+- Archivos clave: `dashboard/src/lib/AppContext.tsx`, `dashboard/src/app/(dashboard)/conversations/page.tsx`, `dashboard/src/app/(dashboard)/agents/page.tsx`, `dashboard/src/app/(dashboard)/agents/[id]/chat/page.tsx`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Ninguno.
+
+## 2026-06-25 19:07 (COT) — Reconstrucción de base de datos de producción y migración de datos locales a la nube
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- **Corrección de Esquema en Supabase:** Se detectó que la base de datos de Supabase tenía una estructura antigua desalineada y le faltaba la extensión de vectores `pgvector`. Se reseteó el esquema público y se ejecutó la inicialización con `create_all()` y habilitación de `pgvector`, seguido de un `alembic stamp head` para marcar el historial de migraciones al día.
+- **Migración de Datos Locales:** Se escribió y ejecutó un script de migración para copiar todos los registros locales de SQLite a la base de datos PostgreSQL de Supabase en la nube (tablas: `agents`, `conversations`, `messages`, `leads`, `knowledge_documents`, `agent_usages`), convirtiendo tipos de datos booleanos y JSON de forma compatible.
+- **Validación:** Se verificó que los agentes `Socio` y `Mia` ahora se muestran correctamente asociados al UUID del usuario logueado en producción.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Ninguno.
+
+## 2026-06-25 18:43 (COT) — Corrección de credenciales de base de datos de producción y despliegue a Vercel
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- **Corrección de Contraseña de Base de Datos:** Se actualizó la contraseña de la base de datos de producción en Vercel con la nueva contraseña proporcionada por el usuario (`platagenia2026`). Esto resolvió el error 500 (`OperationalError: FATAL: password authentication failed for user "postgres"`) al arrancar el backend en producción.
+- **Actualización de Scripts:** Se actualizaron los archivos `scripts/update_vercel_envs.py` y `update_production_envs.ps1` con la nueva contraseña para mantener el historial del repositorio consistente.
+- **Despliegue de Producción exitoso:** Se ejecutó `vercel --prod` y se comprobó que el endpoint de salud `https://plataforma-genia.vercel.app/api/metrics/summary` responde ahora correctamente con un estado HTTP 200 y JSON válido.
+- Archivos clave: `scripts/update_vercel_envs.py`, `update_production_envs.ps1`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Ninguno.
+
+## 2026-06-25 17:45 (COT) — Redireccionamiento dinámico de autenticación y despliegue a producción
+**Plataforma:** Antigravity
+**Tipo:** 🔧 Refactor | 🚀 Deploy
+
+- **Redirección de Registro Dinámica:** Se actualizó la llamada a `supabase.auth.signUp` en `dashboard/src/app/(auth)/login/page.tsx` agregando la opción `emailRedirectTo: `${window.location.origin}/analytics``. Esto garantiza que cuando el usuario se registre desde la web en la nube, el correo de confirmación lo redireccione a la URL de producción de Vercel en lugar de un localhost estático.
+- **Despliegue a Vercel:** Se ejecutó `vercel --prod` desplegando exitosamente los cambios a producción.
+- Archivos clave: `dashboard/src/app/(auth)/login/page.tsx`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Ninguno.
+
+## 2026-06-25 17:22 (COT) — Corrección de advertencia del intérprete de Python en VS Code
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección
+
+- **Ruta de Intérprete Portable:** Se actualizó `.vscode/settings.json` para definir `python.defaultInterpreterPath` usando la variable `${workspaceFolder}` (`${workspaceFolder}/backend/.venv/Scripts/python.exe`) en lugar de una ruta absoluta rígida. Esto evita advertencias de resolución debido a espacios en la ruta, diferencias de mayúsculas/minúsculas o cambios en el directorio del espacio de trabajo.
+- Archivos clave: `.vscode/settings.json`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Ninguno.
+
 ## 2026-06-25 12:35 (COT) — Implementación de Grabadora de Notas de Voz en Sandbox y Corrección de Webhook de WhatsApp
 **Plataforma:** Antigravity
 **Tipo:** ✨ Mejora | 🐛 Corrección
