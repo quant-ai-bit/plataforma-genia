@@ -43,6 +43,60 @@
 
 
 
+## 2026-07-09 15:25 (COT) — Diagnóstico de error en envío saliente de WhatsApp QR
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección
+
+- **Diagnóstico del error de envío:** Se extrajeron los registros de mensajes directamente de la base de datos de producción (Supabase) y de la Evolution API.
+- **Evidencia 1 (Celular del Bot Offline):** En la captura de pantalla provista por el usuario a las 3:16 PM COT, el último mensaje "Hola" enviado a las 3:14 PM COT tiene un solo checkmark (un solo tick), lo que confirma que el dispositivo receptor (el celular del Bot `573103125460`) se desconectó de la red o se quedó sin batería.
+- **Evidencia 2 (Mensajes con status ERROR en Evolution API):** Al consultar el estado de los mensajes despachados por el backend (como el de las 3:13 PM COT que sí tenía doble check de entrada), la base de datos interna de la Evolution API los marca con `"status": "ERROR"`. Esto ocurre cuando la sesión de WhatsApp Web del bot está desincronizada o bloqueada por la red de WhatsApp.
+- **Acción:** Se le solicita al usuario verificar que el dispositivo del Bot esté encendido, conectado a internet, realizar un envío manual de prueba para descartar bloqueo de línea, y realizar una reconexión/re-escaneo del código QR si el dispositivo está operativo.
+
+**Estado:** ⏸️ Bloqueado
+**Pendiente / Siguiente paso:** Esperar que el usuario revise el dispositivo del Bot y proceda con el escaneo del código QR si es necesario.
+
+## 2026-07-09 13:40 (COT) — Corrección: Respuesta vacía de IA en webhook QR de WhatsApp
+**Plataforma:** opencode
+**Tipo:** 🐛 Corrección
+
+- **Diagnóstico:** Se investigó por qué el agente Socio no responde mensajes entrantes vía WhatsApp QR (Evolution API).
+- **Causa raíz identificada:** En `_receive_qr_webhook_impl` (whatsapp.py línea 1407), si `chat_with_agent` devuelve una respuesta vacía (`""`), NO se validaba y se enviaba `"text": ""` a Evolution API, que acepta el 200 pero no muestra nada en WhatsApp (el usuario no ve respuesta).
+- **Causas posibles de reply vacío:**
+  1. `Groq` devuelve `content: None` → `response_message.content or ""` produce `""`
+  2. La rotación de modelos agota todos los modelos (FREE_MODELS) y el error externo cae al handler genérico, pero el error que produce no es vacío (tiene emojis). Sin embargo, si la ejecución sale del try principal antes de asignar `final_text` (ej. tool_calls sin segunda llamada exitosa), `final_text` queda `""`.
+- **Fix 1:** En `_receive_qr_webhook_impl`, se agregó validación: si `reply` está vacío/whitespace, se envía un mensaje de fallback "Hola, gracias por tu mensaje. ¿En qué puedo ayudarte?" y se loguea un warning.
+- **Fix 2:** En `send_qr_text_raw`, se agregó logging del payload saliente (instancia, teléfono, longitud del texto, preview) para facilitar diagnóstico futuro. También se agregó logging del status_code en éxito.
+- Archivos clave: `backend/routers/whatsapp.py`, `backend/services/whatsapp_qr_service.py`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Desplegar a Vercel producción y probar enviando un mensaje de WhatsApp a Socio. Si aún no responde, revisar `PAYLOAD_DEBUG` en BD y logs de Vercel para ver si el `send_qr_text_raw` recibe 200/201 o si falla credencial.
+
+## 2026-07-09 13:16 (COT) — Depuración: instrumentación QR para WhatsApp sin respuesta
+**Plataforma:** Codex
+**Tipo:** 🐛 Corrección
+
+- Se abrió una sesión formal de depuración `whatsapp-no-response` para investigar por qué Socio/Agente Social Genia no responde por WhatsApp.
+- Se creó la bitácora técnica `debug-whatsapp-no-response.md` y se levantó un Debug Server local que escribe su configuración en `.dbg/whatsapp-no-response.env`.
+- Se añadió instrumentación no invasiva al flujo QR en el router de WhatsApp para capturar evidencia en estos puntos: entrada del webhook, estado del agente, descarte por evento/payload, extracción de detalles, generación de respuesta por IA y resultado del envío QR.
+- Archivos clave: `backend/routers/whatsapp.py`, `debug-whatsapp-no-response.md`, `.dbg/whatsapp-no-response.env`
+- Motivo / contexto: ya había hipótesis razonables, pero faltaba confirmar con evidencia de ejecución si el fallo ocurre antes del webhook, en el parseo del payload o en el despacho final a Evolution API.
+
+**Estado:** 🚧 En progreso
+**Pendiente / Siguiente paso:** reproducir un mensaje nuevo hacia el agente, leer los logs del Debug Server y confirmar cuál hipótesis (A-E) explica el fallo real.
+
+## 2026-07-09 12:36 (COT) — Corrección: Fallback y trazabilidad en envío QR de WhatsApp
+**Plataforma:** Codex
+**Tipo:** 🐛 Corrección
+
+- Se investigó por qué el agente Socio no parecía responder por WhatsApp QR/Evolution API.
+- **Hallazgo:** Los webhooks `messages.upsert` sí llegan a producción y Socio sí genera respuestas; las respuestas quedan guardadas como mensajes `assistant` en la base de datos. El fallo probable está en el tramo final de despacho hacia Evolution API/WhatsApp.
+- **Solución:** Se añadió fallback de credenciales al envío QR: si falla la credencial de instancia guardada, se reintenta con la credencial global de Evolution API. También se registra explícitamente un error `ERROR QR SEND FAILED` en la conversación `PAYLOAD_DEBUG` si el despacho final devuelve fallo, evitando que el webhook responda 200 sin evidencia útil.
+- Archivos clave: `backend/services/whatsapp_qr_service.py`, `backend/routers/whatsapp.py`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Desplegar a producción y probar un nuevo mensaje de WhatsApp a Socio; si vuelve a fallar, revisar `PAYLOAD_DEBUG` para ver el error de despacho registrado.
+
+
 ## 2026-07-09 10:35 (COT) — Corrección: Configuración de Timeout para Transcripción de Notas de Voz
 **Plataforma:** Antigravity
 **Tipo:** 🐛 Corrección | 🚀 Deploy
