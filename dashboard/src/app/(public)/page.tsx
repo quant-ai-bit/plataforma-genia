@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { getApiBaseUrl } from "../../lib/api";
 import Link from "next/link";
 import { 
   Sparkles, 
@@ -38,7 +39,7 @@ export default function PublicLandingPage() {
   useEffect(() => {
     async function fetchMetrics() {
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+        const baseUrl = getApiBaseUrl();
         const res = await fetch(`${baseUrl}/api/metrics/summary`);
         if (res.ok) {
           const data = await res.json();

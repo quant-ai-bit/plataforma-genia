@@ -10,12 +10,19 @@ import {
   MessageSquare,
   UserCheck,
   Layers,
-  TrendingUp
+  TrendingUp,
+  Zap,
+  Cpu,
+  RefreshCw,
+  Clock,
+  AlertCircle
 } from "lucide-react";
 
 export default function DashboardPage() {
   const { isBackendOnline, agents } = useAppContext();
   const [loading, setLoading] = useState<boolean>(true);
+  const [freeModels, setFreeModels] = useState<any>(null);
+  const [resettingModels, setResettingModels] = useState<boolean>(false);
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     total_agents: 0,
     total_conversations: 0,
@@ -34,6 +41,33 @@ export default function DashboardPage() {
     }
   };
 
+  const loadFreeModels = async () => {
+    if (isBackendOnline) {
+      try {
+        const res = await authenticatedFetch(`/api/free-models/status`);
+        if (res.ok) {
+          const data = await res.json();
+          setFreeModels(data);
+        }
+      } catch (err) {
+        console.error("Error al cargar modelos gratuitos:", err);
+      }
+    }
+  };
+
+  const handleResetFreeModels = async () => {
+    setResettingModels(true);
+    try {
+      const res = await authenticatedFetch(`/api/free-models/reset`, { method: "POST" });
+      if (res.ok) {
+        await loadFreeModels();
+      }
+    } catch (err) {
+      console.error("Error al reiniciar modelos gratuitos:", err);
+    }
+    setResettingModels(false);
+  };
+
   const loadData = async () => {
     setLoading(true);
     if (isBackendOnline) {
@@ -45,6 +79,7 @@ export default function DashboardPage() {
         } else {
           throw new Error("Failed to fetch metrics");
         }
+        await loadFreeModels();
       } catch (err) {
         console.error("Error al cargar métricas del backend:", err);
         loadMockMetrics();
@@ -78,6 +113,19 @@ export default function DashboardPage() {
         { contact_name: "Juan Pérez", status: "active", last_message: "Quiero ver el apartamento de 3 habitaciones.", agent_name: "Genia Agente Inmobiliario", last_message_at: new Date().toISOString() },
         { contact_name: "María Gómez", status: "handoff", last_message: "Necesito hablar con un humano por favor.", agent_name: "Genia Agente Inmobiliario", last_message_at: new Date().toISOString() },
         { contact_name: "Carlos Soto", status: "closed", last_message: "Gracias por la información.", agent_name: "Genia Asistente Soporte TI", last_message_at: new Date().toISOString() }
+      ]
+    });
+
+    setFreeModels({
+      aggregate_potentials: {
+        hourly_tokens: 156400,
+        daily_tokens: 3750000,
+        monthly_tokens: 112500000
+      },
+      models: [
+        { provider: "gemini", model: "gemini-2.0-flash", priority: 1, is_exhausted: false, cooldown_left_seconds: 0, reason: null, tokens_used_today: 12000, requests_used_today: 5, limits: { rpm: 10, tpm: 1000000, rpd: 1500 }, potentials: { hourly_tokens: 41666, daily_tokens: 3750000, monthly_tokens: 112500000 }, reset_time_description: "RPM y TPM se recargan cada minuto. RPD se recarga diariamente a las 08:00 UTC." },
+        { provider: "gemini", model: "gemini-1.5-flash", priority: 2, is_exhausted: false, cooldown_left_seconds: 0, reason: null, tokens_used_today: 0, requests_used_today: 0, limits: { rpm: 15, tpm: 1000000, rpd: 1500 }, potentials: { hourly_tokens: 41666, daily_tokens: 3750000, monthly_tokens: 112500000 }, reset_time_description: "RPM y TPM se recargan cada minuto. RPD se recarga diariamente a las 08:00 UTC." },
+        { provider: "groq", model: "llama-3.3-70b-versatile", priority: 3, is_exhausted: true, cooldown_left_seconds: 45, reason: "Agotamiento en chat_with_agent: Rate Limit Exceeded", tokens_used_today: 8000, requests_used_today: 3, limits: { rpm: 30, tpm: 6000, rpd: 14400 }, potentials: { hourly_tokens: 6000, daily_tokens: 36000000, monthly_tokens: 1080000000 }, reset_time_description: "Límites por minuto móviles. Límites diarios se recargan cada 24 horas." }
       ]
     });
   };
@@ -161,6 +209,104 @@ export default function DashboardPage() {
           </div>
         </Link>
 
+      </div>
+
+      {/* Sección de Modelos Gratuitos y Rotación */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Potencial de Tokens */}
+        <div className="glow-card p-6 rounded-2xl flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Zap className="w-5 h-5 text-amber-400" />
+              <h3 className="text-lg font-bold text-white">Potencial de Tokens Gratis</h3>
+            </div>
+            <p className="text-xs text-gray-400 mb-6">
+              Capacidad máxima estimada de procesamiento gratuito agregado entre todos los proveedores.
+            </p>
+            
+            <div className="space-y-4">
+              <div className="flex justify-between items-center py-2 border-b border-[#1e293b]">
+                <span className="text-xs text-gray-400 font-medium">Por Hora:</span>
+                <span className="text-sm font-extrabold text-white">{freeModels?.aggregate_potentials?.hourly_tokens.toLocaleString() || "0"} tokens</span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-[#1e293b]">
+                <span className="text-xs text-gray-400 font-medium">Por Día:</span>
+                <span className="text-sm font-extrabold text-amber-400">{freeModels?.aggregate_potentials?.daily_tokens.toLocaleString() || "0"} tokens</span>
+              </div>
+              <div className="flex justify-between items-center py-2">
+                <span className="text-xs text-gray-400 font-medium">Por Mes:</span>
+                <span className="text-sm font-extrabold text-blue-400">{freeModels?.aggregate_potentials?.monthly_tokens.toLocaleString() || "0"} tokens</span>
+              </div>
+            </div>
+          </div>
+          
+          <button
+            onClick={handleResetFreeModels}
+            disabled={resettingModels}
+            className="w-full mt-6 py-2.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-xs font-semibold text-white rounded-xl border border-gray-700 flex items-center justify-center gap-2 transition active:scale-[0.98]"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${resettingModels ? "animate-spin" : ""}`} />
+            <span>Restablecer Cooldowns</span>
+          </button>
+        </div>
+
+        {/* Estatus de Rotación y Modelos */}
+        <div className="lg:col-span-2 glow-card p-6 rounded-2xl">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Cpu className="w-5 h-5 text-blue-400" />
+              <h3 className="text-lg font-bold text-white">Estatus de Rotación de Modelos</h3>
+            </div>
+            <span className="px-2 py-0.5 bg-green-950/60 border border-green-500/20 text-green-400 text-[10px] font-bold rounded-lg uppercase">
+              Activo
+            </span>
+          </div>
+          
+          <div className="overflow-x-auto max-h-56 overflow-y-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-[#1e293b] text-gray-400 text-xs font-semibold uppercase">
+                  <th className="pb-2">Modelo</th>
+                  <th className="pb-2">Proveedor</th>
+                  <th className="pb-2 text-center">Prioridad</th>
+                  <th className="pb-2 text-center">Consumo (Hoy)</th>
+                  <th className="pb-2 text-right">Estatus</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#1e293b] text-xs">
+                {freeModels?.models && freeModels.models.map((m: any, idx: number) => (
+                  <tr key={idx} className="hover:bg-gray-800/10">
+                    <td className="py-2.5 font-bold text-gray-200">{m.model}</td>
+                    <td className="py-2.5 text-gray-400 capitalize">{m.provider}</td>
+                    <td className="py-2.5 text-center font-semibold text-blue-400">{m.priority}</td>
+                    <td className="py-2.5 text-center text-gray-300">
+                      {m.tokens_used_today.toLocaleString()} tokens
+                      <p className="text-[9px] text-gray-500">{m.requests_used_today} reqs</p>
+                    </td>
+                    <td className="py-2.5 text-right">
+                      {m.is_exhausted ? (
+                        <div className="inline-flex flex-col items-end">
+                          <span className="px-2 py-0.5 bg-rose-950/60 border border-rose-500/20 text-rose-400 rounded-lg text-[9px] font-extrabold uppercase">
+                            Agotado
+                          </span>
+                          <span className="text-[9px] text-rose-400/70 mt-0.5 flex items-center gap-0.5" title={m.reason}>
+                            <Clock className="w-2.5 h-2.5" />
+                            Reactivación en {Math.ceil(m.cooldown_left_seconds / 60)}m
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="px-2 py-0.5 bg-green-950/60 border border-green-500/20 text-green-400 rounded-lg text-[9px] font-extrabold uppercase">
+                          Disponible
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       {/* Contenido en dos columnas */}

@@ -9,6 +9,8 @@ from routers.leads import router as leads_router
 from routers.whatsapp import router as whatsapp_router
 from routers.mcp import router as mcp_router
 from routers.public_api import router as public_api_router
+from routers.google_calendar import router as google_calendar_router
+from routers.free_models import router as free_models_router
 
 __all__ = [
     "agents_router",
@@ -20,6 +22,8 @@ __all__ = [
     "whatsapp_router",
     "mcp_router",
     "public_api_router",
+    "google_calendar_router",
+    "free_models_router",
 ]
 
 

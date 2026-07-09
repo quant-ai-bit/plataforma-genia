@@ -3,10 +3,10 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { User } from "@supabase/supabase-js";
 import { supabase, isSupabaseConfigured } from "./supabase";
-import { authenticatedFetch } from "./api";
+import { authenticatedFetch, getApiBaseUrl } from "./api";
 import { Agent, Lead } from "./types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = getApiBaseUrl();
 
 interface AppContextType {
   user: User | null;
@@ -84,7 +84,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       
       // 2. Obtener Agentes
-      const resAgents = await authenticatedFetch(`/api/agents/`);
+      const resAgents = await authenticatedFetch(`/api/agents`);
       if (resAgents.ok) {
         const a = await resAgents.json();
         setAgents(a);
@@ -95,7 +95,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       // 3. Obtener Leads
-      const resLeads = await authenticatedFetch(`/api/leads/`);
+      const resLeads = await authenticatedFetch(`/api/leads`);
       if (resLeads.ok) {
         const l = await resLeads.json();
         setLeads(l);

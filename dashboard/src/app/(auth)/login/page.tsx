@@ -186,7 +186,10 @@ export default function LoginPage() {
     try {
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
-        password
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/analytics`
+        }
       });
       if (signUpError) throw signUpError;
       

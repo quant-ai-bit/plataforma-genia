@@ -15,7 +15,7 @@ from schemas.lead import LeadResponse
 router = APIRouter(prefix="/leads", tags=["Leads"])
 
 
-@router.get("/", response_model=list[LeadResponse])
+@router.get("", response_model=list[LeadResponse])
 def list_leads(
     agent_id: str | None = None,
     source_channel: str | None = None,

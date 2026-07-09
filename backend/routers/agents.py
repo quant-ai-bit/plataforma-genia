@@ -15,7 +15,7 @@ from services.auth_service import get_current_user
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
 
-@router.get("/", response_model=list[AgentResponse])
+@router.get("", response_model=list[AgentResponse])
 def list_agents(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Lista todos los agentes disponibles para el usuario actual."""
     import os
@@ -34,8 +34,10 @@ def list_agents(db: Session = Depends(get_db), current_user: dict = Depends(get_
             if updated:
                 db.commit()
         else:
-            # Si hay agentes huérfanos (user_id es None), los asociamos automáticamente al usuario actual
-            orphans = db.query(Agent).filter(Agent.user_id == None).all()
+            # Si hay agentes huérfanos (user_id es None o 'local_dev_user'), los asociamos automáticamente al usuario actual
+            orphans = db.query(Agent).filter(
+                (Agent.user_id == None) | (Agent.user_id == "local_dev_user")
+            ).all()
             if orphans:
                 for agent in orphans:
                     agent.user_id = current_user["id"]
@@ -68,8 +70,10 @@ def get_agent(agent_id: str, db: Session = Depends(get_db), current_user: dict =
                 agent.user_id = current_user["id"]
                 db.commit()
         else:
-            # Si el agente buscado es huérfano, lo asociamos al usuario actual antes de validar pertenencia
-            orphan = db.query(Agent).filter(Agent.id == agent_id, Agent.user_id == None).first()
+            # Si el agente buscado es huérfano o local, lo asociamos al usuario actual antes de validar pertenencia
+            orphan = db.query(Agent).filter(
+                (Agent.id == agent_id) & ((Agent.user_id == None) | (Agent.user_id == "local_dev_user"))
+            ).first()
             if orphan:
                 orphan.user_id = current_user["id"]
                 db.commit()
@@ -87,9 +91,11 @@ def get_agent(agent_id: str, db: Session = Depends(get_db), current_user: dict =
     return agent
 
 
-@router.post("/", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
 def create_agent(agent_in: AgentCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Crea un nuevo agente de IA asociado al usuario actual."""
+    from services.encryption_service import encrypt
+
     # Convertir las definiciones de custom_fields a diccionarios para almacenamiento JSON
     custom_fields_dict = [cf.model_dump() for cf in agent_in.custom_fields]
 
@@ -104,6 +110,10 @@ def create_agent(agent_in: AgentCreate, db: Session = Depends(get_db), current_u
         custom_fields=custom_fields_dict,
         channels=agent_in.channels,
         notification_phone=agent_in.notification_phone,
+        google_calendar_client_id=agent_in.google_calendar_client_id,
+        google_calendar_client_secret=encrypt(agent_in.google_calendar_client_secret) if agent_in.google_calendar_client_secret else None,
+        stt_provider=agent_in.stt_provider or "groq_whisper",
+        timezone=agent_in.timezone or "America/Bogota",
         user_id=current_user["id"] if current_user["id"] != "local_dev_user" else None
     )
 
@@ -121,6 +131,8 @@ def update_agent(
     current_user: dict = Depends(get_current_user)
 ):
     """Actualiza un agente de IA existente validando pertenencia."""
+    from services.encryption_service import encrypt
+
     query = db.query(Agent).filter(Agent.id == agent_id)
     if current_user["id"] != "local_dev_user":
         query = query.filter(Agent.user_id == current_user["id"])
@@ -134,6 +146,9 @@ def update_agent(
 
     # Actualizar solo los campos que vienen en el request
     update_data = agent_in.model_dump(exclude_unset=True)
+
+    if "google_calendar_client_secret" in update_data and update_data["google_calendar_client_secret"]:
+        update_data["google_calendar_client_secret"] = encrypt(update_data["google_calendar_client_secret"])
 
     for field, value in update_data.items():
         setattr(db_agent, field, value)

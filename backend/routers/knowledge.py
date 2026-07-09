@@ -216,6 +216,7 @@ def list_agent_documents(agent_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/documents/{doc_id}", response_model=KnowledgeDocumentDetail)
+@router.get("/knowledge/documents/{doc_id}", response_model=KnowledgeDocumentDetail)
 def get_document_detail(doc_id: str, db: Session = Depends(get_db)):
     """Obtiene el detalle completo de un documento de conocimiento, incluyendo su texto crudo."""
     doc = db.query(KnowledgeDocument).filter(KnowledgeDocument.id == doc_id).first()
@@ -228,6 +229,7 @@ def get_document_detail(doc_id: str, db: Session = Depends(get_db)):
 
 
 @router.delete("/documents/{doc_id}", status_code=status.HTTP_200_OK)
+@router.delete("/knowledge/documents/{doc_id}", status_code=status.HTTP_200_OK)
 def delete_agent_document(doc_id: str, db: Session = Depends(get_db)):
     """Elimina un documento de conocimiento de SQL y de la base vectorial ChromaDB."""
     success = delete_document(db=db, doc_id=doc_id)
@@ -244,6 +246,11 @@ def delete_agent_document(doc_id: str, db: Session = Depends(get_db)):
 
 @router.put(
     "/documents/{doc_id}",
+    response_model=KnowledgeDocumentResponse,
+    status_code=status.HTTP_200_OK,
+)
+@router.put(
+    "/knowledge/documents/{doc_id}",
     response_model=KnowledgeDocumentResponse,
     status_code=status.HTTP_200_OK,
 )

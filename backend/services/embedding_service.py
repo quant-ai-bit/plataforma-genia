@@ -43,6 +43,7 @@ def get_embedding(
             model="models/gemini-embedding-001",
             content=text,
             task_type=task_type,
+            output_dimensionality=768,
         )
         return result["embedding"]
     except Exception as e:
@@ -75,6 +76,7 @@ def get_embeddings(
             model="models/gemini-embedding-001",
             content=texts,
             task_type=task_type,
+            output_dimensionality=768,
         )
         # La API devuelve una lista de diccionarios o una lista de embeddings
         # dependiendo del formato. En text-embedding-004 suele ser una lista directa.

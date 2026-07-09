@@ -28,6 +28,8 @@ from routers import (
     whatsapp_router,
     mcp_router,
     public_api_router,
+    google_calendar_router,
+    free_models_router,
 )
 
 
@@ -100,12 +102,13 @@ async def log_requests(request: Request, call_next):
     start_time = time.time()
     response = await call_next(request)
     duration = time.time() - start_time
-    try:
-        with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/request_debug.log", "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now().isoformat()}] {request.method} {request.url.path} - Status: {response.status_code} - Duration: {duration:.4f}s\n")
-    except Exception as e:
-        # write error to console if possible
-        print("Log request error:", str(e))
+    if ENVIRONMENT == "development":
+        try:
+            with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/request_debug.log", "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now().isoformat()}] {request.method} {request.url.path} - Status: {response.status_code} - Duration: {duration:.4f}s\n")
+        except Exception as e:
+            # write error to console if possible
+            print("Log request error:", str(e))
     return response
 
 # ── Servir archivos de la biblioteca de imágenes ─────────────────────
@@ -133,6 +136,8 @@ app.include_router(dashboard_router, prefix="/api", dependencies=[Depends(get_cu
 app.include_router(knowledge_router, prefix="/api", dependencies=[Depends(get_current_user)])
 app.include_router(whatsapp_router, prefix="/api")
 app.include_router(mcp_router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(google_calendar_router, prefix="/api")
+app.include_router(free_models_router, prefix="/api", dependencies=[Depends(get_current_user)])
 
 # Router publico B2B multi-tenant (auth por API key en sus propias dependencias).
 app.include_router(public_api_router)

@@ -186,6 +186,15 @@ class MCPToolRegistry:
             if origin == "builtin" or is_builtin_tool(tool_name):
                 # Ejecutar tool built-in
                 result = await execute_builtin_tool(tool_name, arguments)
+            elif origin == "calendar_builtin":
+                # Ejecutar herramienta de Google Calendar
+                result = await self._execute_calendar_tool(
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    agent_id=agent_id,
+                    db=db,
+                    agent=agent,
+                )
             elif origin:
                 # Ejecutar en servidor MCP externo
                 result = await mcp_client_manager.execute_tool(
@@ -233,6 +242,116 @@ class MCPToolRegistry:
                     error=str(e),
                 )
             return {"error": str(e)}
+
+    async def _execute_calendar_tool(
+        self,
+        tool_name: str,
+        arguments: dict,
+        agent_id: str,
+        db: Session,
+        agent=None,
+    ) -> dict:
+        """
+        Ejecuta una herramienta de Google Calendar.
+
+        Delega al google_calendar_service según el nombre de la tool.
+        """
+        from services import google_calendar_service
+
+        timezone_str = "America/Bogota"
+        if agent and hasattr(agent, "timezone") and agent.timezone:
+            timezone_str = agent.timezone
+
+        logger.info(
+            "Ejecutando calendar tool '%s' para agente '%s' (tz=%s): %s",
+            tool_name,
+            agent_id,
+            timezone_str,
+            json.dumps(arguments, ensure_ascii=False),
+        )
+
+        try:
+            if tool_name == "check_calendar_availability":
+                return await google_calendar_service.check_availability(
+                    agent_id=agent_id,
+                    db=db,
+                    date=arguments["date"],
+                    timezone_str=timezone_str,
+                )
+
+            elif tool_name == "create_calendar_event":
+                date = arguments["date"]
+                start_time = arguments["start_time"]
+                end_time = arguments["end_time"]
+                start_dt = f"{date}T{start_time}:00"
+                end_dt = f"{date}T{end_time}:00"
+
+                return await google_calendar_service.create_event(
+                    agent_id=agent_id,
+                    db=db,
+                    summary=arguments["title"],
+                    start_datetime=start_dt,
+                    end_datetime=end_dt,
+                    timezone_str=timezone_str,
+                    attendee_name=arguments.get("attendee_name", ""),
+                    attendee_email=arguments.get("attendee_email", ""),
+                    description=arguments.get("description", ""),
+                )
+
+            elif tool_name == "list_upcoming_events":
+                from datetime import datetime, timedelta
+                from zoneinfo import ZoneInfo
+
+                tz = ZoneInfo(timezone_str)
+                now = datetime.now(tz)
+                days_ahead = arguments.get("days_ahead", 7)
+                time_max = (now + timedelta(days=days_ahead)).isoformat()
+
+                return {
+                    "events": await google_calendar_service.list_events(
+                        agent_id=agent_id,
+                        db=db,
+                        time_min=now.isoformat(),
+                        time_max=time_max,
+                        timezone_str=timezone_str,
+                    )
+                }
+
+            elif tool_name == "cancel_calendar_event":
+                return await google_calendar_service.cancel_event(
+                    agent_id=agent_id,
+                    db=db,
+                    event_id=arguments["event_id"],
+                    cancellation_reason=arguments.get("cancellation_reason", ""),
+                )
+
+            elif tool_name == "reschedule_calendar_event":
+                new_date = arguments["new_date"]
+                new_start = arguments["new_start_time"]
+                new_end = arguments["new_end_time"]
+                new_start_dt = f"{new_date}T{new_start}:00"
+                new_end_dt = f"{new_date}T{new_end}:00"
+
+                return await google_calendar_service.reschedule_event(
+                    agent_id=agent_id,
+                    db=db,
+                    event_id=arguments["event_id"],
+                    new_start=new_start_dt,
+                    new_end=new_end_dt,
+                    timezone_str=timezone_str,
+                )
+
+            else:
+                return {"error": f"Herramienta de calendario '{tool_name}' no reconocida."}
+
+        except Exception as e:
+            logger.error(
+                "Error ejecutando calendar tool '%s': %s",
+                tool_name,
+                str(e),
+                exc_info=True,
+            )
+            return {"error": f"Error en el calendario: {str(e)}"}
 
     async def _load_external_tools(
         self, db: Session, agent_id: str

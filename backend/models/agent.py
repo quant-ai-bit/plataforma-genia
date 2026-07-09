@@ -155,6 +155,72 @@ class Agent(Base):
         nullable=False,
         doc="Si el agente tiene WhatsApp conectado y verificado",
     )
+    whatsapp_provider = Column(
+        String(50),
+        default="meta_cloud",
+        nullable=False,
+        doc="Proveedor de WhatsApp: 'meta_cloud' o 'qr_code'",
+    )
+    whatsapp_qr_instance_name = Column(
+        String(100),
+        nullable=True,
+        doc="Nombre de la instancia de la API QR (Evolution API)",
+    )
+    whatsapp_qr_instance_token = Column(
+        Text,
+        nullable=True,
+        doc="Token de la instancia (cifrado) para interactuar con su API",
+    )
+    whatsapp_qr_connected = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+        doc="Si la línea QR está conectada",
+    )
+
+    # --- Google Calendar OAuth 2.0 (por agente/cliente) ---
+    google_calendar_client_id = Column(
+        String(255),
+        nullable=True,
+        doc="Client ID de Google API (OAuth 2.0) proporcionado por el cliente",
+    )
+    google_calendar_client_secret = Column(
+        Text,
+        nullable=True,
+        doc="Client Secret de Google API (OAuth 2.0, cifrado con Fernet)",
+    )
+    google_calendar_refresh_token = Column(
+        Text,
+        nullable=True,
+        doc="Refresh Token de Google OAuth (cifrado con Fernet) para acceso a Calendar",
+    )
+    google_calendar_connected = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+        doc="Si el agente tiene Google Calendar conectado y autorizado",
+    )
+    google_calendar_email = Column(
+        String(255),
+        nullable=True,
+        doc="Email de la cuenta de Google Calendar conectada",
+    )
+
+    # --- Transcripción de voz (STT) ---
+    stt_provider = Column(
+        String(50),
+        default="groq_whisper",
+        nullable=False,
+        doc="Proveedor de transcripción de voz: groq_whisper, google_stt, deepgram, openai_whisper",
+    )
+
+    # --- Zona horaria del agente ---
+    timezone = Column(
+        String(50),
+        default="America/Bogota",
+        nullable=False,
+        doc="Zona horaria del agente (ej: America/Bogota, America/Mexico_City)",
+    )
 
     created_at = Column(
         DateTime(timezone=True),

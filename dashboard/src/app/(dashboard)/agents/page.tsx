@@ -102,7 +102,7 @@ export default function AgentsPage() {
     }
 
     try {
-      const res = await authenticatedFetch(`/api/agents/`, {
+      const res = await authenticatedFetch(`/api/agents`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)

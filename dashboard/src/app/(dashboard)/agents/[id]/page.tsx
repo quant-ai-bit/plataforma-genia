@@ -48,7 +48,6 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
   const [agent, setAgent] = useState<Agent | null>(null);
   const [saveLoading, setSaveLoading] = useState<boolean>(false);
 
-  // Form State
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -59,7 +58,11 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     max_tokens: 1024,
     custom_fields: [] as any[],
     channels: [] as string[],
-    notification_phone: ""
+    notification_phone: "",
+    stt_provider: "groq_whisper",
+    timezone: "America/Bogota",
+    google_calendar_client_id: "",
+    google_calendar_client_secret: ""
   });
 
   // Collapsible Sections
@@ -69,9 +72,21 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     prompt: true,
     fields: true,
     channels: true,
+    calendar: true,
     advanced: false,
     visual: true
   });
+
+  // Google Calendar Integration State
+  const [calStatus, setCalStatus] = useState<{
+    connected: boolean;
+    email: string | null;
+  } | null>(null);
+  const [calStatusLoading, setCalStatusLoading] = useState<boolean>(false);
+  const [calDisconnecting, setCalDisconnecting] = useState<boolean>(false);
+  const [calEvents, setCalEvents] = useState<any[]>([]);
+  const [calEventsLoading, setCalEventsLoading] = useState<boolean>(false);
+  const [showCalSecrets, setShowCalSecrets] = useState<boolean>(false);
 
   // Custom Fields Editing State
   const [newField, setNewField] = useState({
@@ -91,6 +106,11 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     display_name: string | null;
     webhook_url: string | null;
     verify_token: string | null;
+    whatsapp_provider?: string;
+    whatsapp_qr_connected?: boolean;
+    whatsapp_qr_instance_name?: string | null;
+    qr_code?: string | null;
+    is_mock_mode?: boolean;
     error?: string;
   } | null>(null);
   const [waStatusLoading, setWaStatusLoading] = useState<boolean>(false);
@@ -135,7 +155,11 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
         max_tokens: foundAgent.max_tokens,
         custom_fields: foundAgent.custom_fields || [],
         channels: foundAgent.channels || ["web"],
-        notification_phone: foundAgent.notification_phone || ""
+        notification_phone: foundAgent.notification_phone || "",
+        stt_provider: foundAgent.stt_provider || "groq_whisper",
+        timezone: foundAgent.timezone || "America/Bogota",
+        google_calendar_client_id: foundAgent.google_calendar_client_id || "",
+        google_calendar_client_secret: ""
       });
     }
   }, [id, agents]);
@@ -144,8 +168,22 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     if (id) {
       loadKbImages();
       fetchWhatsAppStatus();
+      fetchCalendarStatus();
     }
   }, [id, isBackendOnline]);
+
+  // Polling para WhatsApp QR
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (waStatus?.whatsapp_provider === "qr_code" && !waStatus.connected && waStatus.whatsapp_qr_instance_name) {
+      interval = setInterval(() => {
+        fetchWhatsAppStatus();
+      }, 5000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [waStatus?.whatsapp_provider, waStatus?.connected, waStatus?.whatsapp_qr_instance_name]);
 
   const loadKbImages = async () => {
     setKbImagesLoading(true);
@@ -212,6 +250,148 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
       console.error("Error al obtener estado de WhatsApp:", err);
     } finally {
       setWaStatusLoading(false);
+    }
+  };
+
+  const fetchCalendarStatus = async () => {
+    if (!id) return;
+    if (!isBackendOnline) {
+      setCalStatus({
+        connected: false,
+        email: null
+      });
+      return;
+    }
+    setCalStatusLoading(true);
+    try {
+      const res = await authenticatedFetch(`/api/calendar/${id}/status`);
+      if (res.ok) {
+        const data = await res.json();
+        setCalStatus(data);
+        if (data.connected) {
+          fetchCalendarEvents();
+        }
+      }
+    } catch (err) {
+      console.error("Error al obtener estado de Calendar:", err);
+    } finally {
+      setCalStatusLoading(false);
+    }
+  };
+
+  const fetchCalendarEvents = async () => {
+    if (!id) return;
+    if (!isBackendOnline) return;
+    setCalEventsLoading(true);
+    try {
+      const res = await authenticatedFetch(`/api/calendar/${id}/events?days=7`);
+      if (res.ok) {
+        const data = await res.json();
+        setCalEvents(data.events || []);
+      }
+    } catch (err) {
+      console.error("Error al obtener eventos de Calendar:", err);
+    } finally {
+      setCalEventsLoading(false);
+    }
+  };
+
+  const handleDisconnectCalendar = async () => {
+    if (!confirm("¿Estás seguro de que deseas desconectar Google Calendar?")) return;
+    setCalDisconnecting(true);
+    try {
+      const res = await authenticatedFetch(`/api/calendar/${id}/disconnect`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        alert("📅 Google Calendar desconectado exitosamente.");
+        setCalStatus({ connected: false, email: null });
+        setCalEvents([]);
+        await loadBackendData();
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de conexión al desconectar Calendar.");
+    } finally {
+      setCalDisconnecting(false);
+    }
+  };
+
+  const handleConnectCalendar = async () => {
+    if (!form.google_calendar_client_id.trim()) {
+      alert("Por favor, ingresa el Client ID de Google para iniciar la conexión.");
+      return;
+    }
+    
+    setSaveLoading(true);
+    try {
+      const payload = {
+        name: form.name,
+        description: form.description || null,
+        system_prompt: form.system_prompt,
+        provider: form.provider,
+        model: form.model,
+        temperature: form.temperature,
+        max_tokens: form.max_tokens,
+        custom_fields: form.custom_fields,
+        channels: form.channels,
+        notification_phone: form.notification_phone || null,
+        stt_provider: form.stt_provider,
+        timezone: form.timezone,
+        google_calendar_client_id: form.google_calendar_client_id,
+        google_calendar_client_secret: form.google_calendar_client_secret || null
+      };
+
+      const res = await authenticatedFetch(`/api/agents/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      
+      if (!res.ok) {
+        alert("Error al guardar credenciales antes de conectar.");
+        setSaveLoading(false);
+        return;
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error guardando credenciales.");
+      setSaveLoading(false);
+      return;
+    } finally {
+      setSaveLoading(false);
+    }
+
+    try {
+      const origin = window.location.origin;
+      const res = await authenticatedFetch(`/api/calendar/${id}/auth-url?base_url=${encodeURIComponent(origin)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const width = 600, height = 650;
+        const left = (window.innerWidth - width) / 2;
+        const top = (window.innerHeight - height) / 2;
+        const popup = window.open(
+          data.auth_url,
+          "Google Calendar Authorization",
+          `width=${width},height=${height},left=${left},top=${top}`
+        );
+
+        const handleMessage = async (event: MessageEvent) => {
+          if (event.data && event.data.type === 'calendar_connected') {
+            alert(`📅 Calendario conectado con éxito: ${event.data.email}`);
+            await fetchCalendarStatus();
+            await loadBackendData();
+            window.removeEventListener('message', handleMessage);
+          }
+        };
+        window.addEventListener('message', handleMessage);
+      } else {
+        const data = await res.json();
+        alert(`Error al iniciar conexión: ${data.detail || "Verifica las credenciales."}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error al intentar conectar.");
     }
   };
 
@@ -305,6 +485,155 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
       alert("Error de conexión al desconectar.");
     } finally {
       setWaDisconnecting(false);
+    }
+  };
+
+  const handleConnectWhatsAppQR = async () => {
+    setWaConnecting(true);
+    if (!isBackendOnline) {
+      setTimeout(() => {
+        setWaStatus({
+          connected: false,
+          phone_number_id: null,
+          phone_number: null,
+          display_name: null,
+          webhook_url: `/api/whatsapp/webhook/qr/${id}`,
+          verify_token: `genia_verify_${id.split("-")[0]}`,
+          whatsapp_provider: "qr_code",
+          whatsapp_qr_connected: false,
+          whatsapp_qr_instance_name: `genia_agent_${id}`,
+          qr_code: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJQAAACUAQMAAABvMD4ZAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAAlwSFlzAAAOxAAADsQBlbZJywAAABpJREFUeNpiYGBgYGBgYGBgYGBgYGBgYGBgYADADAADwABg4m4AAAAASUVORK5CYII=",
+          is_mock_mode: true
+        });
+        setForm(prev => ({
+          ...prev,
+          channels: prev.channels.includes("whatsapp") ? prev.channels : [...prev.channels, "whatsapp"]
+        }));
+        setWaConnecting(false);
+        alert("🔌 Instancia QR generada en modo simulación (Mock)");
+      }, 1000);
+      return;
+    }
+
+    try {
+      const res = await authenticatedFetch(`/api/whatsapp/${id}/qr/connect`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Cargar el estado actualizado del servidor
+        await fetchWhatsAppStatus();
+        // Si el endpoint devolvió el QR directamente, aplicarlo al estado para mostrarlo de inmediato
+        if (data.qr_code) {
+          setWaStatus(prev => prev ? { ...prev, qr_code: data.qr_code } : prev);
+        }
+        alert("🔌 Instancia QR generada. Por favor escanea el código QR.");
+      } else {
+        const data = await res.json();
+        alert(`Error al generar código QR: ${data.detail || JSON.stringify(data)}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de conexión al generar QR.");
+    } finally {
+      setWaConnecting(false);
+    }
+  };
+
+  const handleDisconnectWhatsAppQR = async () => {
+    if (!confirm("¿Estás seguro de que deseas desconectar WhatsApp QR de este agente?")) return;
+    setWaDisconnecting(true);
+
+    if (!isBackendOnline) {
+      setTimeout(() => {
+        setWaStatus({
+          connected: false,
+          phone_number_id: null,
+          phone_number: null,
+          display_name: null,
+          webhook_url: "/api/whatsapp/webhook",
+          verify_token: `genia_verify_${id.split("-")[0]}`,
+          whatsapp_provider: "meta_cloud",
+          whatsapp_qr_connected: false,
+          whatsapp_qr_instance_name: null,
+          qr_code: null
+        });
+        setWaDisconnecting(false);
+        alert("🔌 WhatsApp QR desconectado en modo simulación (Mock)");
+      }, 1000);
+      return;
+    }
+
+    try {
+      const res = await authenticatedFetch(`/api/whatsapp/${id}/qr/disconnect`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        alert("🔌 WhatsApp QR desconectado exitosamente.");
+        await fetchWhatsAppStatus();
+        await loadBackendData();
+      } else {
+        const data = await res.json();
+        alert(`Error al desconectar WhatsApp QR: ${data.detail || JSON.stringify(data)}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de conexión al desconectar QR.");
+    } finally {
+      setWaDisconnecting(false);
+    }
+  };
+
+  const handleSimulateScan = async () => {
+    if (!isBackendOnline) {
+      setWaStatus(prev => prev ? {
+        ...prev,
+        connected: true,
+        whatsapp_qr_connected: true,
+        phone_number: "573103125460",
+        display_name: "Línea QR Simulada"
+      } : null);
+      alert("🔌 Escaneo de QR simulado exitosamente en modo local.");
+      return;
+    }
+
+    try {
+      const res = await authenticatedFetch(`/api/whatsapp/${id}/qr/simulate-scan`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        await fetchWhatsAppStatus();
+        alert("🔌 Escaneo de QR simulado exitosamente.");
+      } else {
+        const data = await res.json();
+        alert(`Error al simular escaneo: ${data.detail || JSON.stringify(data)}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de conexión con el backend.");
+    }
+  };
+
+  const changeWhatsAppProvider = async (provider: "meta_cloud" | "qr_code") => {
+    if (!isBackendOnline) {
+      setWaStatus(prev => prev ? { ...prev, whatsapp_provider: provider } : null);
+      return;
+    }
+
+    try {
+      const res = await authenticatedFetch(`/api/whatsapp/${id}/provider`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider })
+      });
+      if (res.ok) {
+        await fetchWhatsAppStatus();
+      } else {
+        const data = await res.json();
+        alert(`Error al cambiar de proveedor: ${data.detail || JSON.stringify(data)}`);
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -530,7 +859,11 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
       max_tokens: form.max_tokens,
       custom_fields: form.custom_fields,
       channels: form.channels,
-      notification_phone: form.notification_phone || null
+      notification_phone: form.notification_phone || null,
+      stt_provider: form.stt_provider,
+      timezone: form.timezone,
+      google_calendar_client_id: form.google_calendar_client_id || null,
+      google_calendar_client_secret: form.google_calendar_client_secret || null
     };
 
     if (!isBackendOnline) {
@@ -712,6 +1045,37 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                   onChange={e => setForm(prev => ({ ...prev, max_tokens: parseInt(e.target.value) || 1024 }))}
                   className="w-full bg-[#0c101c] border border-gray-850 focus:border-blue-500 rounded-xl px-4 py-2 text-white focus:outline-none"
                 />
+              </div>
+              <div>
+                <label className="block text-gray-400 font-semibold mb-1">Proveedor de Notas de Voz (STT)</label>
+                <select
+                  value={form.stt_provider}
+                  onChange={e => setForm(prev => ({ ...prev, stt_provider: e.target.value }))}
+                  className="w-full bg-[#0c101c] border border-gray-850 focus:border-blue-500 rounded-xl px-4 py-2 text-white focus:outline-none font-semibold"
+                >
+                  <option value="groq_whisper">Groq Whisper (Recomendado - Español)</option>
+                  <option value="openai_whisper">OpenAI Whisper API</option>
+                  <option value="deepgram">Deepgram Nova-3 (Baja Latencia)</option>
+                  <option value="google_stt">Google Cloud Speech-to-Text</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-gray-400 font-semibold mb-1">Zona Horaria del Negocio</label>
+                <select
+                  value={form.timezone}
+                  onChange={e => setForm(prev => ({ ...prev, timezone: e.target.value }))}
+                  className="w-full bg-[#0c101c] border border-gray-850 focus:border-blue-500 rounded-xl px-4 py-2 text-white focus:outline-none font-semibold"
+                >
+                  <option value="America/Bogota">Colombia (UTC-5 - Por Defecto)</option>
+                  <option value="America/Mexico_City">México (UTC-6)</option>
+                  <option value="America/Lima">Perú (UTC-5)</option>
+                  <option value="America/Caracas">Venezuela (UTC-4)</option>
+                  <option value="America/Santiago">Chile (UTC-3)</option>
+                  <option value="America/Argentina/Buenos_Aires">Argentina (UTC-3)</option>
+                  <option value="America/New_York">Estados Unidos EST (UTC-5)</option>
+                  <option value="America/Los_Angeles">Estados Unidos PST (UTC-8)</option>
+                  <option value="Europe/Madrid">España (UTC+1)</option>
+                </select>
               </div>
             </div>
           )}
@@ -946,29 +1310,57 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
 
               {/* Sub-sección WhatsApp */}
               {form.channels.includes("whatsapp") && (
-                <div className="p-5 bg-[#0e1324]/80 border border-green-500/10 rounded-2xl space-y-5 backdrop-blur-md shadow-lg shadow-green-500/5 transition-all">
+                <div className="p-6 bg-[#0e1324]/80 border border-green-500/10 rounded-2xl space-y-6 backdrop-blur-md shadow-lg shadow-green-500/5 transition-all">
                   
                   {/* Header */}
-                  <div className="flex items-center justify-between pb-3 border-b border-gray-800">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-800">
                     <div className="flex items-center gap-2">
                       <Phone className="w-5 h-5 text-green-400 animate-pulse" />
                       <div>
-                        <span className="text-sm font-bold text-white block">WhatsApp Cloud API</span>
-                        <span className="text-[10px] text-gray-400">Vincula la línea de WhatsApp de tu cliente a este agente</span>
+                        <span className="text-sm font-bold text-white block">Integración de WhatsApp</span>
+                        <span className="text-[10px] text-gray-400">Elige cómo vincular el agente con la línea de WhatsApp</span>
                       </div>
                     </div>
+
+                    {/* Tabs de Proveedor */}
+                    <div className="flex bg-[#070b16] p-1 rounded-xl border border-gray-800">
+                      <button
+                        type="button"
+                        onClick={() => changeWhatsAppProvider("meta_cloud")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                          (waStatus?.whatsapp_provider || "meta_cloud") === "meta_cloud"
+                            ? "bg-green-500/20 text-green-400 border border-green-500/20"
+                            : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        Oficial (Meta API)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => changeWhatsAppProvider("qr_code")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                          waStatus?.whatsapp_provider === "qr_code"
+                            ? "bg-green-500/20 text-green-400 border border-green-500/20"
+                            : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        Código QR (Baileys)
+                      </button>
+                    </div>
+
+                    {/* Estado de Conexión */}
                     {waStatusLoading ? (
-                      <div className="flex items-center gap-1.5 px-2 py-0.5 bg-gray-800/40 text-gray-400 text-[10px] rounded-full">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-800/40 text-gray-400 text-[10px] rounded-full">
                         <Loader2 className="w-3 h-3 animate-spin text-green-400" />
                         <span>Verificando...</span>
                       </div>
                     ) : waStatus?.connected ? (
-                      <span className="px-2.5 py-0.5 bg-green-500/10 text-green-400 border border-green-500/20 text-[10px] rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
+                      <span className="px-2.5 py-1 bg-green-500/10 text-green-400 border border-green-500/20 text-[10px] rounded-full font-bold uppercase tracking-wider flex items-center gap-1 self-start sm:self-auto">
                         <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-ping"></span>
                         Conectado
                       </span>
                     ) : (
-                      <span className="px-2.5 py-0.5 bg-gray-800 text-gray-400 border border-gray-700 text-[10px] rounded-full font-bold uppercase tracking-wider">
+                      <span className="px-2.5 py-1 bg-gray-800 text-gray-400 border border-gray-700 text-[10px] rounded-full font-bold uppercase tracking-wider self-start sm:self-auto">
                         Desconectado
                       </span>
                     )}
@@ -989,214 +1381,319 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                     </p>
                   </div>
 
-                  {/* Connected State UI */}
-                  {waStatus?.connected ? (
-                    <div className="space-y-4">
-                      {/* Meta Line Details */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-green-500/[0.02] p-4 border border-green-500/10 rounded-xl">
-                        <div>
-                          <span className="text-gray-400 text-[10px] block">Nombre de la Línea (Meta)</span>
-                          <span className="text-white text-xs font-semibold">{waStatus.display_name || 'No disponible'}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-400 text-[10px] block">Número Telefónico</span>
-                          <span className="text-white text-xs font-semibold">{waStatus.phone_number || 'No disponible'}</span>
-                        </div>
-                        <div className="md:col-span-2">
-                          <span className="text-gray-400 text-[10px] block">Phone Number ID</span>
-                          <span className="font-mono text-gray-300 text-xs">{waStatus.phone_number_id}</span>
-                        </div>
-                      </div>
+                  {/* VISTA 1: Proveedor META CLOUD API */}
+                  {(waStatus?.whatsapp_provider || "meta_cloud") === "meta_cloud" && (
+                    <div className="space-y-5">
+                      {waStatus?.connected ? (
+                        <div className="space-y-4">
+                          {/* Detalles del número oficial */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-green-500/[0.02] p-4 border border-green-500/10 rounded-xl">
+                            <div>
+                              <span className="text-gray-400 text-[10px] block">Nombre de la Línea (Meta)</span>
+                              <span className="text-white text-xs font-semibold">{waStatus.display_name || 'No disponible'}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-400 text-[10px] block">Número Telefónico</span>
+                              <span className="text-white text-xs font-semibold">{waStatus.phone_number || 'No disponible'}</span>
+                            </div>
+                            <div className="md:col-span-2">
+                              <span className="text-gray-400 text-[10px] block">Phone Number ID</span>
+                              <span className="font-mono text-gray-300 text-xs">{waStatus.phone_number_id}</span>
+                            </div>
+                          </div>
 
-                      {/* Instructions for Meta Developer Portal */}
-                      <div className="bg-[#070b16]/60 p-4 border border-gray-850 rounded-xl space-y-3">
-                        <span className="text-xs font-bold text-blue-400 block">Configuración de Webhook en Meta</span>
-                        <p className="text-[10px] text-gray-400 leading-relaxed">
-                          Para recibir los mensajes entrantes de tus clientes, asegúrate de que el webhook en el Portal de Desarrolladores de Meta esté configurado con los siguientes datos:
-                        </p>
-                        
-                        <div className="space-y-2 text-xs">
-                          <div>
-                            <span className="text-gray-400 text-[10px] block mb-1">URL de la Rellamada (Callback URL)</span>
+                          {/* Callback URLs */}
+                          <div className="bg-[#070b16]/60 p-4 border border-gray-850 rounded-xl space-y-3">
+                            <span className="text-xs font-bold text-blue-400 block">Configuración de Webhook en Meta</span>
+                            <p className="text-[10px] text-gray-400 leading-relaxed">
+                              Configura el webhook en tu aplicación de Meta Developers con los siguientes datos:
+                            </p>
+                            
+                            <div className="space-y-2 text-xs">
+                              <div>
+                                <span className="text-gray-400 text-[10px] block mb-1">URL de la Rellamada (Callback URL)</span>
+                                <div className="flex items-center gap-2 bg-[#0c101c] border border-gray-800 rounded-lg p-2 font-mono">
+                                  <span className="text-gray-300 truncate flex-1 text-[11px]">
+                                    {typeof window !== "undefined" ? `${window.location.origin}${waStatus.webhook_url}` : `https://plataforma.genia.com.co${waStatus.webhook_url}`}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const url = typeof window !== "undefined" ? `${window.location.origin}${waStatus.webhook_url}` : `https://plataforma.genia.com.co${waStatus.webhook_url}`;
+                                      navigator.clipboard.writeText(url);
+                                      setCopiedWebhook(true);
+                                      setTimeout(() => setCopiedWebhook(false), 2000);
+                                    }}
+                                    className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition"
+                                  >
+                                    {copiedWebhook ? <CheckCircle className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div>
+                                <span className="text-gray-400 text-[10px] block mb-1">Token de Verificación (Verify Token)</span>
+                                <div className="flex items-center gap-2 bg-[#0c101c] border border-gray-800 rounded-lg p-2 font-mono">
+                                  <span className="text-gray-300 truncate flex-1 text-[11px]">
+                                    {waStatus.verify_token || "Token no configurado"}
+                                  </span>
+                                  {waStatus.verify_token && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(waStatus.verify_token || "");
+                                        setCopiedToken(true);
+                                        setTimeout(() => setCopiedToken(false), 2000);
+                                      }}
+                                      className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition"
+                                    >
+                                      {copiedToken ? <CheckCircle className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              disabled={waDisconnecting}
+                              onClick={handleDisconnectWhatsApp}
+                              className="flex items-center gap-1.5 px-4 py-2 border border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/15 rounded-xl transition text-xs font-semibold disabled:opacity-50 cursor-pointer"
+                            >
+                              {waDisconnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                              Desconectar WhatsApp
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="p-3.5 bg-blue-500/5 border border-blue-500/10 rounded-xl space-y-1">
+                            <span className="text-xs font-bold text-blue-300 block">¿Cómo conectar la API oficial?</span>
+                            <p className="text-[10px] text-gray-400 leading-relaxed">
+                              Ingresa el <strong>Phone Number ID</strong>, el <strong>App Secret</strong> y tu <strong>Access Token</strong> permanente de Meta.
+                            </p>
+                          </div>
+
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Phone Number ID (Meta) *</label>
+                              <input
+                                type="text"
+                                placeholder="Ej: 104843928471203"
+                                value={waForm.phone_number_id}
+                                onChange={e => setWaForm(prev => ({ ...prev, phone_number_id: e.target.value }))}
+                                className="w-full bg-[#0c101c] border border-gray-850 focus:border-green-500 rounded-xl px-4 py-2 text-white focus:outline-none text-xs transition-all"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-gray-400 font-semibold mb-1 text-[11px]">App Secret de Meta *</label>
+                                <div className="relative">
+                                  <input
+                                    type={showWaSecrets ? "text" : "password"}
+                                    placeholder="Meta App Secret"
+                                    value={waForm.app_secret}
+                                    onChange={e => setWaForm(prev => ({ ...prev, app_secret: e.target.value }))}
+                                    className="w-full bg-[#0c101c] border border-gray-850 focus:border-green-500 rounded-xl pl-4 pr-10 py-2 text-white focus:outline-none text-xs transition-all font-mono"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowWaSecrets(!showWaSecrets)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition"
+                                  >
+                                    {showWaSecrets ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Verify Token del Webhook *</label>
+                                <input
+                                  type="text"
+                                  placeholder="Ej: genia_verify_token"
+                                  value={waForm.verify_token}
+                                  onChange={e => setWaForm(prev => ({ ...prev, verify_token: e.target.value }))}
+                                  className="w-full bg-[#0c101c] border border-gray-850 focus:border-green-500 rounded-xl px-4 py-2 text-white focus:outline-none text-xs transition-all font-mono"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Meta Access Token Permanente *</label>
+                              <div className="relative">
+                                <textarea
+                                  rows={2}
+                                  placeholder="EATB..."
+                                  value={waForm.access_token}
+                                  onChange={e => setWaForm(prev => ({ ...prev, access_token: e.target.value }))}
+                                  className="w-full bg-[#0c101c] border border-gray-850 focus:border-green-500 rounded-xl pl-4 pr-10 py-2 text-white focus:outline-none text-xs transition-all font-mono resize-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowWaSecrets(!showWaSecrets)}
+                                  className="absolute right-3 top-4 text-gray-500 hover:text-white transition"
+                                >
+                                  {showWaSecrets ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              disabled={waConnecting}
+                              onClick={handleConnectWhatsApp}
+                              className="flex items-center gap-1.5 px-5 py-2 border border-green-500/25 bg-green-500/10 text-green-400 hover:bg-green-500/15 rounded-xl transition text-xs font-semibold disabled:opacity-50 cursor-pointer"
+                            >
+                              {waConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Phone className="w-3.5 h-3.5" />}
+                              Conectar WhatsApp
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* VISTA 2: Proveedor CÓDIGO QR */}
+                  {waStatus?.whatsapp_provider === "qr_code" && (
+                    <div className="space-y-5">
+                      {waStatus?.connected ? (
+                        <div className="space-y-4">
+                          {/* Detalles del número QR */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-green-500/[0.02] p-4 border border-green-500/10 rounded-xl">
+                            <div>
+                              <span className="text-gray-400 text-[10px] block">Nombre del Dispositivo Vinculado</span>
+                              <span className="text-white text-xs font-semibold">{waStatus.display_name || 'Línea QR Conectada'}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-400 text-[10px] block">Número de Teléfono</span>
+                              <span className="text-white text-xs font-semibold">+{waStatus.phone_number || 'No disponible'}</span>
+                            </div>
+                            <div className="md:col-span-2">
+                              <span className="text-gray-400 text-[10px] block">ID de Instancia</span>
+                              <span className="font-mono text-gray-300 text-xs">{waStatus.whatsapp_qr_instance_name}</span>
+                            </div>
+                          </div>
+
+                          {/* Webhook del QR */}
+                          <div className="bg-[#070b16]/60 p-4 border border-gray-850 rounded-xl space-y-2">
+                            <span className="text-xs font-bold text-blue-400 block">Webhook de Eventos QR</span>
+                            <span className="text-gray-400 text-[10px] block mb-1">Ruta del Webhook Activo</span>
                             <div className="flex items-center gap-2 bg-[#0c101c] border border-gray-800 rounded-lg p-2 font-mono">
                               <span className="text-gray-300 truncate flex-1 text-[11px]">
                                 {typeof window !== "undefined" ? `${window.location.origin}${waStatus.webhook_url}` : `https://plataforma.genia.com.co${waStatus.webhook_url}`}
                               </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const url = typeof window !== "undefined" ? `${window.location.origin}${waStatus.webhook_url}` : `https://plataforma.genia.com.co${waStatus.webhook_url}`;
-                                  navigator.clipboard.writeText(url);
-                                  setCopiedWebhook(true);
-                                  setTimeout(() => setCopiedWebhook(false), 2000);
-                                }}
-                                className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition"
-                              >
-                                {copiedWebhook ? <CheckCircle className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                              </button>
                             </div>
+                            <p className="text-[10px] text-gray-500">
+                              Los eventos y mensajes entrantes son recibidos automáticamente desde tu middleware de códigos QR.
+                            </p>
                           </div>
 
-                          <div>
-                            <span className="text-gray-400 text-[10px] block mb-1">Token de Verificación (Verify Token)</span>
-                            <div className="flex items-center gap-2 bg-[#0c101c] border border-gray-800 rounded-lg p-2 font-mono">
-                              <span className="text-gray-300 truncate flex-1 text-[11px]">
-                                {waStatus.verify_token || "Token no configurado"}
-                              </span>
-                              {waStatus.verify_token && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(waStatus.verify_token || "");
-                                    setCopiedToken(true);
-                                    setTimeout(() => setCopiedToken(false), 2000);
-                                  }}
-                                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition"
-                                >
-                                  {copiedToken ? <CheckCircle className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-start gap-1.5 text-[10px] text-amber-400 bg-amber-500/5 p-2 rounded-lg border border-amber-500/10 mt-2">
-                          <span className="font-bold">Nota:</span>
-                          <span>Debes suscribirte al campo <strong>messages</strong> en la sección Webhooks de WhatsApp del Portal de Meta.</span>
-                        </div>
-                      </div>
-
-                      {/* Disconnect Button */}
-                      <div className="flex justify-end pt-2">
-                        <button
-                          type="button"
-                          disabled={waDisconnecting}
-                          onClick={handleDisconnectWhatsApp}
-                          className="flex items-center gap-1.5 px-4 py-2 border border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/15 rounded-xl transition text-xs font-semibold cursor-pointer disabled:opacity-50"
-                        >
-                          {waDisconnecting ? (
-                            <>
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              Desconectando...
-                            </>
-                          ) : (
-                            <>
-                              <X className="w-3.5 h-3.5" />
-                              Desconectar WhatsApp
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    /* Disconnected State: Show Connection Form */
-                    <div className="space-y-4">
-                      <div className="p-3 bg-blue-500/5 border border-blue-500/10 rounded-xl space-y-1">
-                        <span className="text-xs font-bold text-blue-300 block">¿Cómo conectar tu línea de WhatsApp?</span>
-                        <p className="text-[10px] text-gray-400 leading-relaxed">
-                          Necesitas una cuenta comercial de Meta para Desarrolladores. Obtén tu <strong>Phone Number ID</strong>, un <strong>Access Token</strong> permanente de sistema y el <strong>App Secret</strong> de tu aplicación en Meta.
-                        </p>
-                      </div>
-
-                      <div className="space-y-3">
-                        <div>
-                          <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Phone Number ID (Meta) *</label>
-                          <input
-                            type="text"
-                            placeholder="Ej: 104843928471203"
-                            value={waForm.phone_number_id}
-                            onChange={e => setWaForm(prev => ({ ...prev, phone_number_id: e.target.value }))}
-                            className="w-full bg-[#0c101c] border border-gray-850 focus:border-green-500 rounded-xl px-4 py-2 text-white focus:outline-none text-xs transition-all"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-gray-400 font-semibold mb-1 text-[11px]">App Secret de Meta *</label>
-                            <div className="relative">
-                              <input
-                                type={showWaSecrets ? "text" : "password"}
-                                placeholder="Ingresa tu Meta App Secret"
-                                value={waForm.app_secret}
-                                onChange={e => setWaForm(prev => ({ ...prev, app_secret: e.target.value }))}
-                                className="w-full bg-[#0c101c] border border-gray-850 focus:border-green-500 rounded-xl pl-4 pr-10 py-2 text-white focus:outline-none text-xs transition-all font-mono"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setShowWaSecrets(!showWaSecrets)}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition"
-                              >
-                                {showWaSecrets ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                              </button>
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Token de Verificación del Webhook *</label>
-                            <input
-                              type="text"
-                              placeholder="Ej: genia_verify_token"
-                              value={waForm.verify_token}
-                              onChange={e => setWaForm(prev => ({ ...prev, verify_token: e.target.value }))}
-                              className="w-full bg-[#0c101c] border border-gray-850 focus:border-green-500 rounded-xl px-4 py-2 text-white focus:outline-none text-xs transition-all font-mono"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Meta Access Token Permanente *</label>
-                          <div className="relative">
-                            <textarea
-                              rows={2}
-                              placeholder="EATB..."
-                              value={waForm.access_token}
-                              onChange={e => setWaForm(prev => ({ ...prev, access_token: e.target.value }))}
-                              className="w-full bg-[#0c101c] border border-gray-850 focus:border-green-500 rounded-xl pl-4 pr-10 py-2 text-white focus:outline-none text-xs transition-all font-mono resize-none"
-                            />
+                          <div className="flex justify-end">
                             <button
                               type="button"
-                              onClick={() => setShowWaSecrets(!showWaSecrets)}
-                              className="absolute right-3 top-4 text-gray-500 hover:text-white transition"
+                              disabled={waDisconnecting}
+                              onClick={handleDisconnectWhatsAppQR}
+                              className="flex items-center gap-1.5 px-4 py-2 border border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/15 rounded-xl transition text-xs font-semibold disabled:opacity-50 cursor-pointer"
                             >
-                              {showWaSecrets ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              {waDisconnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                              Desconectar Línea QR
                             </button>
                           </div>
-                          <span className="text-[9px] text-gray-500 mt-1 block">
-                            Se recomienda utilizar un Token de Acceso de Sistema Permanente (System User Access Token) para evitar que expire.
-                          </span>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="space-y-5">
+                          {waStatus?.qr_code ? (
+                            <div className="flex flex-col items-center p-6 bg-[#070b16]/60 border border-gray-850 rounded-xl space-y-4">
+                              <span className="text-xs font-bold text-white">Escanea el Código QR</span>
+                              <p className="text-[10px] text-gray-400 text-center max-w-sm leading-relaxed">
+                                Abre WhatsApp en tu celular, ve a <strong>Dispositivos Vinculados</strong> y escanea este código para conectar el agente de inmediato.
+                              </p>
+                              
+                              {/* QR Code Container */}
+                              <div className="p-4 bg-white rounded-xl border border-gray-700 shadow-md">
+                                <img
+                                  src={waStatus.qr_code}
+                                  alt="Código QR WhatsApp"
+                                  className="w-44 h-44 object-contain"
+                                />
+                              </div>
 
-                      <div className="flex justify-end pt-2">
-                        <button
-                          type="button"
-                          disabled={waConnecting}
-                          onClick={handleConnectWhatsApp}
-                          className="flex items-center gap-1.5 px-5 py-2 border border-green-500/25 bg-green-500/10 text-green-400 hover:bg-green-500/15 rounded-xl transition text-xs font-semibold cursor-pointer disabled:opacity-50"
-                        >
-                          {waConnecting ? (
-                            <>
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              Conectando con Meta...
-                            </>
+                              <div className="flex items-center gap-2 text-xs text-green-400 font-medium">
+                                <Loader2 className="w-4 h-4 animate-spin text-green-400" />
+                                <span>Esperando escaneo en el móvil...</span>
+                              </div>
+
+                              {/* Botones de Acción QR */}
+                              <div className="flex flex-wrap justify-center gap-3 pt-2">
+                                <button
+                                  type="button"
+                                  onClick={handleConnectWhatsAppQR}
+                                  className="px-4 py-2 bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700 rounded-xl transition text-xs font-semibold cursor-pointer"
+                                >
+                                  Regenerar QR
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleDisconnectWhatsAppQR}
+                                  className="px-4 py-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/25 rounded-xl transition text-xs font-semibold cursor-pointer"
+                                >
+                                  Cancelar
+                                </button>
+                                {waStatus?.is_mock_mode && (
+                                  <button
+                                    type="button"
+                                    onClick={handleSimulateScan}
+                                    className="px-4 py-2 bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/35 rounded-xl transition text-xs font-bold flex items-center gap-1 cursor-pointer animate-bounce"
+                                  >
+                                    ⚡ Simular Escaneo
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                           ) : (
-                            <>
-                              <Phone className="w-3.5 h-3.5" />
-                              Conectar WhatsApp
-                            </>
+                            <div className="flex flex-col items-center p-6 bg-[#070b16]/60 border border-gray-850 rounded-xl space-y-4 text-center">
+                              <span className="text-xs font-bold text-white">Vincular mediante Código QR</span>
+                              <p className="text-[10px] text-gray-400 max-w-sm leading-relaxed">
+                                Este método te permite vincular cualquier número de WhatsApp activo sin necesidad de crear una cuenta en Meta Developer Portal.
+                              </p>
+                              
+                              <button
+                                type="button"
+                                disabled={waConnecting}
+                                onClick={handleConnectWhatsAppQR}
+                                className="flex items-center gap-2 px-5 py-2.5 bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/30 rounded-xl transition text-xs font-bold disabled:opacity-50 cursor-pointer"
+                              >
+                                {waConnecting ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 animate-spin text-green-400" />
+                                    <span>Generando instancia...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Phone className="w-4 h-4" />
+                                    <span>Generar Código QR</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
                           )}
-                        </button>
-                      </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {/* Error banner from Meta connection */}
+                  {/* Error banner */}
                   {waStatus?.error && (
                     <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-[10px] leading-relaxed">
                       <span className="font-bold block mb-0.5">⚠️ Error en la conexión activa:</span>
                       {waStatus.error}
                       <span className="block mt-1 text-gray-400">
-                        Esto suele ocurrir si el Access Token ha expirado, fue revocado, o si la línea tiene problemas en el panel de Meta. Por favor verifica las credenciales y vuelve a conectar.
+                        Por favor verifica la configuración y vuelve a intentar la conexión.
                       </span>
                     </div>
                   )}
@@ -1207,7 +1704,152 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
           )}
         </div>
 
-        {/* ── SECCIÓN 6: ENTRENAMIENTO VISUAL ── */}
+        {/* ── SECCIÓN 6: INTEGRACIÓN DE GOOGLE CALENDAR ── */}
+        <div className="glow-card rounded-2xl overflow-hidden">
+          <button
+            type="button"
+            onClick={() => toggleSection("calendar")}
+            className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-white/[0.02] transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                <Calendar className="w-4 h-4 text-emerald-400" />
+              </div>
+              <span className="font-bold text-white text-sm">Google Calendar</span>
+              {calStatus?.connected ? (
+                <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-[10px] rounded-full font-bold">Activo</span>
+              ) : (
+                <span className="px-2 py-0.5 bg-gray-800 text-gray-400 text-[10px] rounded-full font-bold">Inactivo</span>
+              )}
+            </div>
+            {expandedSections.calendar ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+          </button>
+
+          {expandedSections.calendar && (
+            <div className="px-6 pb-6 border-t border-gray-800/50 pt-4 space-y-4">
+              <div className="p-4 bg-blue-500/5 border border-blue-500/10 rounded-xl space-y-2">
+                <span className="text-xs font-bold text-blue-300 block">¿Cómo obtener tus credenciales de Google Calendar?</span>
+                <ol className="list-decimal pl-4 text-[10px] text-gray-400 space-y-1 leading-relaxed">
+                  <li>Ve a la <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">Google Cloud Console</a> y crea o selecciona un proyecto.</li>
+                  <li>Habilita la <strong>Google Calendar API</strong> desde la biblioteca de APIs.</li>
+                  <li>Ve a <strong>APIs & Services &gt; Credentials</strong> y configura la pantalla de consentimiento OAuth.</li>
+                  <li>Crea credenciales de tipo <strong>OAuth Client ID</strong> (Application type: Web application).</li>
+                  <li>Añade como URI de redirección autorizado (Authorized redirect URIs): <br/>
+                    <code className="bg-[#070b13] px-1.5 py-0.5 rounded font-mono text-[9px] text-gray-300">
+                      {typeof window !== "undefined" ? `${window.location.origin}/api/calendar/${id}/callback` : `https://plataforma.genia.com.co/api/calendar/${id}/callback`}
+                    </code>
+                  </li>
+                  <li>Copia el <strong>Client ID</strong> y el <strong>Client Secret</strong> e ingrésalos abajo.</li>
+                </ol>
+              </div>
+
+              {calStatus?.connected ? (
+                <div className="space-y-4 animate-fadeIn">
+                  {/* Connected Status Card */}
+                  <div className="p-4 bg-emerald-500/[0.02] border border-emerald-500/10 rounded-xl flex items-center justify-between">
+                    <div>
+                      <span className="text-gray-400 text-[10px] block">Cuenta conectada</span>
+                      <span className="text-white text-xs font-bold font-mono">{calStatus.email}</span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={calDisconnecting}
+                      onClick={handleDisconnectCalendar}
+                      className="px-4 py-2 border border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/15 rounded-xl transition text-xs font-semibold cursor-pointer flex items-center gap-1.5"
+                    >
+                      {calDisconnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                      Desconectar
+                    </button>
+                  </div>
+
+                  {/* Upcoming events preview */}
+                  <div className="space-y-2">
+                    <span className="text-gray-300 font-bold text-xs block">Próximos Eventos (7 días)</span>
+                    {calEventsLoading ? (
+                      <div className="flex justify-center py-6">
+                        <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
+                      </div>
+                    ) : calEvents.length > 0 ? (
+                      <div className="max-h-60 overflow-y-auto space-y-2 border border-gray-850 p-2 rounded-xl bg-gray-900/10">
+                        {calEvents.map((evt: any) => {
+                          const start = new Date(evt.start);
+                          return (
+                            <div key={evt.id} className="p-2.5 bg-gray-900/30 border border-gray-800 rounded-lg flex items-center justify-between text-[11px]">
+                              <div>
+                                <span className="text-white font-bold block">{evt.title}</span>
+                                <span className="text-gray-400">{start.toLocaleString()}</span>
+                              </div>
+                              <div className="text-right">
+                                {evt.attendees && evt.attendees.length > 0 && (
+                                  <span className="text-[10px] text-blue-400 block max-w-40 truncate" title={evt.attendees.join(", ")}>
+                                    {evt.attendees[0]}
+                                  </span>
+                                )}
+                                <span className="text-[9px] text-gray-500 block uppercase font-bold">{evt.status}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 border border-dashed border-gray-800 rounded-xl text-gray-500 text-[11px] italic">
+                        No hay eventos programados en los próximos 7 días.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3 animate-fadeIn">
+                  {/* Credentials Fields */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Client ID de Google *</label>
+                      <input
+                        type="text"
+                        placeholder="Ingresa tu Google Client ID"
+                        value={form.google_calendar_client_id}
+                        onChange={e => setForm(prev => ({ ...prev, google_calendar_client_id: e.target.value }))}
+                        className="w-full bg-[#0c101c] border border-gray-850 focus:border-emerald-500 rounded-xl px-4 py-2 text-white focus:outline-none text-xs transition-all font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Client Secret de Google *</label>
+                      <div className="relative">
+                        <input
+                          type={showCalSecrets ? "text" : "password"}
+                          placeholder={agent.google_calendar_client_id ? "•••••••••••••••• (Cifrado - dejar en blanco para no modificar)" : "Ingresa tu Google Client Secret"}
+                          value={form.google_calendar_client_secret}
+                          onChange={e => setForm(prev => ({ ...prev, google_calendar_client_secret: e.target.value }))}
+                          className="w-full bg-[#0c101c] border border-gray-850 focus:border-emerald-500 rounded-xl pl-4 pr-10 py-2 text-white focus:outline-none text-xs transition-all font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowCalSecrets(!showCalSecrets)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition"
+                        >
+                          {showCalSecrets ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={handleConnectCalendar}
+                      className="flex items-center gap-1.5 px-5 py-2 border border-emerald-500/25 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 rounded-xl transition text-xs font-semibold cursor-pointer"
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      Guardar y Conectar Google Calendar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── SECCIÓN 7: ENTRENAMIENTO VISUAL ── */}
         <div className="glow-card rounded-2xl overflow-hidden">
           <button
             type="button"

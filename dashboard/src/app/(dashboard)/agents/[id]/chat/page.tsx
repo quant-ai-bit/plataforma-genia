@@ -106,11 +106,11 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
       };
 
       recorder.onstop = async () => {
+        // Detener todos los tracks de inmediato para liberar el micrófono
+        stream.getTracks().forEach(track => track.stop());
+
         const audioBlob = new Blob(chunks, { type: "audio/webm" });
         await handleSendAudio(audioBlob);
-        
-        // Detener todos los tracks para apagar el micrófono
-        stream.getTracks().forEach(track => track.stop());
       };
 
       recorder.start();
@@ -138,7 +138,7 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
       const formData = new FormData();
       formData.append("file", audioBlob, "recording.webm");
 
-      const resTranscribe = await authenticatedFetch("/api/chat/transcribe", {
+      const resTranscribe = await authenticatedFetch(`/api/chat/transcribe?agent_id=${id}`, {
         method: "POST",
         body: formData
       });
@@ -172,7 +172,7 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
         conversation_id: chatConvId
       };
 
-      const res = await authenticatedFetch(`/api/chat/`, {
+      const res = await authenticatedFetch(`/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(chatPayload)
@@ -187,7 +187,7 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
         loadAgentUsage(id);
 
         setTimeout(async () => {
-          const resLeads = await authenticatedFetch(`/api/leads/`);
+          const resLeads = await authenticatedFetch(`/api/leads`);
           if (resLeads.ok) {
             const currentLeads = await resLeads.json();
             const matchingLead = currentLeads.find((l: any) => l.conversation_id === data.conversation_id);
@@ -253,7 +253,7 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
         conversation_id: chatConvId
       };
 
-      const res = await authenticatedFetch(`/api/chat/`, {
+      const res = await authenticatedFetch(`/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(chatPayload)
@@ -270,7 +270,7 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
 
         // Fetch captured leads after message to check if a lead was parsed
         setTimeout(async () => {
-          const resLeads = await authenticatedFetch(`/api/leads/`);
+          const resLeads = await authenticatedFetch(`/api/leads`);
           if (resLeads.ok) {
             const currentLeads = await resLeads.json();
             const matchingLead = currentLeads.find((l: any) => l.conversation_id === data.conversation_id);

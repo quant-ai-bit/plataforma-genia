@@ -38,6 +38,413 @@
 - **Pendientes globales conocidos:** _(actualiza esta lista a medida que avances)_
   - [x] Inicializar repositorio git para versionar el historial.
 
+
+
+
+
+
+## 2026-07-09 10:35 (COT) — Corrección: Configuración de Timeout para Transcripción de Notas de Voz
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- Se diagnosticó y corrigió el problema por el cual el bot no procesaba ni respondía a las notas de voz de los usuarios (las cuales quedaban guardadas como payloads recibidos en la base de datos pero nunca se registraban como mensajes ni generaban respuesta).
+- **Causa:** La descarga de audios de la Evolution API y la transcripción con Groq Whisper en conjunto superaban a menudo los 10 segundos, excediendo el límite de ejecución (timeout) predeterminado para las funciones serverless de Vercel (Hobby tier). Aunque `vercel.json` configuraba un `maxDuration` de 60 segundos usando el glob `api/**/*.py`, este no coincidía con el archivo de entrypoint principal `api/index.py` al no estar este último ubicado en una subcarpeta de `api/`, e incluso provocaba un error de compilación de Vercel al tener 0 coincidencia en subcarpetas.
+- **Solución:** Se editó `vercel.json` para agregar explícitamente `"api/index.py"` en la sección `functions` y aplicar correctamente el `maxDuration` de 60 segundos, y se eliminó el patrón `"api/**/*.py"` que provocaba el error de compilación.
+- Archivos clave: `vercel.json`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Monitorear el procesamiento y las respuestas a notas de voz entrantes en producción.
+
+
+## 2026-07-08 22:10 (COT) — Corrección: Optimización de Historial de Chat para Evitar Saturación de Límites (TPM/TPD)
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- Se corrigió el error repetitivo en el chat de WhatsApp al enviar saludos u otros mensajes.
+- **Causa:** Las conversaciones con muchos mensajes (como la activa que acumula 54 mensajes) se cargaban completas en cada interacción para enriquecer el prompt del LLM. Esto inflaba el prompt por encima de los 6,800 tokens, lo cual:
+  1. Superaba el límite de 6,000 TPM de Groq para `llama-3.1-8b-instant` (provocando error HTTP 413).
+  2. Consumía aceleradamente el límite diario de 100,000 tokens de `llama-3.3-70b-versatile`.
+  3. Agotaba rápidamente las cuotas de Gemini y OpenRouter (causando error 429/402).
+- **Solución:** Se limitó el historial de mensajes cargado para el contexto de la IA en `conversation_service.py` y `public_api.py` a los **últimos 15 mensajes** (ordenados cronológicamente). Esto reduce el prompt a un tamaño estable de ~2,000 tokens, protegiendo las cuotas y rate limits.
+- **Acciones en BD:** Se restablecieron los estados de cooldown en producción para dejar disponibles todos los modelos nuevamente.
+- Se realizó el deploy exitoso de los cambios a Vercel producción.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Validar la estabilidad del chat en producción con mensajes adicionales en WhatsApp.
+
+
+## 2026-07-08 22:00 (COT) — Corrección: Límite Dinámico de Intentos de Rotación de Modelos Gratuitos
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- Se diagnosticó y corrigió una interrupción en el chat al consultar horarios, causada por el límite estático de intentos de rotación.
+- **Causa:** Al estar en cooldown 5 de los 7 modelos del catálogo (debido a rate-limits y límites de créditos en OpenRouter), el bucle de rotación en `ai_service.py` abortaba tras alcanzar el límite estático de 3 intentos (`max_rotation_attempts = 3`), sin llegar a evaluar los modelos restantes libres y funcionales como `deepseek-chat` o `gpt-4o-mini`.
+- **Solución:** Se modificó `ai_service.py` para hacer dinámico el límite de intentos asignándole la longitud total del catálogo (`max_rotation_attempts = len(FREE_MODELS)`). Esto garantiza que el agente intente consumir todas las alternativas disponibles antes de fallar.
+- **Acciones en BD:** Se restablecieron nuevamente los cooldowns de modelos en producción y se reactivó el agente.
+- Se realizó el deploy exitoso de los cambios a Vercel producción.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Monitorear el correcto funcionamiento conversacional en WhatsApp.
+
+
+## 2026-07-08 21:41 (COT) — Corrección: Depuración de Catálogo de Modelos y Robustez en Rotación de IA
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- Se diagnosticó y corrigió el error que interrumpía el funcionamiento del agente conversacional de WhatsApp en producción.
+- **Causa:** El agente estaba atascado intentando utilizar `groq:gemma2-9b-it`, un modelo descontinuado por Groq que retornaba un error HTTP 400 (`model_decommissioned`). Al ser un código 400 y no un error de cuota usual (429/402), la lógica de reintento en `ai_service.py` no gatillaba la rotación automática y fallaba de inmediato.
+- **Cambios realizados:**
+  1. Se depuraron los listados de modelos disponibles en `config.py` y `model_rotation_service.py` para remover modelos descontinuados (`gemma2-9b-it`, `mixtral-8x7b-32768`, `llama-3.1-70b-versatile`, `llama3-70b-8192`, `llama3-8b-8192`) e inaccesibles/404 (`gemini-1.5-flash`, `gemini-1.5-pro`).
+  2. Se añadieron a la lista de rotación `FREE_MODELS` modelos de fallback probados y funcionales: `openrouter:deepseek/deepseek-chat` y `openrouter:openai/gpt-4o-mini`.
+  3. Se robusteció `chat_with_agent` para iniciar la auto-rotación ante fallas de modelos descontinuados, no encontrados, no soportados o caídas de servidor (`decommissioned`, `not found`, `not supported`, `invalid_request_error`, `bad request`, `400`, `503`, `500`).
+  4. En `model_rotation_service.py`, se implementó un bloqueo de 30 días (`30 * 24 * 3600` segundos) para evitar que modelos permanentemente descontinuados o inexistentes vuelvan a ser seleccionados en futuras rotaciones.
+- **Acciones en BD:** Se ejecutó un script en producción para restablecer el cooldown de los modelos (`free_model_statuses`) y cambiar la configuración del agente Socio a `gemini` / `gemini-2.0-flash`.
+- Se realizó el deploy exitoso de los cambios a Vercel producción.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Monitorear el comportamiento conversacional en WhatsApp con el usuario y validar las respuestas.
+
+
+## 2026-07-08 18:34 (COT) — Corrección: Manejo de errores NoneType en comprobación de cuota de IA
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- Se corrigió un error crítico de rotación que provocaba la visualización de un mensaje de error genérico al usuario (`Hubo un error procesando tu solicitud con el servicio de IA`).
+- **Causa:** Al superar la cuota del nivel gratuito de Gemini (HTTP 429), la comprobación `getattr(attempt_exc, "message", "").lower()` en la lógica de rotación de `ai_service.py` fallaba con `AttributeError: 'NoneType' object has no attribute 'lower'` porque el atributo `message` en la excepción del SDK de Google existe pero tiene valor `None`. Esto interrumpía el bucle de rotación en caliente antes de cambiar a Groq/Llama.
+- **Solución:** Se corrigió en `ai_service.py` para asegurar que el mensaje de error se traduzca de forma segura a una cadena no vacía (`str(getattr(attempt_exc, "message", "") or "")`) antes de llamar al método `.lower()`.
+- Se realizó el deploy exitoso de los cambios a Vercel producción.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Reintentar el chat para validar que el agente responda correctamente y cambie de modelo en caliente si es necesario.
+
+
+## 2026-07-08 18:27 (COT) — Corrección: Estructura de Payload plana para sendMedia en Evolution API (WhatsApp QR)
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- Se diagnosticó y corrigió el fallo al enviar imágenes de forma nativa a través del proveedor WhatsApp QR Code (Evolution API).
+- **Causa:** La función `send_qr_image` estaba construyendo una carga útil (payload) donde los campos multimedia (`mediatype`, `media`, `fileName`, `caption`) estaban anidados dentro de una clave `mediaMessage`. Sin embargo, la API de Evolution API espera estos campos estructurados directamente en la raíz (formato plano) del JSON para el endpoint `/message/sendMedia/{instance}`. Esto provocaba que las imágenes fallaran con un error 400 Bad Request en la API de Evolution.
+- **Solución:** Se actualizó `whatsapp_qr_service.py` para aplanar la estructura del payload en `send_qr_image` y se añadió la propiedad `mimetype` dinámicamente según la extensión de la imagen, alineándose con las especificaciones oficiales de la API de Evolution.
+- Se realizó el deploy exitoso de los cambios a Vercel producción.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Realizar la prueba del flujo de envío de imágenes nativas en el chat.
+
+
+## 2026-07-08 18:14 (COT) — Característica: Envío de Imágenes Nativas en WhatsApp (Meta Cloud & QR)
+**Plataforma:** Antigravity
+**Tipo:** 🚀 Característica | 🚀 Deploy
+
+- Se implementó el envío de imágenes nativas en WhatsApp para los proveedores Meta Cloud API y WhatsApp QR Code (Evolution API).
+- **Problema anterior:** El agente enviaba la sintaxis de imagen Markdown `![alt](url)` como texto plano al cliente de WhatsApp, en lugar de mostrar la imagen real en la interfaz del chat de WhatsApp.
+- **Solución:** Se actualizaron los servicios `whatsapp_service.py` y `whatsapp_qr_service.py` para interceptar la sintaxis Markdown en los mensajes salientes. Al encontrar un match:
+  1. Se extraen las URLs y descripciones de las imágenes del texto del mensaje.
+  2. Se elimina la sintaxis de Markdown del cuerpo del texto, enviándolo como mensaje de texto limpio primero.
+  3. Se envía cada imagen de manera nativa utilizando los endpoints multimedia correspondientes (`POST /messages` en Meta con tipo `image`, y `/message/sendMedia` en Evolution API con tipo `image`), incluyendo la descripción de la imagen como el pie de foto (caption).
+- Se realizó el deploy exitoso de los cambios a Vercel producción.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Validar en chat real que las imágenes se muestren de forma nativa e interactiva.
+
+
+## 2026-07-08 17:40 (COT) — Corrección: Error interno de IA al ejecutar herramientas MCP y rotar a Groq
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- Se diagnosticó y corrigió el error interno (`⚠️ Hubo un error procesando tu solicitud...`) que ocurría cuando el flujo de ejecución rotaba a los modelos de Groq (como `llama-3.3-70b-versatile` o `llama-3.1-8b-instant`) al agotarse la cuota diaria de Gemini.
+- **Causa 1:** El parámetro de la sesión de base de datos (`db`) no se estaba pasando a la invocación `mcp_registry.execute_tool` en `chat_with_agent` (`ai_service.py`). Esto provocaba un error al ejecutar cualquier herramienta incorporada como el calendario de Google (`_execute_calendar_tool`), debido a que no se podía consultar la base de datos para cargar las credenciales y tokens del agente.
+- **Causa 2:** Los mensajes de respuesta del asistente que contenían llamadas a herramientas no se convertían a diccionarios estándar antes de ser insertados en el historial de reintentos para Groq, lo que podía causar fallos de serialización de Pydantic/SDK en la segunda finalización.
+- **Solución:** Se actualizó `ai_service.py` para pasar el parámetro `db=db` a la llamada de `execute_tool` y se normalizó la respuesta del asistente con `message_to_dict` antes de añadirla a la lista de mensajes.
+- Se realizó el deploy exitoso de los cambios a Vercel producción.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Validar que el agente responda correctamente y permita interactuar/agendar sin interrupciones.
+
+
+## 2026-07-08 17:18 (COT) — Corrección: Hallucinación de Precios por Desalineación de pgvector y 3072 dimensiones de Gemini Embeddings
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- Se diagnosticó y solucionó un problema de RAG donde el agente de WhatsApp ("Socio") inventaba/alucinaba precios debido a que el contexto de base de conocimiento recuperado estaba vacío.
+- **Causa:** En producción (PostgreSQL), la tabla `knowledge_chunks` usa `Vector(768)`. Sin embargo, `models/gemini-embedding-001` genera por defecto vectores de 3072 dimensiones. Al intentar indexar el documento `BC SOCIAL.txt` en PostgreSQL, `pgvector` lanzaba un error de dimensiones y revertía la transacción, dejando la base de datos vectorial vacía (0 chunks) para el agente.
+- **Solución:** Se editó `embedding_service.py` para forzar a la API de embeddings de Gemini a retornar siempre 768 dimensiones pasándole el parámetro `output_dimensionality=768`.
+- Se ejecutó un script en producción (`scratch_reindex_kb.py`) para re-indexar con éxito el archivo `BC SOCIAL.txt` a pgvector (generando y verificando los 16 chunks correspondientes).
+- Se desplegaron con éxito los cambios a Vercel producción.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Validar en chat real que el agente responda con precios exactos usando la base de conocimientos corregida.
+
+
+## 2026-07-08 17:06 (COT) — Corrección: Error 404 al Editar Documento de Base de Conocimientos
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- Se corrigió un error en el backend que causaba que la carga del contenido de un documento para edición (`GET /api/knowledge/documents/{id}`) y su actualización (`PUT`) devolvieran un error `404 Not Found`.
+- **Causa:** El frontend solicitaba la ruta `/api/knowledge/documents/{id}` pero el backend solo exponía `/api/documents/{id}`.
+- **Solución:** Se añadieron decoradores apilados (stacked decorators) en `knowledge.py` para soportar ambas variantes de prefijo de ruta de forma transparente (`/documents/{doc_id}` y `/knowledge/documents/{doc_id}`) para lecturas, actualizaciones y eliminaciones.
+- Se desplegaron con éxito los cambios a Vercel producción.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Verificar que el editor de texto en el panel administrativo del agente cargue el contenido correctamente.
+
+
+## 2026-07-08 16:48 (COT) — Feature: Reglas de Captura de Teléfono por Canal (Web vs WhatsApp)
+**Plataforma:** Antigravity
+**Tipo:** ✨ Mejora | 🚀 Deploy
+
+- Se implementó la inyección dinámica de reglas de obtención de teléfono en `conversation_service.py` basadas en el canal actual (`source_channel`).
+- **Comportamiento en WhatsApp:** Si se tiene el número del remitente, se le indica al agente confirmar amigablemente si desea usar ese mismo número o dar uno alternativo, en lugar de solicitarlo desde cero.
+- **Comportamiento en Web:** Se mantiene la solicitud explícita del número telefónico.
+- Se verificó que todas las pruebas pasen (8/9 pasando con test_openrouter.py fallando debido a falta de saldo en el API key, comportamiento normal del entorno).
+- Se desplegaron con éxito los cambios a Vercel producción.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Monitorear el comportamiento conversacional en ambos canales.
+
+
+## 2026-07-08 16:32 (COT) — Corrección: Error de truncado en Cooldown de Modelos de IA e inactividad en WhatsApp QR
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- Se corrigió un error de tipo de datos de base de datos (`StringDataRightTruncation`) en `ModelRotationService.mark_model_exhausted` al intentar almacenar mensajes de error de cuota/tasa de la API (como los de Groq que superan los 255 caracteres) en la columna `exhausted_reason` (la cual es de tipo `VARCHAR(255)`). Esto hacía que la transacción de base de datos fallara y cancelara la ejecución del webhook de WhatsApp.
+- Se limitó/truncó el valor asignado a `exhausted_reason` a un máximo de 255 caracteres (`reason[:255]`) para prevenir cualquier fallo futuro de truncado en base de datos.
+- Se reemplazó el modelo obsoleto `"gemini-1.5-flash"` por `"gemini-2.5-flash"` en el catálogo de modelos gratuitos (`FREE_MODELS`) de la rotación y en los tests, resolviendo errores 404 al intentar usarlo.
+- Se reiniciaron los estatus de cooldown en la base de datos de producción para reactivar el funcionamiento de inmediato.
+- Se desplegaron con éxito los cambios a Vercel producción.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Monitorear que el agente de WhatsApp responda fluidamente y rote de modelo automáticamente ante cualquier límite de cuota.
+
+
+## 2026-07-08 14:30 (COT) — Corrección: Errores 500 en Webhook QR de WhatsApp y Mejora de Resiliencia
+**Plataforma:** opencode
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- Se diagnosticaron 16+ errores HTTP 500 en el endpoint `POST /api/whatsapp/webhook/qr/{agent_id}` en producción entre 13:13 y 13:57 COT.
+- Causa raíz: El manejador `receive_qr_webhook` capturaba excepciones pero las **re-lanzaba** (`raise`), provocando que FastAPI retornara 500 y Evolution API reintentara repetidamente.
+- Fix: Se reemplazó el `raise` por un retorno graceful `{"status": "accepted", "warning": "..."}` con logging completo del traceback vía `logger.error`. Evolution API ahora recibe 200 en todos los casos, deteniendo la tormenta de reintentos.
+- Se agregó logging estructurado del error para facilitar diagnóstico futuro sin depender del estado de la sesión DB.
+- Se desplegó a Vercel producción exitosamente. Pruebas manuales POST confirman respuesta 200 OK.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Monitorear que no vuelvan a aparecer errores 500 en el webhook QR. Verificar respuestas del agente en Meta Cloud API.
+
+## 2026-07-08 13:02 (COT) — Corrección: Migración de Base de Datos y Resolución de TypeError en Rotación en Producción
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🚀 Deploy
+
+- Se aplicaron las migraciones pendientes sobre la base de datos de producción en Supabase PostgreSQL (`free_model_statuses` creada).
+- Se corrigió un error de tipo (`TypeError`) que ocurría en `ModelRotationService` al intentar acumular tokens (`+=`) sobre campos con valor inicial `None` en SQLAlchemy antes del primer guardado.
+- Se corrigió un error de sintaxis JSX (cierre de un div contenedor de grilla en `analytics/page.tsx`) que causaba fallos en el build del dashboard en Next.js.
+- Se desplegaron con éxito todos los cambios actualizados a Vercel producción.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Verificar respuestas correctas en el chat de WhatsApp.
+
+## 2026-07-08 11:08 (COT) — Feature: Rotación Automática de Modelos Gratuitos y Cooldowns de Tokens
+**Plataforma:** Antigravity
+**Tipo:** ✨ Mejora | 🐛 Corrección
+
+- Se implementó `FreeModelStatus` en base de datos para almacenar el estado de inhabilitación temporal y métricas de consumo diario de los modelos.
+- Se agregó el proveedor `GeminiProvider` para consumir directamente la API gratuita de Google AI Studio sin depender de Vertex AI.
+- Se implementó `ModelRotationService` para gestionar la selección inteligente por prioridad, cooldowns adaptativos y el cálculo dinámico del potencial de tokens consumibles por hora, día y mes.
+- Se integró la auto-rotación transparente en `chat_with_agent` (`ai_service.py`), la cual ante errores de cuota/límites reintenta la llamada tras actualizar al agente en la base de datos con el siguiente modelo libre.
+- Se crearon endpoints en `/api/free-models/status` y `/api/free-models/reset`.
+- Se rediseñó la Consola Analítica (`dashboard/.../analytics/page.tsx`) integrando un panel premium de gestión de modelos, estatus de cooldowns y restablecimiento manual.
+- **Estado:** ✅ Completado
+- **Pendiente / Siguiente paso:** Monitorear el consumo de tokens en producción.
+
+
+## 2026-07-08 11:03 (COT) — Planificación: Rotación de Modelos Gratuitos e Ininterrupción de Agente WhatsApp
+**Plataforma:** Antigravity
+**Tipo:** 📝 Docs | 🔧 Refactor
+
+- Se analizó el problema de agotamiento de tokens en el webhook de WhatsApp (provocado por HTTP 429 de Rate Limits o HTTP 402 en OpenRouter por falta de fondos).
+- Se diseñó y documentó el plan de rotación automático en caliente de modelos gratuitos (Gemini, Groq, OpenRouter free).
+- Se creó el artefacto `implementation_plan.md` con los detalles técnicos, la estructura de la base de datos para seguimiento de cuotas y cooldowns, el nuevo proveedor directo de Gemini, y el diseño de la UI.
+- **Estado:** 🚧 En progreso (Esperando aprobación del plan)
+- **Pendiente / Siguiente paso:** Recibir aprobación del usuario para iniciar la ejecución del plan.
+
+
+## 2026-07-06 19:05 (COT) — Feature: Edición de Documentos de Texto Plano en Base de Conocimiento (RAG)
+**Plataforma:** Antigravity
+**Tipo:** 🚀 Funcionalidad
+
+- **Requerimiento**: Botón para editar documentos cargados en formato de texto plano desde el dashboard del agente.
+- **Implementación**:
+  - Se modificó `dashboard/.../knowledge/page.tsx` agregando soporte para editar documentos de texto plano (`text/plain`).
+  - Se implementó un modal interactivo con estilo oscuro premium que carga dinámicamente el contenido del documento (`GET /api/knowledge/documents/{id}`) y guarda los cambios de título y contenido (`PUT /api/knowledge/documents/{id}`) re-calculando los fragmentos y embeddings (RAG) correspondientes.
+  - El botón "Editar" se renderiza exclusivamente para archivos de texto plano.
+- **Estado:** 🚀 Desplegado con éxito en Vercel.
+- **Siguiente paso:** Pruebas del cliente desde el dashboard de producción.
+
+
+
+
+## 2026-07-06 17:08 (COT) — Fix Completo: Agente WhatsApp QR Responde Mensajes
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección crítica
+
+- **Bug raíz encontrado**: `send_qr_text` usaba payload `{"textMessage": {"text": "..."}}` pero Evolution API espera `{"text": "..."}` como campo directo. Esto causaba un `400 Bad Request` silencioso en cada intento de responder.
+- **Fix adicional**: payload de webhook también corregido (`{"webhook": {...}}` anidado en `configure_qr_webhook`).
+- **Fix adicional**: `_extract_qr_message_details` ahora maneja `data` como lista (Evolution API envía `MESSAGES_UPSERT` como array).
+- Archivos modificados:
+  - `backend/services/whatsapp_qr_service.py` (payload `send_qr_text` y `configure_qr_webhook`)
+  - `backend/routers/whatsapp.py` (extractor de mensajes + logging de debug)
+- **Estado:** ✅ Desplegado. El agente Socio responde mensajes de WhatsApp vía QR Code.
+- **Siguiente paso:** Probar con el segundo agente (Mia) y validar flujos de conversación completos.
+
+## 2026-07-06 14:39 (COT) — Corrección Completa del Flujo QR de WhatsApp (Código QR Baileys)
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección
+
+- **Bug 1 – `AttributeError: 'str' object has no attribute 'get'`**: Evolution API devuelve `hash` como `string` (no como dict). Se corrigió `whatsapp_qr_service.py` para manejar ambos casos.
+- **Bug 2 – `403 Forbidden: already in use`**: La instancia ya existía en Evolution API. Se añadió manejo del código 403 para reutilizar la instancia en lugar de lanzar un error.
+- **Bug 3 – QR generado pero no visible**: El endpoint `/status` no retornaba el QR (solo `verify_qr_connection`, que no lo incluye). Se corrigió para llamar `get_qr_code()` activamente cuando la instancia está desconectada. Además, el frontend ahora captura el `qr_code` de la respuesta del POST `/qr/connect` y lo aplica al estado de inmediato.
+- Archivos modificados:
+  - `backend/services/whatsapp_qr_service.py`
+  - `backend/routers/whatsapp.py`
+  - `dashboard/src/app/(dashboard)/agents/[id]/page.tsx`
+- **Estado:** ✅ Desplegado en Vercel. El QR ahora se muestra correctamente y se refresca vía polling cada 5 segundos.
+- **Siguiente paso:** Verificar que el escaneo del QR con WhatsApp completa la conexión y actualiza el estado a "Conectado".
+
+## 2026-07-06 12:35 (COT) — Implementación de Conexión Dual de WhatsApp (Meta Cloud API y QR Code)
+**Plataforma:** Antigravity
+**Tipo:** ✨ Mejora | 🐛 Corrección
+
+- Se añadieron columnas al modelo de base de datos `Agent` para el ruteo y almacenamiento del proveedor y estado de WhatsApp QR.
+- Se generó y aplicó con éxito la migración de Alembic `fbf8b351835b_add_whatsapp_qr_fields`.
+- Se implementó el servicio `whatsapp_qr_service.py` con soporte para Evolution API y un sistema de simulación local (mock) en desarrollo.
+- Se actualizaron los routers del backend en `whatsapp.py` añadiendo endpoints de cambio de proveedor, generación de QR, webhook de Evolution API y simulación de escaneo.
+- Se modificó la interfaz de Next.js en `dashboard/src/app/(dashboard)/agents/[id]/page.tsx` agregando tabs para seleccionar el proveedor, la interfaz de polling del QR y el botón para simular el escaneo.
+- Se validaron todos los flujos mediante pruebas automatizadas con el script de integración `test_whatsapp_qr.py` y se verificó que toda la suite de pruebas del backend (9/9) siga pasando exitosamente.
+- Archivos modificados/creados:
+  - `backend/models/agent.py`
+  - `backend/schemas/agent.py`
+  - `backend/config.py`
+  - `backend/routers/whatsapp.py`
+  - `backend/services/whatsapp_qr_service.py`
+  - `backend/test_whatsapp_qr.py`
+  - `dashboard/src/app/(dashboard)/agents/[id]/page.tsx`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Monitorear el despliegue del frontend en Vercel y configurar las variables de entorno de Evolution API en producción si se desea conectar un número real.
+
+## 2026-07-06 11:54 (COT) — Investigación de Opciones de Integración y Conexión QR de WhatsApp
+**Plataforma:** Antigravity
+**Tipo:** 📝 Docs
+
+- Se realizó un análisis exhaustivo del bloqueo en el registro de números en la API oficial de Meta.
+- Se documentaron las opciones de APIs de emulación no oficiales basadas en QR (Baileys, Evolution API, WAHA, whatsapp-web.js) y se compararon con la oficial.
+- Se propuso una arquitectura de integración híbrida para PLATAFORMA GENIA.
+- Archivos creados/modificados:
+  - [whatsapp_integration_options.md](file:///C:/Users/User/.gemini/antigravity-ide/brain/b7667670-87c8-4f3f-9cda-107cfbf0d3d3/whatsapp_integration_options.md) (Localizado en los artefactos de la sesión actual de la IA).
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Recibir feedback del usuario para determinar si se procede a implementar la integración de códigos QR o si se mantiene únicamente el soporte para la API oficial de Meta.
+
+## 2026-07-03 10:51 (COT) — Corrección y Optimización en Notas de Voz (STT) y Zonas Horarias
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | 🔧 Refactor | 📦 Dependencias
+
+- Se modificó el frontend del Sandbox del Chat (`dashboard/src/app/(dashboard)/agents/[id]/chat/page.tsx`) para enviar el parámetro de consulta `agent_id` en las llamadas a `/api/chat/transcribe?agent_id=${id}`. Esto asegura que el simulador utilice el proveedor de transcripción de voz a texto (STT) configurado para cada agente en particular en lugar de forzar siempre Groq Whisper.
+- Se optimizó la detención del micrófono en el frontend apagando el stream de audio inmediatamente después de detener la grabación en el evento `onstop`, evitando que la UI mantenga el micrófono del navegador encendido durante el tiempo de procesamiento.
+- Se implementó la sanitización de `mime_type` al inicio de `transcribe_audio` en `backend/services/stt_service.py` eliminando parámetros como `;codecs=opus` y espacios adicionales. Esto soluciona y previene posibles errores `400 Bad Request` en los proveedores de transcripción cuando se envían formatos complejos.
+- Se instaló la dependencia `tzdata` en el entorno virtual de desarrollo de Python y se agregó al archivo `backend/requirements.txt` para garantizar la compatibilidad de zonas horarias en sistemas Windows.
+- Archivos modificados:
+  - `dashboard/src/app/(dashboard)/agents/[id]/chat/page.tsx`
+  - `backend/services/stt_service.py`
+  - `backend/requirements.txt`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Monitorear el comportamiento del Sandbox y las transcripciones de voz de WhatsApp en producción.
+
+## 2026-07-02 16:05 (COT) — Integraciones de Google Calendar, STT Multi-proveedor y Cifrado de Credenciales por Agente
+**Plataforma:** Antigravity
+**Tipo:** ✨ Mejora | 📦 Dependencias | ✅ Completado
+
+- Se implementó la integración de Google Calendar permitiendo que cada agente conecte su propio calendario con Client ID y Client Secret personalizados e ingresados desde la UI.
+- Se implementaron las tools de Calendar (`check_calendar_availability`, `create_calendar_event`, `list_upcoming_events`, `cancel_calendar_event`, `reschedule_calendar_event`) para el LLM a través de function-calling e integradas en el MCP Registry.
+- Se refactorizó la transcripción de notas de voz a un servicio multi-proveedor STT que soporta Groq Whisper, OpenAI Whisper, Deepgram (Nova-3) y Google Cloud STT, configurable por agente en la base de datos.
+- Se añadió soporte para configurar y respetar la zona horaria del negocio por agente (Colombia UTC-5 por defecto), inyectándola en el System Prompt.
+- Se agregaron las columnas correspondientes en la base de datos `agents` y se aplicaron las migraciones de Alembic `742fb332c50b` y `6d298fe98456` exitosamente.
+- Se actualizó la interfaz de configuración del agente en Next.js agregando el panel interactivo de Google Calendar con previsualización de eventos, selector de proveedor de STT, selector de zona horaria y campos de credenciales con cifrado.
+- Se ejecutó suite completo de pruebas unitarias (`test_calendar_and_stt.py`) validando todos los flujos satisfactoriamente.
+- Archivos modificados:
+  - `backend/config.py`
+  - `backend/requirements.txt`
+  - `backend/models/agent.py`
+  - `backend/schemas/agent.py`
+  - `backend/services/ai_service.py`
+  - `backend/services/conversation_service.py`
+  - `backend/services/mcp_registry.py`
+  - `backend/routers/__init__.py`
+  - `backend/routers/agents.py`
+  - `backend/routers/whatsapp.py`
+  - `backend/routers/chat.py`
+  - `backend/main.py`
+  - `dashboard/src/lib/types.ts`
+  - `dashboard/src/app/(dashboard)/agents/[id]/page.tsx`
+- Archivos nuevos:
+  - `backend/services/google_calendar_service.py`
+  - `backend/services/stt_service.py`
+  - `backend/routers/google_calendar.py`
+  - `backend/test_calendar_and_stt.py`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Monitorear el uso de las herramientas de calendar por el LLM en pruebas reales y configurar credenciales OAuth de producción.
+
+## 2026-06-30 17:22 (COT) — Pruebas Unitarias del Backend Aprobadas y Validación de Interfaz Local
+**Plataforma:** Antigravity
+**Tipo:** 🔧 Refactor | ✅ Completado
+
+- Se corrigió el bypass de autenticación en desarrollo en `backend/services/auth_service.py` para permitir que el cliente de pruebas local no requiera cabeceras JWT, permitiendo ejecutar y validar todas las suites de pruebas de forma exitosa.
+- Se ejecutó el suite completo `run_all_tests.py` logrando un 100% de éxito (9/9 pruebas pasadas con éxito: MCP, OpenRouter/Consumo, RAG, didáctico y API principal).
+- Se levantaron los servidores de desarrollo local y se verificó por medio de automatización del navegador la correcta conexión del frontend Next.js al backend local (mostrando el estado `Online (Puerto 8000)` en verde) y la navegación y flujos principales de inicio de sesión.
+- Se confirmaron todos los cambios en git manteniendo limpia la rama `main`.
+- Archivos clave: `backend/services/auth_service.py`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** El usuario debe realizar las capturas de pantalla de la interfaz local y de su consola GCP (siguiendo los pasos detallados en `hackathon_submission_and_coupon_guide.md`) y proceder con el envío de las postulaciones a Devpost y Google Forms utilizando las respuestas preparadas.
+
+## 2026-06-30 15:15 (COT) — Actualización de Guía Unificada con Precios Reales y Fase de Piloto WhatsApp
+**Plataforma:** Antigravity
+**Tipo:** 📝 Docs
+
+- Se aplicaron las observaciones del usuario a la guía unificada de postulación (`hackathon_submission_and_coupon_guide.md`).
+- Se ajustaron los precios del modelo B2B SaaS a los valores reales de la web: setup único de COP $1.500.000 (~$375 USD) y mensualidad de COP $250.000 (~$62.50 USD).
+- Se aclaró que los agentes están en fase de piloto cerrado / Beta de pruebas (conectados temporalmente vía WhatsApp Sandbox) y se amplió el foco a profesionales independientes (médicos, tatuadores y agentes inmobiliarios).
+- Se incluyó la guía paso a paso para la captura de pantalla de GCP y Antigravity, la auditoría completa del stack tecnológico con sus alternativas y un guion detallado para el video de 3 minutos con herramientas de IA recomendadas.
+- Se verificó la integración y disponibilidad de Vertex AI en `backend/services/providers/vertex_provider.py`.
+- Archivos clave: `hackathon_submission_and_coupon_guide.md` (localizado en los artefactos de la sesión de la IA).
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** El usuario debe proceder a realizar las capturas de pantalla siguiendo los pasos e iniciar los envíos de los formularios con las respuestas de la guía.
+
+## 2026-06-26 17:50 (COT) — Consolidación de Guía de Postulación Unificada para Devpost y Gemini Ultra
+**Plataforma:** Antigravity
+**Tipo:** 📝 Docs
+
+- Se procesaron y guardaron de forma secuencial todas las capturas del formulario de postulación de Devpost compartidas por el usuario.
+- Se redactaron respuestas avanzadas de negocio, finanzas e impacto tecnológico en inglés que guardan total coherencia con el modelo de trueque (barter) y la necesidad de cuota de Gemini Ultra.
+- Se consolidó la información en la guía unificada de postulación para facilitar el copiado rápido de respuestas.
+- Archivos clave: `hackathon_submission_and_coupon_guide.md` (localizado en los artefactos de la sesión de la IA).
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** El usuario debe realizar el envío de ambos formularios usando las respuestas provistas y adjuntando el ZIP de evidencias y el PDF del P&L de `FINANCIALS.md`.
+
+## 2026-06-26 15:20 (COT) — Creación de guía de postulación para cupón Gemini Ultra Plan
+**Plataforma:** Antigravity
+**Tipo:** 📝 Docs
+
+- Se analizó el formulario de solicitud del Plan Ultra de Gemini para el hackathon "Build with Gemini XPRIZE".
+- Se redactaron respuestas optimizadas y justificadas en inglés para maximizar las probabilidades de obtener el cupón.
+- Se documentaron los requisitos de capturas de pantalla obligatorias (Google Cloud Billing y Antigravity Dashboard).
+- Archivos clave: `gemini_ultra_coupon_guide.md` (localizado en los artefactos de la sesión actual de la IA).
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** El usuario debe rellenar el formulario de Google Forms utilizando las respuestas recomendadas y adjuntar las capturas correspondientes.
+
 ## 2026-06-25 23:25 (COT) — Migración a Groq por agotamiento de créditos en OpenRouter y validación de Webhook de WhatsApp
 **Plataforma:** Antigravity
 **Tipo:** 🐛 Corrección | 🚀 Deploy

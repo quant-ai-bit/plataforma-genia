@@ -95,7 +95,7 @@ export default function ConversationsPage() {
     }
 
     try {
-      const res = await authenticatedFetch(`/api/conversations/`);
+      const res = await authenticatedFetch(`/api/conversations`);
       if (res.ok) {
         const data = await res.json();
         setConversations(data);

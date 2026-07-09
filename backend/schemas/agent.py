@@ -62,6 +62,24 @@ class AgentCreate(BaseModel):
     whatsapp_access_token: str | None = Field(default=None, description="Access Token permanente de la app de Meta del cliente")
     whatsapp_app_secret: str | None = Field(default=None, description="App Secret de la app de Meta del cliente")
     whatsapp_verify_token: str | None = Field(default=None, max_length=255, description="Token de verificación del webhook personalizado")
+    whatsapp_provider: str = Field(default="meta_cloud", description="Proveedor de WhatsApp (meta_cloud, qr_code)")
+    whatsapp_qr_instance_name: str | None = Field(default=None, max_length=100, description="Nombre de la instancia de la API QR")
+
+    # Credenciales Google Calendar API (por agente)
+    google_calendar_client_id: str | None = Field(default=None, max_length=255, description="Client ID de Google API del cliente")
+    google_calendar_client_secret: str | None = Field(default=None, description="Client Secret de Google API del cliente")
+
+    # Transcripción de voz (STT)
+    stt_provider: str = Field(
+        default="groq_whisper",
+        description="Proveedor de transcripción de voz: groq_whisper, google_stt, deepgram, openai_whisper",
+    )
+
+    # Zona horaria
+    timezone: str = Field(
+        default="America/Bogota",
+        description="Zona horaria del agente (ej: America/Bogota, America/Mexico_City)",
+    )
 
 
 class AgentUpdate(BaseModel):
@@ -84,6 +102,18 @@ class AgentUpdate(BaseModel):
     whatsapp_access_token: str | None = Field(default=None)
     whatsapp_app_secret: str | None = Field(default=None)
     whatsapp_verify_token: str | None = Field(default=None, max_length=255)
+    whatsapp_provider: str | None = Field(default=None)
+    whatsapp_qr_instance_name: str | None = Field(default=None, max_length=100)
+
+    # Credenciales Google Calendar API (por agente)
+    google_calendar_client_id: str | None = Field(default=None, max_length=255)
+    google_calendar_client_secret: str | None = Field(default=None)
+
+    # Transcripción de voz (STT)
+    stt_provider: str | None = Field(default=None, description="Proveedor STT")
+
+    # Zona horaria
+    timezone: str | None = Field(default=None, description="Zona horaria")
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +139,14 @@ class AgentResponse(BaseModel):
     notification_phone: str | None
     whatsapp_connected: bool = False
     whatsapp_phone_number_id: str | None = None
+    whatsapp_provider: str = "meta_cloud"
+    whatsapp_qr_instance_name: str | None = None
+    whatsapp_qr_connected: bool = False
+    google_calendar_client_id: str | None = None
+    google_calendar_connected: bool = False
+    google_calendar_email: str | None = None
+    stt_provider: str = "groq_whisper"
+    timezone: str = "America/Bogota"
     created_at: datetime
     updated_at: datetime | None
 

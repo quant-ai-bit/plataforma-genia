@@ -13,18 +13,32 @@ por agente desde el dashboard.
 
 from datetime import datetime, timezone, timedelta
 import logging
+import httpx
 from fastapi import APIRouter, Depends, Query, Request, Response, status, HTTPException
+
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import get_db
+from config import settings
 from models.agent import Agent
 from models.conversation import Conversation, Message
+
 from services.whatsapp_service import (
     verify_whatsapp_signature,
     send_whatsapp_text,
     verify_whatsapp_connection,
     download_whatsapp_media,
+)
+from services.whatsapp_qr_service import (
+    create_qr_instance,
+    get_qr_code,
+    verify_qr_connection,
+    delete_qr_instance,
+    send_qr_text,
+    configure_qr_webhook,
+    simulate_qr_scan,
+    is_mock_mode as qr_is_mock_mode,
 )
 from services.encryption_service import encrypt, decrypt
 from services.ai_service import chat_with_agent
@@ -40,11 +54,19 @@ router = APIRouter(prefix="/whatsapp", tags=["WhatsApp Integration"])
 # Schemas para connect/disconnect
 # ---------------------------------------------------------------------------
 
+
 class WhatsAppConnectRequest(BaseModel):
     """Credenciales de Meta proporcionadas por el cliente para conectar WhatsApp."""
-    phone_number_id: str = Field(..., min_length=1, description="Phone Number ID de la app de Meta")
-    access_token: str = Field(..., min_length=1, description="Access Token permanente de Meta")
-    app_secret: str = Field(..., min_length=1, description="App Secret de la app de Meta")
+
+    phone_number_id: str = Field(
+        ..., min_length=1, description="Phone Number ID de la app de Meta"
+    )
+    access_token: str = Field(
+        ..., min_length=1, description="Access Token permanente de Meta"
+    )
+    app_secret: str = Field(
+        ..., min_length=1, description="App Secret de la app de Meta"
+    )
     verify_token: str = Field(
         default="genia_verify_token",
         description="Token personalizado para verificar el webhook",
@@ -53,17 +75,30 @@ class WhatsAppConnectRequest(BaseModel):
 
 class WhatsAppStatusResponse(BaseModel):
     """Estado de conexión de WhatsApp para un agente."""
+
     connected: bool
     phone_number_id: str | None = None
     phone_number: str | None = None
     display_name: str | None = None
     webhook_url: str | None = None
     verify_token: str | None = None
+    whatsapp_provider: str | None = None
+    whatsapp_qr_connected: bool | None = None
+    whatsapp_qr_instance_name: str | None = None
+    qr_code: str | None = None
+    is_mock_mode: bool | None = None
+
+
+class WhatsAppProviderRequest(BaseModel):
+    """Request para cambiar de proveedor de WhatsApp."""
+
+    provider: str = Field(..., description="Proveedor: 'meta_cloud' o 'qr_code'")
 
 
 # ---------------------------------------------------------------------------
 # Webhook GET — Verificación de Meta (handshake)
 # ---------------------------------------------------------------------------
+
 
 @router.get("/webhook")
 def verify_webhook(
@@ -79,7 +114,9 @@ def verify_webhook(
     recibido. Si no se encuentra ninguno, se compara con el token global por
     retrocompatibilidad.
     """
-    logger.info(f"[WEBHOOK_VERIFY] mode: {mode}, token: {token}, challenge: {challenge}")
+    logger.info(
+        f"[WEBHOOK_VERIFY] mode: {mode}, token: {token}, challenge: {challenge}"
+    )
     if mode != "subscribe":
         logger.warning(f"[WEBHOOK_VERIFY] Rejected mode: {mode}")
         return Response(status_code=status.HTTP_403_FORBIDDEN)
@@ -104,6 +141,7 @@ def verify_webhook(
 
     # 2. Fallback: token global de settings (retrocompatibilidad)
     from config import settings
+
     if token == settings.webhook_verify_token:
         logger.info("[OK] Webhook de WhatsApp verificado con token global (legacy).")
         return Response(content=challenge, media_type="text/plain")
@@ -115,6 +153,7 @@ def verify_webhook(
 # ---------------------------------------------------------------------------
 # Webhook POST — Recepción de mensajes entrantes
 # ---------------------------------------------------------------------------
+
 
 @router.post("/webhook")
 async def receive_webhook(
@@ -129,6 +168,7 @@ async def receive_webhook(
     de ese agente.
     """
     import os
+
     ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
     body_bytes = await request.body()
@@ -163,6 +203,7 @@ async def receive_webhook(
     if not agent:
         # Fallback legacy: buscar con las credenciales globales de settings
         from config import settings
+
         if incoming_phone_number_id == settings.phone_number_id:
             # Modo legacy con credenciales globales
             await _process_legacy_webhook(data, body_bytes, signature, db, ENVIRONMENT)
@@ -175,8 +216,12 @@ async def receive_webhook(
         return {"status": "ignored"}
 
     # Descifrar credenciales del agente
-    agent_app_secret = decrypt(agent.whatsapp_app_secret) if agent.whatsapp_app_secret else ""
-    agent_access_token = decrypt(agent.whatsapp_access_token) if agent.whatsapp_access_token else ""
+    agent_app_secret = (
+        decrypt(agent.whatsapp_app_secret) if agent.whatsapp_app_secret else ""
+    )
+    agent_access_token = (
+        decrypt(agent.whatsapp_access_token) if agent.whatsapp_access_token else ""
+    )
 
     # Validar firma HMAC con el app_secret del agente
     if agent_app_secret:
@@ -211,6 +256,7 @@ async def receive_webhook(
 # ---------------------------------------------------------------------------
 # Endpoints de gestión de conexión WhatsApp por agente
 # ---------------------------------------------------------------------------
+
 
 @router.post("/{agent_id}/connect")
 async def connect_whatsapp(
@@ -249,7 +295,7 @@ async def connect_whatsapp(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"El Phone Number ID {body.phone_number_id} ya está conectado "
-                   f"al agente '{existing.name}'. Desconéctalo primero.",
+            f"al agente '{existing.name}'. Desconéctalo primero.",
         )
 
     # Verificar conexión con Meta
@@ -338,7 +384,8 @@ async def get_whatsapp_status(
 ):
     """
     Retorna el estado de conexión de WhatsApp para un agente.
-    No expone access_token ni app_secret.
+    Soporta los proveedores 'meta_cloud' y 'qr_code'.
+    No expone tokens ni claves.
     """
     query = db.query(Agent).filter(Agent.id == agent_id)
     if current_user["id"] != "local_dev_user":
@@ -351,32 +398,64 @@ async def get_whatsapp_status(
             detail=f"Agente {agent_id} no encontrado.",
         )
 
-    # Construir webhook URL (relativa; el frontend le añade el dominio)
-    webhook_url = "/api/whatsapp/webhook"
+    whatsapp_provider = agent.whatsapp_provider or "meta_cloud"
+    webhook_url = (
+        "/api/whatsapp/webhook"
+        if whatsapp_provider == "meta_cloud"
+        else f"/api/whatsapp/webhook/qr/{agent.id}"
+    )
 
     result = {
-        "connected": agent.whatsapp_connected or False,
+        "connected": False,
         "phone_number_id": agent.whatsapp_phone_number_id,
         "phone_number": None,
         "display_name": None,
         "webhook_url": webhook_url,
         "verify_token": agent.whatsapp_verify_token,
+        "whatsapp_provider": whatsapp_provider,
+        "whatsapp_qr_connected": agent.whatsapp_qr_connected or False,
+        "whatsapp_qr_instance_name": agent.whatsapp_qr_instance_name,
+        "qr_code": None,
+        "is_mock_mode": qr_is_mock_mode(),
     }
 
-    # Si está conectado, verificar con Meta en tiempo real
-    if agent.whatsapp_connected and agent.whatsapp_access_token:
-        access_token = decrypt(agent.whatsapp_access_token)
-        if access_token:
-            verification = await verify_whatsapp_connection(
-                phone_number_id=agent.whatsapp_phone_number_id,
-                access_token=access_token,
-            )
+    if whatsapp_provider == "meta_cloud":
+        result["connected"] = agent.whatsapp_connected or False
+        if agent.whatsapp_connected and agent.whatsapp_access_token:
+            access_token = decrypt(agent.whatsapp_access_token)
+            if access_token:
+                verification = await verify_whatsapp_connection(
+                    phone_number_id=agent.whatsapp_phone_number_id,
+                    access_token=access_token,
+                )
+                result["phone_number"] = verification.get("phone_number")
+                result["display_name"] = verification.get("display_name")
+                if not verification["connected"]:
+                    result["connected"] = False
+                    result["error"] = verification.get("error")
+    else:
+        # QR Code Provider
+        if agent.whatsapp_qr_instance_name:
+            verification = await verify_qr_connection(agent.whatsapp_qr_instance_name)
+            result["connected"] = verification["connected"]
+            result["whatsapp_qr_connected"] = verification["connected"]
             result["phone_number"] = verification.get("phone_number")
             result["display_name"] = verification.get("display_name")
-            # Si Meta reporta error, marcar como desconectado
+            result["error"] = verification.get("error")
+
+            # Si no está conectado, obtener el QR para mostrarlo en el frontend
             if not verification["connected"]:
-                result["connected"] = False
-                result["error"] = verification.get("error")
+                result["qr_code"] = await get_qr_code(agent.whatsapp_qr_instance_name)
+            else:
+                result["qr_code"] = None
+
+            # Actualizar DB si el estado cambió
+            if agent.whatsapp_qr_connected != verification["connected"]:
+                agent.whatsapp_qr_connected = verification["connected"]
+                db.commit()
+        else:
+            result["connected"] = False
+            result["whatsapp_qr_connected"] = False
 
     return result
 
@@ -384,6 +463,7 @@ async def get_whatsapp_status(
 # ---------------------------------------------------------------------------
 # Helpers internos
 # ---------------------------------------------------------------------------
+
 
 def _extract_phone_number_id(data: dict) -> str | None:
     """Extrae el phone_number_id del payload del webhook de Meta."""
@@ -439,12 +519,16 @@ async def _process_agent_webhook(
                     mime_type = audio_data.get("mime_type", "audio/ogg")
 
                     if not media_id:
-                        logger.warning("Mensaje de tipo audio recibido sin media ID. Ignorando.")
+                        logger.warning(
+                            "Mensaje de tipo audio recibido sin media ID. Ignorando."
+                        )
                         continue
 
                     try:
                         # 1. Descargar audio de los servidores de Meta
-                        audio_bytes = await download_whatsapp_media(media_id, access_token)
+                        audio_bytes = await download_whatsapp_media(
+                            media_id, access_token
+                        )
 
                         # 2. Determinar la extensión
                         ext = "ogg"
@@ -453,20 +537,24 @@ async def _process_agent_webhook(
                         elif "m4a" in mime_type:
                             ext = "m4a"
 
-                        # 3. Transcribir usando Groq Whisper
+                        # 3. Transcribir usando el proveedor configurado del agente
                         from services.ai_service import transcribe_audio
+
                         user_message_text = await transcribe_audio(
                             audio_bytes=audio_bytes,
                             mime_type=mime_type,
-                            filename=f"voice.{ext}"
+                            filename=f"voice.{ext}",
+                            stt_provider=agent.stt_provider
+                            if hasattr(agent, "stt_provider") and agent.stt_provider
+                            else "groq_whisper",
                         )
                         logger.info(
-                            f"Transcripción exitosa para {phone_number}: \"{user_message_text}\""
+                            f'Transcripción exitosa para {phone_number}: "{user_message_text}"'
                         )
                     except Exception as e:
                         logger.error(
                             f"Error procesando nota de voz de {phone_number}: {str(e)}",
-                            exc_info=True
+                            exc_info=True,
                         )
                         await send_whatsapp_text(
                             phone_number,
@@ -493,9 +581,9 @@ async def _process_agent_webhook(
                 if not user_message_text.strip():
                     continue
 
-
                 # Deduplicación
                 from models.conversation import Message as DBMessage
+
                 exists = (
                     db.query(DBMessage)
                     .filter(DBMessage.whatsapp_message_id == whatsapp_msg_id)
@@ -637,6 +725,7 @@ async def _process_legacy_webhook(
 
                 # Deduplicación
                 from models.conversation import Message as DBMessage
+
                 exists = (
                     db.query(DBMessage)
                     .filter(DBMessage.whatsapp_message_id == whatsapp_msg_id)
@@ -646,11 +735,7 @@ async def _process_legacy_webhook(
                     continue
 
                 # Buscar agente activo con canal whatsapp (legacy)
-                agents = (
-                    db.query(Agent)
-                    .filter(Agent.status == "active")
-                    .all()
-                )
+                agents = db.query(Agent).filter(Agent.status == "active").all()
                 selected_agent = None
                 for a in agents:
                     channels = a.channels or []
@@ -715,3 +800,561 @@ async def _process_legacy_webhook(
                     settings.phone_number_id,
                     settings.meta_access_token,
                 )
+
+
+# ---------------------------------------------------------------------------
+# Endpoints adicionales para WhatsApp QR Code (Evolution API)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{agent_id}/provider")
+async def update_whatsapp_provider(
+    agent_id: str,
+    body: WhatsAppProviderRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Cambia el proveedor de WhatsApp entre 'meta_cloud' y 'qr_code'."""
+    query = db.query(Agent).filter(Agent.id == agent_id)
+    if current_user["id"] != "local_dev_user":
+        query = query.filter(Agent.user_id == current_user["id"])
+
+    agent = query.first()
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agente {agent_id} no encontrado.",
+        )
+
+    if body.provider not in ["meta_cloud", "qr_code"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Proveedor no válido. Debe ser 'meta_cloud' o 'qr_code'.",
+        )
+
+    agent.whatsapp_provider = body.provider
+    db.commit()
+
+    logger.info(
+        f"Proveedor de WhatsApp cambiado a '{body.provider}' para agente '{agent.name}'."
+    )
+    return {
+        "status": "success",
+        "whatsapp_provider": body.provider,
+        "message": f"Proveedor de WhatsApp cambiado a '{body.provider}' exitosamente.",
+    }
+
+
+@router.post("/{agent_id}/qr/connect")
+async def connect_whatsapp_qr(
+    agent_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Inicializa una sesión QR (Evolution API) para vincular el agente.
+    Genera el código QR base64 inicial y configura el webhook.
+    """
+    query = db.query(Agent).filter(Agent.id == agent_id)
+    if current_user["id"] != "local_dev_user":
+        query = query.filter(Agent.user_id == current_user["id"])
+
+    agent = query.first()
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agente {agent_id} no encontrado.",
+        )
+
+    # Definir nombre de instancia
+    instance_name = f"genia_agent_{agent.id}"
+    agent.whatsapp_qr_instance_name = instance_name
+
+    # Intentar inicializar instancia
+    init_res = await create_qr_instance(instance_name)
+    if init_res["status"] == "error":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No se pudo crear la sesión QR: {init_res['error']}",
+        )
+
+    if "token" in init_res and init_res["token"]:
+        agent.whatsapp_qr_instance_token = encrypt(init_res["token"])
+
+    # Configurar Webhook apuntando dinámicamente al host actual de la petición
+    base_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{base_url}/api/whatsapp/webhook/qr/{agent.id}"
+    await configure_qr_webhook(instance_name, webhook_url)
+
+    # Obtener el primer QR
+    qr_code = await get_qr_code(instance_name)
+
+    agent.whatsapp_provider = "qr_code"
+    # Asegurar que 'whatsapp' esté en los canales
+    channels = agent.channels or []
+    if "whatsapp" not in channels:
+        agent.channels = channels + ["whatsapp"]
+
+    db.commit()
+
+    return {
+        "status": "connecting",
+        "instance_name": instance_name,
+        "qr_code": qr_code,
+        "message": "Escanea el código QR desde tu celular en WhatsApp > Dispositivos Vinculados.",
+    }
+
+
+@router.post("/{agent_id}/qr/disconnect")
+async def disconnect_whatsapp_qr(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Desconecta la línea QR y destruye la instancia."""
+    query = db.query(Agent).filter(Agent.id == agent_id)
+    if current_user["id"] != "local_dev_user":
+        query = query.filter(Agent.user_id == current_user["id"])
+
+    agent = query.first()
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agente {agent_id} no encontrado.",
+        )
+
+    if agent.whatsapp_qr_instance_name:
+        await delete_qr_instance(agent.whatsapp_qr_instance_name)
+
+    agent.whatsapp_qr_instance_name = None
+    agent.whatsapp_qr_instance_token = None
+    agent.whatsapp_qr_connected = False
+    db.commit()
+
+    logger.info(f"WhatsApp QR desconectado para agente '{agent.name}'.")
+    return {
+        "status": "disconnected",
+        "message": f"WhatsApp QR desconectado del agente '{agent.name}'.",
+    }
+
+
+@router.post("/{agent_id}/qr/simulate-scan")
+async def simulate_scan_qr(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Endpoint de utilidad para pruebas en desarrollo.
+    Simula que el usuario escaneó el QR en el móvil y conecta el webhook de inmediato.
+    """
+    if not qr_is_mock_mode():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La simulación de escaneo solo está disponible en modo de desarrollo local sin Evolution API.",
+        )
+
+    query = db.query(Agent).filter(Agent.id == agent_id)
+    if current_user["id"] != "local_dev_user":
+        query = query.filter(Agent.user_id == current_user["id"])
+
+    agent = query.first()
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agente {agent_id} no encontrado.",
+        )
+
+    instance_name = agent.whatsapp_qr_instance_name or f"genia_agent_{agent.id}"
+    simulate_qr_scan(instance_name)
+    agent.whatsapp_qr_connected = True
+    db.commit()
+
+    logger.info(f"[SIMULACIÓN] QR escaneado con éxito para agente '{agent.name}'.")
+    return {
+        "status": "connected",
+        "message": f"Línea de WhatsApp QR simulada y conectada para el agente '{agent.name}'.",
+    }
+
+
+@router.post("/webhook/qr/{agent_id}")
+async def receive_qr_webhook(
+    agent_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Webhook para recibir mensajes de WhatsApp desde la API de emulación (Código QR).
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Payload JSON no válido.",
+        )
+
+    # ── PAYLOAD DEBUG LOGGING TO DB ──
+    try:
+        from models.conversation import Conversation as DBConv, Message as DBMessage
+        import json as _json
+        from datetime import datetime, timezone
+        import uuid
+
+        # Search for debug conversation
+        debug_conv = (
+            db.query(DBConv).filter(DBConv.contact_phone == "PAYLOAD_DEBUG").first()
+        )
+        if not debug_conv:
+            debug_conv = DBConv(
+                id=uuid.uuid4().hex,
+                agent_id=agent_id,
+                contact_phone="PAYLOAD_DEBUG",
+                contact_name="Payload Debugger",
+                channel="whatsapp",
+                status="active",
+                started_at=datetime.now(timezone.utc),
+                last_message_at=datetime.now(timezone.utc),
+            )
+            db.add(debug_conv)
+            db.commit()
+            db.refresh(debug_conv)
+
+        # Log payload as a message
+        payload_str = _json.dumps(data)
+        debug_msg = DBMessage(
+            id=uuid.uuid4().hex,
+            conversation_id=debug_conv.id,
+            role="user",
+            content=f"Agent: {agent_id} | Payload: {payload_str}"[
+                :3000
+            ],  # cap to avoid column limits
+            sent_at=datetime.now(timezone.utc),
+        )
+        db.add(debug_msg)
+        db.commit()
+    except Exception as db_err:
+        print("[DEBUG LOG ERROR]", str(db_err))
+
+    try:
+        return await _receive_qr_webhook_impl(agent_id, request, db, data)
+    except Exception as e:
+        import traceback
+
+        err_msg = traceback.format_exc()
+        logger.error(f"[QR WEBHOOK ERROR] Agent {agent_id}: {err_msg}")
+        try:
+            debug_conv = (
+                db.query(DBConv).filter(DBConv.contact_phone == "PAYLOAD_DEBUG").first()
+            )
+            if debug_conv:
+                debug_msg = DBMessage(
+                    id=uuid.uuid4().hex,
+                    conversation_id=debug_conv.id,
+                    role="assistant",
+                    content=f"ERROR TRACEBACK: {err_msg}"[:3000],
+                    sent_at=datetime.now(timezone.utc),
+                )
+                db.add(debug_msg)
+                db.commit()
+        except Exception:
+            pass
+        return {
+            "status": "accepted",
+            "warning": f"Error interno procesado: {str(e)[:200]}",
+        }
+
+
+async def _receive_qr_webhook_impl(
+    agent_id: str,
+    request: Request,
+    db: Session,
+    data: dict,
+):
+    # Log completo del payload para depuración
+    import json as _json
+
+    logger.info(
+        f"[QR WEBHOOK] Payload recibido: event={data.get('event')}, keys={list(data.keys()) if isinstance(data, dict) else type(data).__name__}"
+    )
+    logger.info(
+        f"[QR WEBHOOK] data type={type(data.get('data')).__name__ if isinstance(data, dict) else 'N/A'}, raw_data_preview={str(data)[:500]}"
+    )
+
+    agent = (
+        db.query(Agent).filter(Agent.id == agent_id, Agent.status == "active").first()
+    )
+    if not agent:
+        logger.warning(
+            f"Webhook QR recibido para agente inexistente o inactivo: {agent_id}"
+        )
+        return {"status": "ignored"}
+
+    # Extraer detalles
+    details = _extract_qr_message_details(data)
+    if not details:
+        # Evento administrativo
+        event_type = data.get("event")
+        if event_type == "connection.update":
+            state = data.get("data", {}).get("state")
+            if state == "open":
+                agent.whatsapp_qr_connected = True
+                db.commit()
+                logger.info(
+                    f"Línea QR de agente '{agent.name}' marcada como CONECTADA."
+                )
+            elif state in ["close", "refused"]:
+                agent.whatsapp_qr_connected = False
+                db.commit()
+                logger.info(
+                    f"Línea QR de agente '{agent.name}' marcada como DESCONECTADA."
+                )
+        return {"status": "accepted"}
+
+    phone_number = details["phone_number"]
+    whatsapp_msg_id = details["whatsapp_msg_id"]
+    user_message_text = details["text"]
+    msg_type = details["type"]
+    push_name = details["push_name"]
+
+    # Deduplicar
+    from models.conversation import Message as DBMessage
+
+    exists = (
+        db.query(DBMessage)
+        .filter(DBMessage.whatsapp_message_id == whatsapp_msg_id)
+        .first()
+    )
+    if exists:
+        return {"status": "ignored"}
+
+    # Obtener/crear conversación
+    conversation = (
+        db.query(Conversation)
+        .filter(
+            Conversation.agent_id == agent.id,
+            Conversation.contact_phone == phone_number,
+            Conversation.channel == "whatsapp",
+        )
+        .first()
+    )
+
+    if not conversation:
+        conversation = Conversation(
+            agent_id=agent.id,
+            contact_phone=phone_number,
+            contact_name=push_name,
+            channel="whatsapp",
+            status="active",
+        )
+        db.add(conversation)
+        db.flush()
+
+    if conversation.status == "handoff":
+        should_reactivate = False
+        if conversation.last_message_at:
+            now_tz = datetime.now(timezone.utc)
+            last_msg_at = conversation.last_message_at
+            if last_msg_at.tzinfo is None:
+                last_msg_at = last_msg_at.replace(tzinfo=timezone.utc)
+            if now_tz - last_msg_at > timedelta(minutes=2):
+                should_reactivate = True
+
+        # También si envían un saludo/comando de reinicio
+        if user_message_text and user_message_text.strip().lower() in [
+            "hola",
+            "reiniciar",
+            "reinicia",
+            "iniciar",
+        ]:
+            should_reactivate = True
+
+        if should_reactivate:
+            conversation.status = "active"
+            db.commit()
+            logger.info(
+                f"Conversación QR {conversation.id} reactivada automáticamente de handoff a active."
+            )
+        else:
+            logger.info(f"Conversación QR {conversation.id} en handoff. Ignorando IA.")
+            return {"status": "ignored"}
+
+    # Nota de voz
+    if msg_type == "audio":
+        if qr_is_mock_mode():
+            user_message_text = "[Nota de Voz Simulada] Hola agente, ¿cómo te va?"
+        else:
+            try:
+                # Evolution API descifra el audio automáticamente vía este endpoint
+                audio_msg_key = details["message_content"].get("audioMessage", {})
+                # Necesitamos el mensaje completo para que Evolution API lo descifre
+                full_message_obj = details.get("full_message_obj", {})
+                media_payload = {"message": full_message_obj, "convertToMp4": False}
+                evo_headers = {
+                    "apikey": settings.evolution_api_token,
+                    "Content-Type": "application/json",
+                }
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    media_res = await client.post(
+                        f"{settings.evolution_api_url}/chat/getBase64FromMediaMessage/{agent.whatsapp_qr_instance_name}",
+                        headers=evo_headers,
+                        json=media_payload,
+                    )
+                    logger.info(
+                        f"[QR AUDIO] Evolution media response: {media_res.status_code} - {media_res.text[:200]}"
+                    )
+                    if media_res.status_code in [200, 201]:
+                        media_data = media_res.json()
+                        # La respuesta puede tener 'base64' o 'data' según la versión
+                        b64_data = media_data.get("base64") or media_data.get(
+                            "data", ""
+                        )
+                        if b64_data:
+                            import base64
+
+                            audio_bytes = base64.b64decode(b64_data)
+                            mime_type = audio_msg_key.get(
+                                "mimetype", "audio/ogg; codecs=opus"
+                            )
+                            from services.ai_service import transcribe_audio
+
+                            user_message_text = await transcribe_audio(
+                                audio_bytes=audio_bytes,
+                                mime_type=mime_type,
+                                filename="voice.ogg",
+                                stt_provider=agent.stt_provider or "groq_whisper",
+                            )
+                            logger.info(
+                                f"[QR AUDIO] Transcripción exitosa: {user_message_text[:80]}"
+                            )
+                        else:
+                            logger.warning(
+                                f"[QR AUDIO] No se obtuvo base64 del media. Respuesta: {media_data}"
+                            )
+                            user_message_text = "[Nota de Voz - sin transcripción]"
+                    else:
+                        logger.error(
+                            f"[QR AUDIO] Error al obtener media: {media_res.status_code} - {media_res.text}"
+                        )
+                        user_message_text = "[Nota de Voz - sin transcripción]"
+            except Exception as e:
+                logger.error(
+                    f"Error al transcribir nota de voz QR: {str(e)}", exc_info=True
+                )
+                token_dec = (
+                    decrypt(agent.whatsapp_qr_instance_token)
+                    if agent.whatsapp_qr_instance_token
+                    else None
+                )
+                error_detail = f"⚠️ Error audio: {str(e)[:180]}"
+                await send_qr_text(
+                    instance_name=agent.whatsapp_qr_instance_name,
+                    to_phone=phone_number,
+                    text=error_detail,
+                    token=token_dec,
+                )
+                return {"status": "error"}
+
+    if not user_message_text.strip() or user_message_text == "[Nota de Voz]":
+        return {"status": "ignored"}
+
+    # Responder con IA
+    from services.conversation_service import process_conversation_message
+
+    reply = await process_conversation_message(
+        db=db,
+        agent=agent,
+        conversation=conversation,
+        user_message_text=user_message_text,
+        source_channel="whatsapp",
+        whatsapp_message_id=whatsapp_msg_id,
+    )
+
+    # Despachar mensaje
+    token_decrypted = (
+        decrypt(agent.whatsapp_qr_instance_token)
+        if agent.whatsapp_qr_instance_token
+        else None
+    )
+    await send_qr_text(
+        instance_name=agent.whatsapp_qr_instance_name,
+        to_phone=phone_number,
+        text=reply,
+        token=token_decrypted,
+    )
+
+    return {"status": "accepted"}
+
+
+# Helper extractor de Evolution API
+def _extract_qr_message_details(data: dict) -> dict | None:
+    event = data.get("event")
+    # Evolution API envía events del tipo 'messages.upsert'
+    if event != "messages.upsert":
+        return None
+
+    # Evolution API puede enviar 'data' como lista o como dict
+    raw_data = data.get("data", {})
+    if isinstance(raw_data, list):
+        # Tomar el primer mensaje de la lista que no sea del propio bot
+        message_data = None
+        for item in raw_data:
+            if not item.get("key", {}).get("fromMe", False):
+                message_data = item
+                break
+        if message_data is None:
+            return None
+    else:
+        message_data = raw_data
+
+    key = message_data.get("key", {})
+    from_me = key.get("fromMe", False)
+    if from_me:
+        return None
+
+    remote_jid = key.get("remoteJid", "")
+    if not remote_jid or not remote_jid.endswith("@s.whatsapp.net"):
+        logger.info(f"[QR EXTRACT] remoteJid descartado: {remote_jid}")
+        return None
+
+    phone_number = remote_jid.split("@")[0]
+    whatsapp_msg_id = key.get("id")
+    push_name = message_data.get("pushName", "Usuario WhatsApp")
+
+    message_content = message_data.get("message", {})
+    if not message_content:
+        logger.info(
+            f"[QR EXTRACT] Sin message_content en message_data: {list(message_data.keys())}"
+        )
+        return None
+
+    msg_type = "text"
+    user_message_text = ""
+
+    if "conversation" in message_content:
+        user_message_text = message_content["conversation"]
+    elif "extendedTextMessage" in message_content:
+        user_message_text = message_content.get("extendedTextMessage", {}).get(
+            "text", ""
+        )
+    elif "audioMessage" in message_content:
+        msg_type = "audio"
+        user_message_text = "[Nota de Voz]"
+    else:
+        logger.info(
+            f"[QR EXTRACT] Tipo de mensaje no reconocido. Claves: {list(message_content.keys())}"
+        )
+
+    logger.info(
+        f"[QR EXTRACT] Mensaje extraído: phone={phone_number}, type={msg_type}, text_preview={user_message_text[:80]}"
+    )
+    return {
+        "phone_number": phone_number,
+        "whatsapp_msg_id": whatsapp_msg_id,
+        "push_name": push_name,
+        "type": msg_type,
+        "text": user_message_text,
+        "message_content": message_content,
+        "full_message_obj": message_data,
+    }

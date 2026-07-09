@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["Chat Sandbox"])
 
 
-@router.post("/", response_model=ChatResponse)
+@router.post("", response_model=ChatResponse)
 async def chat_sandbox(request: ChatRequest, db: Session = Depends(get_db)):
     """
     Envía un mensaje a un agente y recibe su respuesta.
@@ -92,9 +92,11 @@ async def chat_sandbox(request: ChatRequest, db: Session = Depends(get_db)):
 @router.post("/transcribe")
 async def transcribe_audio_endpoint(
     file: UploadFile = File(...),
+    agent_id: str | None = None,
+    db: Session = Depends(get_db),
 ):
     """
-    Recibe un archivo de audio y devuelve su transcripción en texto usando Whisper.
+    Recibe un archivo de audio y devuelve su transcripción en texto usando el proveedor del agente.
     """
     from services.ai_service import transcribe_audio
 
@@ -102,11 +104,18 @@ async def transcribe_audio_endpoint(
     mime_type = file.content_type or "audio/webm"
     filename = file.filename or "recording.webm"
 
+    stt_provider = "groq_whisper"
+    if agent_id:
+        agent = db.query(Agent).filter(Agent.id == agent_id).first()
+        if agent and hasattr(agent, "stt_provider") and agent.stt_provider:
+            stt_provider = agent.stt_provider
+
     try:
         text = await transcribe_audio(
             audio_bytes=audio_bytes,
             mime_type=mime_type,
             filename=filename,
+            stt_provider=stt_provider,
         )
         return {"text": text}
     except Exception as e:

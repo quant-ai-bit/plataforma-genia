@@ -147,7 +147,11 @@ export default function Sidebar() {
               Servidor Backend
             </p>
             <p className="text-[10px] text-gray-500">
-              {isBackendOnline ? "Online (Puerto 8000)" : "Offline (Modo Demo)"}
+              {isBackendOnline 
+                ? (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") 
+                  ? "Online (Puerto 8000)" 
+                  : "Online (Cloud)") 
+                : "Offline (Modo Demo)"}
             </p>
           </div>
         </div>

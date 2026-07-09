@@ -50,20 +50,52 @@ def verify_whatsapp_signature(payload: bytes, signature: str, secret: str) -> bo
         return False
 
 
-async def send_whatsapp_text(
+async def send_whatsapp_image(
+    to_phone: str,
+    image_url: str,
+    caption: str,
+    phone_number_id: str,
+    access_token: str,
+) -> dict:
+    """
+    Envía una imagen a través de WhatsApp Cloud API (Meta Graph API).
+    """
+    if not phone_number_id or not access_token:
+        logger.error("Configuración de Meta incompleta (phone_number_id o access_token faltante).")
+        raise ValueError("Configuración de Meta incompleta para este agente.")
+
+    url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to_phone,
+        "type": "image",
+        "image": {
+            "link": image_url,
+            "caption": caption
+        }
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, headers=headers, json=payload)
+        if response.status_code != 200:
+            logger.error(f"Error al enviar imagen de WhatsApp: {response.text}")
+        response.raise_for_status()
+        return response.json()
+
+
+async def send_whatsapp_text_raw(
     to_phone: str,
     text: str,
     phone_number_id: str,
     access_token: str,
 ) -> dict:
     """
-    Envía un mensaje de texto a través de WhatsApp Cloud API.
-
-    Args:
-        to_phone: Número de teléfono del destinatario (formato internacional sin +).
-        text: Texto del mensaje a enviar.
-        phone_number_id: Phone Number ID de Meta del agente.
-        access_token: Access Token de Meta del agente.
+    Envía un mensaje de texto puro a través de WhatsApp Cloud API.
     """
     if not phone_number_id or not access_token:
         logger.error("Configuración de Meta incompleta (phone_number_id o access_token faltante).")
@@ -91,6 +123,39 @@ async def send_whatsapp_text(
             logger.error(f"Error al enviar mensaje de WhatsApp: {response.text}")
         response.raise_for_status()
         return response.json()
+
+
+async def send_whatsapp_text(
+    to_phone: str,
+    text: str,
+    phone_number_id: str,
+    access_token: str,
+) -> dict:
+    """
+    Envía un mensaje de texto a través de WhatsApp Cloud API.
+    Si el texto contiene imágenes en formato Markdown ![alt](url),
+    las extrae y las envía como mensajes multimedia nativos de WhatsApp.
+    """
+    import re
+    # Encontrar imágenes en formato ![descripción](url)
+    image_matches = re.findall(r'!\[(.*?)\]\((.*?)\)', text)
+    
+    if image_matches:
+        # Extraer texto limpio sin el formato de imagen de markdown
+        cleaned_text = re.sub(r'!\[(.*?)\]\((.*?)\)', '', text).strip()
+        cleaned_text = re.sub(r'\n{3,}', '\n\n', cleaned_text).strip()
+        
+        last_res = {}
+        if cleaned_text:
+            last_res = await send_whatsapp_text_raw(to_phone, cleaned_text, phone_number_id, access_token)
+            
+        for caption, image_url in image_matches:
+            # Enviar cada imagen de manera nativa
+            last_res = await send_whatsapp_image(to_phone, image_url, caption, phone_number_id, access_token)
+            
+        return last_res
+    else:
+        return await send_whatsapp_text_raw(to_phone, text, phone_number_id, access_token)
 
 
 async def download_whatsapp_media(

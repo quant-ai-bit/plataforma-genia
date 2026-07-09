@@ -25,7 +25,7 @@ class StatusUpdate(BaseModel):
     )
 
 
-@router.get("/", response_model=list[ConversationResponse])
+@router.get("", response_model=list[ConversationResponse])
 def list_conversations(
     agent_id: str | None = None,
     status_filter: str | None = None,

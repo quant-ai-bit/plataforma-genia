@@ -90,11 +90,13 @@ def build_providers_from_settings(settings=None) -> list[ModelProvider]:
     from services.providers.groq_provider import GroqProvider
     from services.providers.openrouter_provider import OpenRouterProvider
     from services.providers.vertex_provider import VertexAIProvider
+    from services.providers.gemini_provider import GeminiProvider
 
     factories = {
         "vertex": VertexAIProvider,
         "groq": GroqProvider,
         "openrouter": OpenRouterProvider,
+        "gemini": GeminiProvider,
     }
 
     raw_order = getattr(settings, "model_fallback_order", "") or ""

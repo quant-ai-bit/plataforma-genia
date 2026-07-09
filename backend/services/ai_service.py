@@ -111,8 +111,10 @@ def build_lead_tools(custom_fields: list[dict]) -> list[dict]:
             # Evitar duplicar el campo 'name' o procesar campos sin nombre
             continue
 
-        field_type: str = field.get("type", "string")
+        # Forzar 'string' para evitar errores de validación de tipo en los LLM (como Groq 400 validation failed)
+        field_type: str = "string"
         field_desc: str = field.get("description", f"Campo personalizado: {field_name}")
+
 
         properties[field_name] = {
             "type": field_type,
@@ -179,6 +181,159 @@ def build_lead_tools(custom_fields: list[dict]) -> list[dict]:
     ]
 
     return tools
+
+
+def build_calendar_tools() -> list[dict]:
+    """
+    Genera las herramientas de function-calling para Google Calendar.
+
+    Incluye: check_calendar_availability, create_calendar_event,
+    list_upcoming_events, cancel_calendar_event, reschedule_calendar_event.
+    """
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "check_calendar_availability",
+                "description": (
+                    "Verifica la disponibilidad del calendario para una fecha determinada. "
+                    "Retorna las franjas horarias disponibles dentro del horario laboral."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "date": {
+                            "type": "string",
+                            "description": "Fecha a consultar en formato YYYY-MM-DD (ej: 2026-07-03)"
+                        }
+                    },
+                    "required": ["date"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "create_calendar_event",
+                "description": (
+                    "Crea una cita o evento en el calendario del negocio. "
+                    "Usa esta herramienta cuando el cliente quiera agendar una cita, "
+                    "reunión o reserva."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Título o resumen de la cita (ej: 'Cita con Mar\u00eda - Consulta')"
+                        },
+                        "date": {
+                            "type": "string",
+                            "description": "Fecha de la cita en formato YYYY-MM-DD"
+                        },
+                        "start_time": {
+                            "type": "string",
+                            "description": "Hora de inicio en formato HH:MM (24h, ej: '14:30')"
+                        },
+                        "end_time": {
+                            "type": "string",
+                            "description": "Hora de fin en formato HH:MM (24h, ej: '15:30')"
+                        },
+                        "attendee_name": {
+                            "type": "string",
+                            "description": "Nombre del cliente o asistente"
+                        },
+                        "attendee_email": {
+                            "type": "string",
+                            "description": "Email del cliente (opcional, para enviarle invitación)"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Descripción o notas adicionales de la cita"
+                        }
+                    },
+                    "required": ["title", "date", "start_time", "end_time"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_upcoming_events",
+                "description": (
+                    "Lista los próximos eventos o citas del calendario. "
+                    "Útil para informar al cliente sobre las citas programadas."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days_ahead": {
+                            "type": "integer",
+                            "description": "Número de días hacia adelante para buscar eventos (default: 7)"
+                        }
+                    },
+                    "required": []
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "cancel_calendar_event",
+                "description": (
+                    "Cancela una cita o evento del calendario. "
+                    "IMPORTANTE: Siempre pregunta al cliente el motivo de la cancelación "
+                    "antes de usar esta herramienta."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "event_id": {
+                            "type": "string",
+                            "description": "ID del evento a cancelar (obtenido de list_upcoming_events)"
+                        },
+                        "cancellation_reason": {
+                            "type": "string",
+                            "description": "Motivo de la cancelación proporcionado por el cliente"
+                        }
+                    },
+                    "required": ["event_id", "cancellation_reason"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "reschedule_calendar_event",
+                "description": (
+                    "Reprograma una cita existente a una nueva fecha y hora. "
+                    "Usa esta herramienta cuando el cliente necesite cambiar la fecha u hora de su cita."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "event_id": {
+                            "type": "string",
+                            "description": "ID del evento a reprogramar"
+                        },
+                        "new_date": {
+                            "type": "string",
+                            "description": "Nueva fecha en formato YYYY-MM-DD"
+                        },
+                        "new_start_time": {
+                            "type": "string",
+                            "description": "Nueva hora de inicio en formato HH:MM"
+                        },
+                        "new_end_time": {
+                            "type": "string",
+                            "description": "Nueva hora de fin en formato HH:MM"
+                        }
+                    },
+                    "required": ["event_id", "new_date", "new_start_time", "new_end_time"]
+                }
+            }
+        },
+    ]
 
 
 async def post_openrouter_with_retries(client: httpx.AsyncClient, payload: dict, max_retries: int = 3) -> httpx.Response:
@@ -292,6 +447,14 @@ async def chat_with_agent(
             "alert_owner_about_unanswered_query": "builtin",
         }
 
+    # ── Herramientas de Google Calendar (si está conectado) ─────────
+    calendar_connected = agent_model_data.get("google_calendar_connected", False)
+    if calendar_connected:
+        calendar_tools = build_calendar_tools()
+        tools.extend(calendar_tools)
+        for ct in calendar_tools:
+            tool_origin_map[ct["function"]["name"]] = "calendar_builtin"
+
     # ── Variables de resultado ────────────────────────────────────
     final_text: str = ""
     lead_data: dict | None = None
@@ -301,145 +464,261 @@ async def chat_with_agent(
     completion_tokens: int = 0
 
     try:
-        # ── Determinar cliente según proveedor y realizar llamada ──
-        if provider == "groq":
-            response = await groq_client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                tools=tools,
-                tool_choice="auto",
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-            response_message = response.choices[0].message
-            tool_calls = response_message.tool_calls
-            
-            if response.usage:
-                prompt_tokens += response.usage.prompt_tokens
-                completion_tokens += response.usage.completion_tokens
+        from services.model_rotation_service import FREE_MODELS
+        max_rotation_attempts = len(FREE_MODELS)
+        current_attempt = 0
+        last_error = None
 
-        elif provider == "openrouter":
-            clean_messages = [message_to_dict(m) for m in messages]
-            payload = {
-                "model": model_name,
-                "messages": clean_messages,
-                "tools": tools,
-                "tool_choice": "auto",
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-            }
-            async with httpx.AsyncClient() as client:
-                response = await post_openrouter_with_retries(client, payload)
-                if response.status_code != 200:
-                    raise Exception(f"OpenRouter API error: {response.status_code} - {response.text}")
-                
-                resp_json = response.json()
-                choice = resp_json["choices"][0]
-                response_message = choice["message"]
-                
-                raw_tool_calls = response_message.get("tool_calls")
-                if raw_tool_calls:
-                    tool_calls = [Struct(**tc) for tc in raw_tool_calls]
-                else:
+        while current_attempt < max_rotation_attempts:
+            current_attempt += 1
+            try:
+                # ── Determinar cliente según proveedor y realizar llamada ──
+                if provider == "groq":
+                    response = await groq_client.chat.completions.create(
+                        model=model_name,
+                        messages=messages,
+                        tools=tools,
+                        tool_choice="auto",
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                    response_message = response.choices[0].message
+                    tool_calls = response_message.tool_calls
+                    
+                    if response.usage:
+                        prompt_tokens += response.usage.prompt_tokens
+                        completion_tokens += response.usage.completion_tokens
+
+                elif provider == "gemini":
+                    from services.providers.gemini_provider import GeminiProvider
+                    from services.providers.base import GenerationRequest
+                    gp = GeminiProvider(model=model_name)
+                    req = GenerationRequest(
+                        messages=messages,
+                        system_prompt=full_system_prompt,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                    result = await gp.generate(req, timeout_s=30.0)
+                    response_message = {"role": "assistant", "content": result.text}
                     tool_calls = None
-                
-                usage_data = resp_json.get("usage", {})
-                prompt_tokens += usage_data.get("prompt_tokens", 0)
-                completion_tokens += usage_data.get("completion_tokens", 0)
-        else:
-            logger.warning("Proveedor '%s' no soportado aún.", provider)
-            return (
-                "⚠️ El proveedor de IA configurado no está soportado actualmente.",
-                None,
-                False,
-                None,
-                0,
-                0,
-            )
+                    prompt_tokens += result.input_tokens
+                    completion_tokens += result.output_tokens
 
-        if tool_calls:
-            # Agregar la respuesta del asistente con la tool-call al historial
-            messages.append(response_message)
-
-            for tool_call in tool_calls:
-                func_name = tool_call.function.name
-                args: dict = json.loads(tool_call.function.arguments)
-
-                # ── Ejecutar via MCP Registry ────────────────────
-                result = await mcp_registry.execute_tool(
-                    tool_name=func_name,
-                    arguments=args,
-                    tool_origin_map=tool_origin_map,
-                    agent_id=agent_id,
-                )
-
-                # ── Procesar resultado según tipo de tool ────────
-                if func_name == "save_lead_info":
-                    lead_data = args
-                    logger.info(
-                        "Datos de lead capturados por function-calling: %s", args
-                    )
-                elif func_name == "trigger_human_handoff":
-                    handoff_triggered = True
-                    logger.info("Human handoff triggered by the agent.")
-                elif func_name == "alert_owner_about_unanswered_query":
-                    unanswered_question = args.get("unanswered_question", user_message)
-                    logger.info(
-                        "Alerta de pregunta sin respuesta registrada: %s", unanswered_question
-                    )
-
-                # Agregar resultado de la herramienta al historial
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": func_name,
-                        "content": json.dumps(result),
+                elif provider == "openrouter":
+                    clean_messages = [message_to_dict(m) for m in messages]
+                    payload = {
+                        "model": model_name,
+                        "messages": clean_messages,
+                        "tools": tools,
+                        "tool_choice": "auto",
+                        "temperature": temperature,
+                        "max_tokens": max_tokens,
                     }
-                )
+                    async with httpx.AsyncClient() as client:
+                        response = await post_openrouter_with_retries(client, payload)
+                        if response.status_code != 200:
+                            raise Exception(f"OpenRouter API error: {response.status_code} - {response.text}")
+                        
+                        resp_json = response.json()
+                        choice = resp_json["choices"][0]
+                        response_message = choice["message"]
+                        
+                        raw_tool_calls = response_message.get("tool_calls")
+                        if raw_tool_calls:
+                            tool_calls = [Struct(**tc) for tc in raw_tool_calls]
+                        else:
+                            tool_calls = None
+                        
+                        usage_data = resp_json.get("usage", {})
+                        prompt_tokens += usage_data.get("prompt_tokens", 0)
+                        completion_tokens += usage_data.get("completion_tokens", 0)
+                else:
+                    logger.warning("Proveedor '%s' no soportado aún.", provider)
+                    return (
+                        "⚠️ El proveedor de IA configurado no está soportado actualmente.",
+                        None,
+                        False,
+                        None,
+                        0,
+                        0,
+                    )
 
-            # ── Segunda llamada (sin tools) para texto final ──
-            if provider == "groq":
-                second_response = await groq_client.chat.completions.create(
-                    model=model_name,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
+                if tool_calls:
+                    # Agregar la respuesta del asistente con la tool-call al historial
+                    messages.append(message_to_dict(response_message))
+
+                    for tool_call in tool_calls:
+                        func_name = tool_call.function.name
+                        args: dict = json.loads(tool_call.function.arguments)
+
+                        # ── Ejecutar via MCP Registry ────────────────────
+                        result = await mcp_registry.execute_tool(
+                            tool_name=func_name,
+                            arguments=args,
+                            tool_origin_map=tool_origin_map,
+                            agent_id=agent_id,
+                            db=db,
+                        )
+
+                        # ── Procesar resultado según tipo de tool ────────
+                        if func_name == "save_lead_info":
+                            lead_data = args
+                            logger.info(
+                                "Datos de lead capturados por function-calling: %s", args
+                            )
+                        elif func_name == "trigger_human_handoff":
+                            handoff_triggered = True
+                            logger.info("Human handoff triggered by the agent.")
+                        elif func_name == "alert_owner_about_unanswered_query":
+                            unanswered_question = args.get("unanswered_question", user_message)
+                            logger.info(
+                                "Alerta de pregunta sin respuesta registrada: %s", unanswered_question
+                            )
+
+                        # Agregar resultado de la herramienta al historial
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": func_name,
+                                "content": json.dumps(result),
+                            }
+                        )
+
+                    # ── Segunda llamada (sin tools) para texto final ──
+                    if provider == "groq":
+                        second_response = await groq_client.chat.completions.create(
+                            model=model_name,
+                            messages=messages,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                        )
+                        final_text = second_response.choices[0].message.content or ""
+                        if second_response.usage:
+                            prompt_tokens += second_response.usage.prompt_tokens
+                            completion_tokens += second_response.usage.completion_tokens
+                    elif provider == "gemini":
+                        final_text = response_message.get("content") or ""
+                    elif provider == "openrouter":
+                        clean_messages = [message_to_dict(m) for m in messages]
+                        payload = {
+                            "model": model_name,
+                            "messages": clean_messages,
+                            "temperature": temperature,
+                            "max_tokens": max_tokens,
+                        }
+                        async with httpx.AsyncClient() as client:
+                            second_response = await post_openrouter_with_retries(client, payload)
+                            if second_response.status_code != 200:
+                                raise Exception(f"OpenRouter API error: {second_response.status_code} - {second_response.text}")
+                            
+                            second_resp_json = second_response.json()
+                            final_text = second_resp_json["choices"][0]["message"]["content"] or ""
+                            
+                            second_usage_data = second_resp_json.get("usage", {})
+                            prompt_tokens += second_usage_data.get("prompt_tokens", 0)
+                            completion_tokens += second_usage_data.get("completion_tokens", 0)
+                else:
+                    if provider == "openrouter":
+                        final_text = response_message.get("content") or ""
+                    elif provider == "gemini":
+                        final_text = response_message.get("content") or ""
+                    else:
+                        final_text = response_message.content or ""
+
+                # Limpiar posibles fugas de texto de function-calling (como <function=...>)
+                if final_text:
+                    final_text = re.sub(r"<function=\w+>.*?</function>", "", final_text, flags=re.DOTALL)
+                    final_text = re.sub(r"<function=\w+>.*$", "", final_text, flags=re.DOTALL)
+                    final_text = final_text.strip()
+
+                # Registrar el uso exitoso en la base de datos si tenemos db
+                if db:
+                    from services.model_rotation_service import ModelRotationService
+                    ModelRotationService.track_usage_and_check_limits(
+                        db=db,
+                        provider=provider,
+                        model=model_name,
+                        input_tokens=prompt_tokens,
+                        output_tokens=completion_tokens
+                    )
+
+                break
+
+            except Exception as attempt_exc:
+                error_str = str(attempt_exc)
+                logger.warning(
+                    "Fallo en chat_with_agent (intento %s/%s) usando %s/%s: %s",
+                    current_attempt,
+                    max_rotation_attempts,
+                    provider,
+                    model_name,
+                    error_str,
                 )
-                final_text = second_response.choices[0].message.content or ""
-                if second_response.usage:
-                    prompt_tokens += second_response.usage.prompt_tokens
-                    completion_tokens += second_response.usage.completion_tokens
-            elif provider == "openrouter":
-                clean_messages = [message_to_dict(m) for m in messages]
-                payload = {
-                    "model": model_name,
-                    "messages": clean_messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                }
-                async with httpx.AsyncClient() as client:
-                    second_response = await post_openrouter_with_retries(client, payload)
-                    if second_response.status_code != 200:
-                        raise Exception(f"OpenRouter API error: {second_response.status_code} - {second_response.text}")
+                last_error = attempt_exc
+                
+                # Comprobar si es un error de cuota/límites o de indisponibilidad/decommissioning del modelo
+                exc_msg = getattr(attempt_exc, "message", "")
+                if exc_msg is None:
+                    exc_msg = ""
+                is_quota_error = any(
+                    kw in error_str.lower() or kw in str(exc_msg).lower()
+                    for kw in (
+                        "quota", "429", "rate_limit", "rate limit", "too many requests",
+                        "402", "payment required", "out of tokens", "insufficient_funds",
+                        "decommissioned", "not found", "not supported", "invalid_request_error",
+                        "bad request", "400", "503", "500", "service_unavailable"
+                    )
+                )
+                
+                if is_quota_error and db and agent_id:
+                    from services.model_rotation_service import ModelRotationService
+                    from models.agent import Agent
                     
-                    second_resp_json = second_response.json()
-                    final_text = second_resp_json["choices"][0]["message"]["content"] or ""
+                    # 1. Registrar el agotamiento del modelo
+                    ModelRotationService.mark_model_exhausted(
+                        db=db,
+                        provider=provider,
+                        model=model_name,
+                        reason=f"Agotamiento en chat_with_agent: {error_str}"
+                    )
                     
-                    second_usage_data = second_resp_json.get("usage", {})
-                    prompt_tokens += second_usage_data.get("prompt_tokens", 0)
-                    completion_tokens += second_usage_data.get("completion_tokens", 0)
+                    # 2. Elegir un modelo sustituto
+                    next_model = ModelRotationService.get_next_available_free_model(
+                        db=db,
+                        current_provider=provider,
+                        current_model=model_name
+                    )
+                    
+                    logger.info(
+                        "Auto-rotación de modelo iniciada para el agente %s. Nuevo modelo: %s/%s",
+                        agent_id,
+                        next_model["provider"],
+                        next_model["model"]
+                    )
+                    
+                    # 3. Actualizar la base de datos para el agente
+                    agent_db = db.query(Agent).filter(Agent.id == agent_id).first()
+                    if agent_db:
+                        agent_db.provider = next_model["provider"]
+                        agent_db.model = next_model["model"]
+                        db.commit()
+                    
+                    # 4. Modificar parámetros para el siguiente intento en caliente
+                    provider = next_model["provider"]
+                    model_name = next_model["model"]
+                    
+                    # Limpiar contadores de tokens fallidos
+                    prompt_tokens = 0
+                    completion_tokens = 0
+                    
+                    # Reintentar en caliente
+                    continue
+                else:
+                    raise attempt_exc
         else:
-            if provider == "openrouter":
-                final_text = response_message.get("content") or ""
-            else:
-                final_text = response_message.content or ""
-
-        # Limpiar posibles fugas de texto de function-calling (como <function=...>)
-        if final_text:
-            final_text = re.sub(r"<function=\w+>.*?</function>", "", final_text, flags=re.DOTALL)
-            final_text = re.sub(r"<function=\w+>.*$", "", final_text, flags=re.DOTALL)
-            final_text = final_text.strip()
+            raise Exception("Todos los reintentos de rotación de modelos gratuitos fallaron.")
 
     except Exception as exc:
         error_str = str(exc)
@@ -462,6 +741,8 @@ async def chat_with_agent(
                 "⚠️ Hubo un error procesando tu solicitud con el servicio de IA. "
                 "Por favor, inténtalo de nuevo más tarde."
             )
+
+
 
     return final_text, lead_data, handoff_triggered, unanswered_question, prompt_tokens, completion_tokens
 
@@ -541,25 +822,32 @@ async def transcribe_audio(
     audio_bytes: bytes,
     mime_type: str = "audio/ogg",
     filename: str = "voice.ogg",
+    stt_provider: str = "groq_whisper",
+    language: str = "es",
 ) -> str:
     """
-    Transcribe bytes de audio usando la API Whisper de Groq.
+    Transcribe bytes de audio usando el proveedor STT configurado.
+
+    Delega al servicio multi-proveedor stt_service.py.
+    Mantiene compatibilidad con llamadas existentes.
+
+    Args:
+        audio_bytes: Bytes del audio.
+        mime_type: Tipo MIME del audio.
+        filename: Nombre del archivo.
+        stt_provider: Proveedor STT ('groq_whisper', 'openai_whisper', 'deepgram', 'google_stt').
+        language: Código de idioma (default: 'es').
+
+    Returns:
+        Texto transcrito.
     """
-    from io import BytesIO
+    from services.stt_service import transcribe_audio as stt_transcribe
 
-    if not settings.groq_api_key:
-        logger.error("No se pudo transcribir audio: GROQ_API_KEY no configurada.")
-        raise ValueError("GROQ_API_KEY no configurada en las variables de entorno.")
-
-    try:
-        file_tuple = (filename, BytesIO(audio_bytes), mime_type)
-        response = await groq_client.audio.transcriptions.create(
-            file=file_tuple,
-            model="whisper-large-v3",
-            language="es",
-        )
-        return response.text
-    except Exception as e:
-        logger.error("Error en la transcripción de audio con Groq: %s", str(e), exc_info=True)
-        raise e
+    return await stt_transcribe(
+        audio_bytes=audio_bytes,
+        mime_type=mime_type,
+        filename=filename,
+        stt_provider=stt_provider,
+        language=language,
+    )
 

@@ -154,13 +154,15 @@ async def agent_chat(
     db.add(user_msg)
     db.flush()
 
-    # Historial previo (excluye el mensaje recien agregado).
+    # Historial previo (excluye el mensaje recien agregado, limitado a los últimos 15).
     history_rows = (
         db.query(Message)
         .filter(Message.conversation_id == conversation.id)
-        .order_by(Message.sent_at.asc())
+        .order_by(Message.sent_at.desc())
+        .limit(15)
         .all()
     )
+    history_rows.reverse()
     history = [
         {"role": m.role, "content": m.content}
         for m in history_rows

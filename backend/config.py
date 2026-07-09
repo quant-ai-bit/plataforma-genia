@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     phone_number_id: str = ""
     webhook_verify_token: str = "genia_verify_token"
     meta_app_secret: str = ""
+    evolution_api_url: str = ""
+    evolution_api_token: str = ""
 
     # Supabase (JWT Secret para autenticación y almacenamiento)
     supabase_jwt_secret: str = ""
@@ -62,12 +64,7 @@ class Settings(BaseSettings):
         """Modelos disponibles en Groq."""
         return [
             "llama-3.3-70b-versatile",
-            "llama-3.1-70b-versatile",
             "llama-3.1-8b-instant",
-            "llama3-70b-8192",
-            "llama3-8b-8192",
-            "mixtral-8x7b-32768",
-            "gemma2-9b-it",
         ]
 
     @property
@@ -76,8 +73,6 @@ class Settings(BaseSettings):
         return [
             "gemini-2.5-flash",
             "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-1.5-pro",
         ]
 
     @property
@@ -85,11 +80,12 @@ class Settings(BaseSettings):
         """Modelos disponibles en OpenRouter."""
         return [
             "deepseek/deepseek-chat",
-            "anthropic/claude-3.5-sonnet:beta",
             "google/gemini-2.5-flash",
             "openai/gpt-4o-mini",
             "openai/gpt-4o",
+            "anthropic/claude-3.5-sonnet",
         ]
+
 
     # --- Cifrado de credenciales sensibles (WhatsApp, etc.) ---
     # Clave Fernet para cifrar/descifrar credenciales almacenadas en la DB.
@@ -121,6 +117,25 @@ class Settings(BaseSettings):
     # Se leen solo desde el entorno (CONTRANQUI_MCP_URL / CONTRANQUI_MCP_SERVICE_TOKEN).
     contranqui_mcp_url: str = ""
     contranqui_mcp_service_token: str = ""
+
+    # --- Google Calendar OAuth 2.0 (por agente) ---
+    # Client ID y Client Secret del proyecto Google Cloud con Calendar API habilitada.
+    # Cada agente conecta su propio Google Calendar via OAuth.
+    google_calendar_client_id: str = ""
+    google_calendar_client_secret: str = ""
+    google_calendar_redirect_uri: str = ""
+
+    # --- Transcripción de voz (STT) ---
+    # Proveedor STT por defecto si el agente no tiene uno configurado.
+    # Opciones: "groq_whisper", "google_stt", "deepgram", "openai_whisper"
+    default_stt_provider: str = "groq_whisper"
+    # Claves de proveedores STT adicionales (Groq ya se lee de groq_api_key).
+    deepgram_api_key: str = ""
+    openai_api_key: str = ""
+
+    # --- Text-to-Speech (TTS) — preparado para uso futuro ---
+    default_tts_provider: str = "google_tts"
+    elevenlabs_api_key: str = ""
 
     @property
     def allowed_origins_list(self) -> list[str]:

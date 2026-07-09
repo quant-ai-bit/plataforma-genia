@@ -8,6 +8,7 @@ from models.agent_image import AgentImage  # noqa: F401
 from models.agent_usage import AgentUsage  # noqa: F401
 from models.mcp_server_config import MCPServerConfig  # noqa: F401
 from models.knowledge_chunk import KnowledgeChunk  # noqa: F401
+from models.free_model_status import FreeModelStatus  # noqa: F401
 
 # --- Entidades multi-tenant (genia-agent-platform) ---
 from models.tenant import Tenant  # noqa: F401

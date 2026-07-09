@@ -1,8 +1,9 @@
 """Servicio unificado de procesamiento de conversaciones para PLATAFORMA GENIA.
 
 Centraliza la lógica de interacción con el agente, recuperación de RAG,
-inyección de prompts (imágenes, fecha/hora, captura de leads), persistencia de mensajes,
-cálculo de costos y flujos de captura de leads y derivación humana (handoff).
+inyección de prompts (imágenes, fecha/hora, captura de leads, calendario),
+persistencia de mensajes, cálculo de costos y flujos de captura de leads,
+derivación humana (handoff) y gestión de calendario.
 """
 
 from datetime import datetime, timezone, timedelta
@@ -52,13 +53,15 @@ async def process_conversation_message(
     db.add(user_msg)
     db.flush()  # Obtener ID antes de cargar el historial
 
-    # 2. Cargar historial de chat (excluyendo el mensaje recién agregado)
+    # 2. Cargar historial de chat (excluyendo el mensaje recién agregado, limitado a los últimos 15)
     history_messages = (
         db.query(Message)
         .filter(Message.conversation_id == conversation.id)
-        .order_by(Message.sent_at.asc())
+        .order_by(Message.sent_at.desc())
+        .limit(15)
         .all()
     )
+    history_messages.reverse()
     conversation_history = [
         {"role": m.role, "content": m.content}
         for m in history_messages
@@ -82,18 +85,26 @@ async def process_conversation_message(
         for img in images:
             system_prompt += f"- Nombre: {img.filename}, Descripción: {img.description or 'Sin descripción'}, URL: {img.url}\n"
 
-    # 4.2 Inyectar fecha y hora local de Colombia (GMT-5)
-    colombia_tz = timezone(timedelta(hours=-5))
-    now_col = datetime.now(colombia_tz)
+    # 4.2 Inyectar fecha y hora local según la zona horaria del agente
+    from zoneinfo import ZoneInfo
+    agent_tz_str = agent.timezone if hasattr(agent, 'timezone') and agent.timezone else "America/Bogota"
+    try:
+        agent_tz = ZoneInfo(agent_tz_str)
+    except Exception:
+        agent_tz = ZoneInfo("America/Bogota")
+        agent_tz_str = "America/Bogota"
+
+    now_local = datetime.now(agent_tz)
     dias_semana = {
         0: "lunes", 1: "martes", 2: "miércoles",
         3: "jueves", 4: "viernes", 5: "sábado", 6: "domingo"
     }
     system_prompt += (
-        f"\n\n[FECHA Y HORA ACTUAL (GMT-5 Colombia)]\n"
-        f"La fecha de hoy es: {now_col.strftime('%Y-%m-%d')}\n"
-        f"El día de la semana es: {dias_semana[now_col.weekday()]}\n"
-        f"La hora actual es: {now_col.strftime('%H:%M:%S')}\n"
+        f"\n\n[FECHA Y HORA ACTUAL ({agent_tz_str})]\n"
+        f"La fecha de hoy es: {now_local.strftime('%Y-%m-%d')}\n"
+        f"El día de la semana es: {dias_semana[now_local.weekday()]}\n"
+        f"La hora actual es: {now_local.strftime('%H:%M:%S')}\n"
+        f"Zona horaria: {agent_tz_str}\n"
         f"Usa esta información siempre que el usuario te pregunte por la fecha o la hora, o si necesitas calcular plazos, días o referencias temporales (como hoy, mañana, ayer, fin de semana, etc.).\n"
         f"IMPORTANTE: NO intentes llamar a herramientas o funciones externas para obtener fecha y hora (como get_current_date_and_time). Simplemente responde usando la información provista en este prompt."
     )
@@ -105,6 +116,40 @@ async def process_conversation_message(
         "NO esperes a tener todos los datos para llamar a la función. Ve guardando y actualizando los datos de forma incremental paso a paso a medida que fluye la conversación."
     )
 
+    # 4.3.1 Inyectar reglas específicas de teléfono según el canal de comunicación
+    if source_channel == "whatsapp" and conversation.contact_phone:
+        system_prompt += (
+            f"\n\n[CANAL DE COMUNICACIÓN ACTUAL]\n"
+            f"El usuario se está comunicando contigo a través de WhatsApp desde el número: {conversation.contact_phone}\n"
+            f"REGLA DE TELÉFONO EN WHATSAPP: Cuando necesites su número de teléfono de contacto para formalizar la reserva, NO le pidas que te lo escriba de cero. "
+            f"En su lugar, pregúntale si desea que registremos el número desde el que te está escribiendo en este momento ({conversation.contact_phone}) o si prefiere darte otro número diferente."
+        )
+    else:
+        system_prompt += (
+            "\n\n[CANAL DE COMUNICACIÓN ACTUAL]\n"
+            "El usuario se está comunicando a través de una aplicación web (chat web).\n"
+            "REGLA DE TELÉFONO EN WEB: Dado que estás en un chat web y no tienes su información de contacto, debes pedirle explícitamente su número de teléfono al final de la reserva para poder registrarlo."
+        )
+
+    # 4.4 Inyectar instrucciones de Google Calendar cuando está conectado
+    google_calendar_connected = getattr(agent, 'google_calendar_connected', False)
+    if google_calendar_connected:
+        system_prompt += (
+            "\n\n[INSTRUCCIONES DE CALENDARIO - GOOGLE CALENDAR]\n"
+            "Tienes acceso directo al calendario de Google del negocio. Puedes y debes:\n"
+            "1. VERIFICAR DISPONIBILIDAD: Cuando el cliente pregunte por horarios disponibles, usa la herramienta 'check_calendar_availability' con la fecha solicitada.\n"
+            "2. AGENDAR CITAS: Cuando el cliente quiera agendar una cita, usa 'create_calendar_event'. Asegúrate de confirmar fecha, hora y nombre del cliente antes de agendar.\n"
+            "3. LISTAR EVENTOS: Cuando necesites ver las citas programadas, usa 'list_upcoming_events'.\n"
+            "4. CANCELAR CITAS: Si el cliente quiere cancelar, SIEMPRE pregunta el motivo de la cancelación ANTES de usar 'cancel_calendar_event'. Registra el motivo.\n"
+            "5. REPROGRAMAR CITAS: Si el cliente quiere cambiar la hora o fecha, usa 'reschedule_calendar_event'.\n"
+            "6. RECORDATORIOS: Puedes mencionar las citas próximas del cliente si preguntan o si es relevante.\n\n"
+            "REGLAS IMPORTANTES:\n"
+            "- Siempre confirma los detalles con el cliente antes de crear o modificar una cita.\n"
+            "- Usa formato de hora de 12 horas (ej: '3:00 PM') al hablar con el cliente, pero internamente usa formato de 24 horas.\n"
+            "- Si el cliente quiere cancelar, muestra empatía y pregunta si desea reprogramar.\n"
+            f"- La zona horaria del calendario es: {agent_tz_str}\n"
+        )
+
     # 5. Preparar datos para el agente
     agent_data = {
         "provider": agent.provider,
@@ -113,6 +158,9 @@ async def process_conversation_message(
         "temperature": agent.temperature,
         "max_tokens": agent.max_tokens,
         "custom_fields": agent.custom_fields,
+        "google_calendar_connected": google_calendar_connected,
+        "timezone": agent_tz_str,
+        "agent_id": agent.id,
     }
 
     # 6. Obtener respuesta de la IA

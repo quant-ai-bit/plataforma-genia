@@ -13,6 +13,11 @@ export interface Agent {
   channels?: string[];
   whatsapp_connected?: boolean;
   whatsapp_phone_number_id?: string | null;
+  google_calendar_client_id?: string | null;
+  google_calendar_connected?: boolean;
+  google_calendar_email?: string | null;
+  stt_provider?: string;
+  timezone?: string;
   created_at?: string;
   updated_at?: string;
 }
