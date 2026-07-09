@@ -50,6 +50,52 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/whatsapp", tags=["WhatsApp Integration"])
 
 
+# #region debug-point shared:reporter
+def _report_debug_event(
+    hypothesis_id: str,
+    location: str,
+    msg: str,
+    data: dict | None = None,
+    run_id: str = "pre-fix",
+):
+    try:
+        import json as _json
+        import urllib.request as _urlreq
+
+        env_path = ".dbg/whatsapp-no-response.env"
+        debug_url = "http://127.0.0.1:7777/event"
+        session_id = "whatsapp-no-response"
+        try:
+            with open(env_path, "r", encoding="utf-8") as env_file:
+                env_content = env_file.read().splitlines()
+            for line in env_content:
+                if line.startswith("DEBUG_SERVER_URL="):
+                    debug_url = line.split("=", 1)[1].strip()
+                elif line.startswith("DEBUG_SESSION_ID="):
+                    session_id = line.split("=", 1)[1].strip()
+        except Exception:
+            pass
+
+        payload = {
+            "sessionId": session_id,
+            "runId": run_id,
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "msg": f"[DEBUG] {msg}",
+            "data": data or {},
+        }
+        request = _urlreq.Request(
+            debug_url,
+            data=_json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        _urlreq.urlopen(request, timeout=1).read()
+    except Exception:
+        pass
+
+
+# #endregion
+#
 # ---------------------------------------------------------------------------
 # Schemas para connect/disconnect
 # ---------------------------------------------------------------------------
@@ -867,8 +913,9 @@ async def connect_whatsapp_qr(
             detail=f"Agente {agent_id} no encontrado.",
         )
 
-    # Definir nombre de instancia
-    instance_name = f"genia_agent_{agent.id}"
+    # Definir nombre de instancia único para evitar colisiones de caché de Baileys
+    import time
+    instance_name = f"genia_{agent.id[:8]}_{int(time.time())}"
     agent.whatsapp_qr_instance_name = instance_name
 
     # Intentar inicializar instancia
@@ -995,6 +1042,19 @@ async def receive_qr_webhook(
             detail="Payload JSON no válido.",
         )
 
+    # #region debug-point B:webhook-entry
+    _report_debug_event(
+        hypothesis_id="B",
+        location="backend/routers/whatsapp.py:receive_qr_webhook",
+        msg="QR webhook recibido",
+        data={
+            "agent_id": agent_id,
+            "event": data.get("event") if isinstance(data, dict) else None,
+            "top_keys": list(data.keys())[:10] if isinstance(data, dict) else [],
+        },
+    )
+    # #endregion
+
     # ── PAYLOAD DEBUG LOGGING TO DB ──
     try:
         from models.conversation import Conversation as DBConv, Message as DBMessage
@@ -1086,14 +1146,52 @@ async def _receive_qr_webhook_impl(
         db.query(Agent).filter(Agent.id == agent_id, Agent.status == "active").first()
     )
     if not agent:
+        # #region debug-point E:agent-not-found
+        _report_debug_event(
+            hypothesis_id="E",
+            location="backend/routers/whatsapp.py:_receive_qr_webhook_impl",
+            msg="Webhook QR ignorado por agente inexistente o inactivo",
+            data={"agent_id": agent_id},
+        )
+        # #endregion
         logger.warning(
             f"Webhook QR recibido para agente inexistente o inactivo: {agent_id}"
         )
         return {"status": "ignored"}
 
+    # #region debug-point E:agent-state
+    _report_debug_event(
+        hypothesis_id="E",
+        location="backend/routers/whatsapp.py:_receive_qr_webhook_impl",
+        msg="Estado base del agente QR cargado",
+        data={
+            "agent_id": agent.id,
+            "agent_name": agent.name,
+            "status": agent.status,
+            "provider": agent.whatsapp_provider,
+            "qr_connected": agent.whatsapp_qr_connected,
+            "instance_name": agent.whatsapp_qr_instance_name,
+        },
+    )
+    # #endregion
+
     # Extraer detalles
     details = _extract_qr_message_details(data)
     if not details:
+        # #region debug-point A:details-empty
+        _report_debug_event(
+            hypothesis_id="A",
+            location="backend/routers/whatsapp.py:_receive_qr_webhook_impl",
+            msg="No se pudieron extraer detalles del mensaje QR",
+            data={
+                "agent_id": agent.id,
+                "event": data.get("event") if isinstance(data, dict) else None,
+                "data_type": type(data.get("data")).__name__
+                if isinstance(data, dict)
+                else None,
+            },
+        )
+        # #endregion
         # Evento administrativo
         event_type = data.get("event")
         if event_type == "connection.update":
@@ -1117,6 +1215,22 @@ async def _receive_qr_webhook_impl(
     user_message_text = details["text"]
     msg_type = details["type"]
     push_name = details["push_name"]
+
+    # #region debug-point C:details-extracted
+    _report_debug_event(
+        hypothesis_id="C",
+        location="backend/routers/whatsapp.py:_receive_qr_webhook_impl",
+        msg="Detalles del mensaje QR extraídos",
+        data={
+            "agent_id": agent.id,
+            "phone_number": phone_number,
+            "whatsapp_msg_id": whatsapp_msg_id,
+            "msg_type": msg_type,
+            "text_preview": user_message_text[:80],
+            "push_name": push_name,
+        },
+    )
+    # #endregion
 
     # Deduplicar
     from models.conversation import Message as DBMessage
@@ -1271,18 +1385,87 @@ async def _receive_qr_webhook_impl(
         whatsapp_message_id=whatsapp_msg_id,
     )
 
+    if not reply or not reply.strip():
+        logger.warning(
+            "[QR WEBHOOK] IA devolvió respuesta vacía para agente %s, mensaje %s. Enviando fallback.",
+            agent.id,
+            whatsapp_msg_id,
+        )
+        reply = "Hola, gracias por tu mensaje. ¿En qué puedo ayudarte?"
+
+    # #region debug report D:reply-generated
+    _report_debug_event(
+        hypothesis_id="D",
+        location="backend/routers/whatsapp.py:_receive_qr_webhook_impl",
+        msg="La IA generó respuesta para el mensaje QR",
+        data={
+            "agent_id": agent.id,
+            "conversation_id": conversation.id,
+            "reply_length": len(reply or ""),
+            "reply_preview": (reply or "")[:120],
+        },
+    )
+    # #endregion
+
     # Despachar mensaje
     token_decrypted = (
         decrypt(agent.whatsapp_qr_instance_token)
         if agent.whatsapp_qr_instance_token
         else None
     )
-    await send_qr_text(
+    send_success = await send_qr_text(
         instance_name=agent.whatsapp_qr_instance_name,
         to_phone=phone_number,
         text=reply,
         token=token_decrypted,
     )
+    # #region debug-point D:send-result
+    _report_debug_event(
+        hypothesis_id="D",
+        location="backend/routers/whatsapp.py:_receive_qr_webhook_impl",
+        msg="Resultado del envío de respuesta QR",
+        data={
+            "agent_id": agent.id,
+            "conversation_id": conversation.id,
+            "send_success": send_success,
+            "instance_name": agent.whatsapp_qr_instance_name,
+            "to_phone": phone_number,
+        },
+    )
+    # #endregion
+    if not send_success:
+        logger.error(
+            "[QR SEND ERROR] No se pudo enviar respuesta al teléfono %s para agente %s.",
+            phone_number,
+            agent.id,
+        )
+        try:
+            import uuid
+
+            debug_conv = (
+                db.query(Conversation)
+                .filter(Conversation.contact_phone == "PAYLOAD_DEBUG")
+                .first()
+            )
+            if debug_conv:
+                debug_msg = DBMessage(
+                    id=uuid.uuid4().hex,
+                    conversation_id=debug_conv.id,
+                    role="assistant",
+                    content=(
+                        "ERROR QR SEND FAILED: "
+                        f"agent={agent.id} phone={phone_number} "
+                        f"instance={agent.whatsapp_qr_instance_name}"
+                    )[:3000],
+                    sent_at=datetime.now(timezone.utc),
+                )
+                db.add(debug_msg)
+                db.commit()
+        except Exception as log_err:
+            logger.error(
+                "[QR SEND ERROR] No se pudo registrar el fallo de envío: %s",
+                str(log_err),
+            )
 
     return {"status": "accepted"}
 
@@ -1290,8 +1473,16 @@ async def _receive_qr_webhook_impl(
 # Helper extractor de Evolution API
 def _extract_qr_message_details(data: dict) -> dict | None:
     event = data.get("event")
-    # Evolution API envía events del tipo 'messages.upsert'
-    if event != "messages.upsert":
+    # Evolution API envía events del tipo 'messages.upsert' o 'MESSAGES_UPSERT'
+    if not event or event.lower() not in ("messages.upsert", "messages_upsert"):
+        # #region debug-point A:unexpected-event
+        _report_debug_event(
+            hypothesis_id="A",
+            location="backend/routers/whatsapp.py:_extract_qr_message_details",
+            msg="Evento QR descartado por nombre no reconocido",
+            data={"event": event},
+        )
+        # #endregion
         return None
 
     # Evolution API puede enviar 'data' como lista o como dict
@@ -1311,10 +1502,26 @@ def _extract_qr_message_details(data: dict) -> dict | None:
     key = message_data.get("key", {})
     from_me = key.get("fromMe", False)
     if from_me:
+        # #region debug-point C:from-me
+        _report_debug_event(
+            hypothesis_id="C",
+            location="backend/routers/whatsapp.py:_extract_qr_message_details",
+            msg="Mensaje QR descartado porque viene marcado como fromMe",
+            data={"event": event, "key_id": key.get("id")},
+        )
+        # #endregion
         return None
 
     remote_jid = key.get("remoteJid", "")
     if not remote_jid or not remote_jid.endswith("@s.whatsapp.net"):
+        # #region debug-point C:remote-jid-discarded
+        _report_debug_event(
+            hypothesis_id="C",
+            location="backend/routers/whatsapp.py:_extract_qr_message_details",
+            msg="Mensaje QR descartado por remoteJid no soportado",
+            data={"remote_jid": remote_jid, "key_id": key.get("id")},
+        )
+        # #endregion
         logger.info(f"[QR EXTRACT] remoteJid descartado: {remote_jid}")
         return None
 
@@ -1324,6 +1531,17 @@ def _extract_qr_message_details(data: dict) -> dict | None:
 
     message_content = message_data.get("message", {})
     if not message_content:
+        # #region debug-point C:no-message-content
+        _report_debug_event(
+            hypothesis_id="C",
+            location="backend/routers/whatsapp.py:_extract_qr_message_details",
+            msg="Mensaje QR sin message_content",
+            data={
+                "message_keys": list(message_data.keys())[:15],
+                "key_id": key.get("id"),
+            },
+        )
+        # #endregion
         logger.info(
             f"[QR EXTRACT] Sin message_content en message_data: {list(message_data.keys())}"
         )
@@ -1342,6 +1560,17 @@ def _extract_qr_message_details(data: dict) -> dict | None:
         msg_type = "audio"
         user_message_text = "[Nota de Voz]"
     else:
+        # #region debug-point C:unsupported-message-type
+        _report_debug_event(
+            hypothesis_id="C",
+            location="backend/routers/whatsapp.py:_extract_qr_message_details",
+            msg="Mensaje QR con tipo no reconocido",
+            data={
+                "message_content_keys": list(message_content.keys())[:15],
+                "key_id": key.get("id"),
+            },
+        )
+        # #endregion
         logger.info(
             f"[QR EXTRACT] Tipo de mensaje no reconocido. Claves: {list(message_content.keys())}"
         )
