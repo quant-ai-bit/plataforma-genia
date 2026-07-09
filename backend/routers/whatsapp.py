@@ -1176,7 +1176,7 @@ async def _receive_qr_webhook_impl(
     # #endregion
 
     # Extraer detalles
-    details = _extract_qr_message_details(data)
+    details = _extract_qr_message_details(data, agent)
     if not details:
         # #region debug-point A:details-empty
         _report_debug_event(
@@ -1471,7 +1471,7 @@ async def _receive_qr_webhook_impl(
 
 
 # Helper extractor de Evolution API
-def _extract_qr_message_details(data: dict) -> dict | None:
+def _extract_qr_message_details(data: dict, agent: Agent) -> dict | None:
     event = data.get("event")
     # Evolution API envía events del tipo 'messages.upsert' o 'MESSAGES_UPSERT'
     if not event or event.lower() not in ("messages.upsert", "messages_upsert"):
@@ -1513,6 +1513,42 @@ def _extract_qr_message_details(data: dict) -> dict | None:
         return None
 
     remote_jid = key.get("remoteJid", "")
+    addressing_mode = key.get("addressingMode")
+
+    # Si estamos en modo LID y el JID recibido en el webhook es de tipo tradicional,
+    # intentamos resolver el JID correcto del remitente (@lid) desde la base de datos de Evolution API.
+    if addressing_mode == "lid" and remote_jid.endswith("@s.whatsapp.net"):
+        try:
+            whatsapp_msg_id = key.get("id")
+            evo_url = settings.evolution_api_url
+            evo_token = decrypt(agent.whatsapp_qr_instance_token) if agent.whatsapp_qr_instance_token else settings.evolution_api_token
+            instance_name = agent.whatsapp_qr_instance_name
+            
+            if evo_url and evo_token and instance_name:
+                find_msg_url = f"{evo_url}/chat/findMessages/{instance_name}"
+                headers = {
+                    "apikey": evo_token,
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "where": {
+                        "key": {
+                            "id": whatsapp_msg_id
+                        }
+                    }
+                }
+                with httpx.Client(timeout=5.0) as client:
+                    res = client.post(find_msg_url, headers=headers, json=payload)
+                    if res.status_code in [200, 201]:
+                        records = res.json().get("messages", {}).get("records", [])
+                        if records:
+                            db_jid = records[0].get("key", {}).get("remoteJid", "")
+                            if db_jid.endswith("@lid"):
+                                logger.info(f"[LID RESOLVER] Se resolvió JID tradicional {remote_jid} a LID {db_jid}")
+                                remote_jid = db_jid
+        except Exception as ex:
+            logger.error(f"[LID RESOLVER] Error resolviendo LID para mensaje {key.get('id')}: {str(ex)}")
+
     if not remote_jid or not (remote_jid.endswith("@s.whatsapp.net") or remote_jid.endswith("@lid")):
         # #region debug-point C:remote-jid-discarded
         _report_debug_event(
