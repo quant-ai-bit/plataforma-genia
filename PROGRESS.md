@@ -43,6 +43,19 @@
 
 
 
+## 2026-07-09 17:18 (COT) — Solución: Enrutamiento compatible con Linked ID (LID) de WhatsApp
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección
+
+- Se descubrió que el backend descartaba todos los eventos `@lid` en el webhook de WhatsApp QR debido a una validación estricta de sufijo (`endswith("@s.whatsapp.net")`).
+- Se modificó `_extract_qr_message_details` para aceptar tanto `@s.whatsapp.net` como `@lid`.
+- Si el JID entrante es de tipo `@lid`, se preserva el sufijo completo en `phone_number` para evitar que la Evolution API intente enrutarlo como teléfono regular y cause `status: ERROR`.
+- Se revirtió/eliminó la variable `WPP_LID_MODE` en Railway (o se recomienda volver a habilitarla) para habilitar LID nativo, y se desplegó el backend modificado a Vercel.
+- Archivos clave: `backend/routers/whatsapp.py`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Indicar al usuario que elimine `WPP_LID_MODE=false` (o que la ponga en `true` para usar LID de nuevo), re-vincule el QR por última vez y pruebe.
+
 ## 2026-07-09 16:15 (COT) — Solución: Nombre de instancia único de WhatsApp QR contra colisión de caché
 **Plataforma:** Antigravity
 **Tipo:** 🐛 Corrección
