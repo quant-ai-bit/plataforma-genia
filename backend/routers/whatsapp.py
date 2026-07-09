@@ -1513,7 +1513,7 @@ def _extract_qr_message_details(data: dict) -> dict | None:
         return None
 
     remote_jid = key.get("remoteJid", "")
-    if not remote_jid or not remote_jid.endswith("@s.whatsapp.net"):
+    if not remote_jid or not (remote_jid.endswith("@s.whatsapp.net") or remote_jid.endswith("@lid")):
         # #region debug-point C:remote-jid-discarded
         _report_debug_event(
             hypothesis_id="C",
@@ -1525,7 +1525,13 @@ def _extract_qr_message_details(data: dict) -> dict | None:
         logger.info(f"[QR EXTRACT] remoteJid descartado: {remote_jid}")
         return None
 
-    phone_number = remote_jid.split("@")[0]
+    # Si es un JID de tipo LID, conservamos el JID completo con sufijo para que Evolution API
+    # pueda rutearlo de vuelta adecuadamente sin asumir que es un telefono normal.
+    if remote_jid.endswith("@lid"):
+        phone_number = remote_jid
+    else:
+        phone_number = remote_jid.split("@")[0]
+    
     whatsapp_msg_id = key.get("id")
     push_name = message_data.get("pushName", "Usuario WhatsApp")
 
