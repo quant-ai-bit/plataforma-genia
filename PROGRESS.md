@@ -43,6 +43,18 @@
 
 
 
+## 2026-07-09 16:15 (COT) — Solución: Nombre de instancia único de WhatsApp QR contra colisión de caché
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección
+
+- Se identificó que la Evolution API mantenía archivos de sesión corruptos del caché de Baileys cuando se desconectaba y reconectaba con el mismo identificador estático `genia_agent_{agent_id}`.
+- Se modificó `connect_whatsapp_qr` para generar dinámicamente un nombre de instancia único concatenando un timestamp (`genia_{agent.id[:8]}_{timestamp}`), forzando a la API a aprovisionar una sesión limpia.
+- Se desplegó la actualización a producción de Vercel.
+- Archivos clave: `backend/routers/whatsapp.py`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Esperar que el usuario realice el ciclo de desvinculación y vinculación desde el dashboard para escanear el nuevo código QR limpio.
+
 ## 2026-07-09 15:25 (COT) — Diagnóstico de error en envío saliente de WhatsApp QR
 **Plataforma:** Antigravity
 **Tipo:** 🐛 Corrección
