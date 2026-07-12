@@ -1725,61 +1725,77 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
             logger.info(f"Conversación WAHA {conversation.id} en handoff. Ignorando IA.")
             return {"status": "ignored"}
 
-    # Nota de voz (ptt/audio)
-    if msg_type in ("ptt", "audio"):
-        if waha_is_mock_mode():
-            user_message_text = "[Nota de Voz Simulada] Hola agente, ¿cómo te va?"
-        else:
-            try:
-                media_url = payload.get("media") or payload.get("body", "")
-                audio_bytes = None
-                mime_type = payload.get("mimetype") or "audio/ogg; codecs=opus"
-                if payload.get("base64"):
-                    import base64
-                    audio_bytes = base64.b64decode(payload["base64"])
-                elif media_url:
-                    parsed = urlparse(media_url)
-                    if parsed.hostname in ("localhost", "127.0.0.1"):
-                        download_url = settings.waha_api_url.rstrip("/") + parsed.path
-                    else:
-                        download_url = media_url
-                    async with httpx.AsyncClient(timeout=30.0) as client:
-                        dl = await client.get(download_url, headers=_headers())
-                        if dl.status_code == 200:
-                            audio_bytes = dl.content
-                if audio_bytes:
-                    from services.ai_service import transcribe_audio
-                    user_message_text = await transcribe_audio(
-                        audio_bytes=audio_bytes,
-                        mime_type=mime_type,
-                        filename="voice.ogg",
-                        stt_provider=agent.stt_provider or "groq_whisper",
-                    )
-                    logger.info(f"[WAHA AUDIO] Transcripción: {user_message_text[:80]}")
+    # Nota de voz (ptt/audio) — descargar y transcribir
+    if msg_type in ("ptt", "audio") and not waha_is_mock_mode():
+        try:
+            media_url = payload.get("media") or ""
+            audio_bytes = None
+            mime_type = payload.get("mimetype") or "audio/ogg; codecs=opus"
+            if payload.get("base64"):
+                import base64
+                audio_bytes = base64.b64decode(payload["base64"])
+            elif media_url and media_url.startswith("http"):
+                parsed = urlparse(media_url)
+                if parsed.hostname in ("localhost", "127.0.0.1"):
+                    download_url = settings.waha_api_url.rstrip("/") + parsed.path
                 else:
-                    user_message_text = "[Nota de Voz - sin transcripción]"
-            except Exception as e:
-                logger.error(f"Error transcribiendo nota de voz WAHA: {str(e)}", exc_info=True)
-                user_message_text = "[Nota de Voz - sin transcripción]"
+                    download_url = media_url
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    dl = await client.get(download_url, headers=_headers())
+                    if dl.status_code == 200:
+                        audio_bytes = dl.content
+            if audio_bytes:
+                from services.ai_service import transcribe_audio
+                user_message_text = await transcribe_audio(
+                    audio_bytes=audio_bytes,
+                    mime_type=mime_type,
+                    filename="voice.ogg",
+                    stt_provider=agent.stt_provider or "groq_whisper",
+                )
+                logger.info(f"[WAHA AUDIO] Transcripción: {user_message_text[:80]}")
+            else:
+                # WAHA CORE no sirve archivos de audio — responder directamente
+                reply = "He recibido tu nota de voz. Por el momento no puedo procesar audios, ¿podrías escribirme en texto?"
+                send_success = await send_waha_text(
+                    session_name=agent.whatsapp_qr_instance_name,
+                    to_phone=phone_number,
+                    text=reply,
+                )
+                if not send_success:
+                    logger.error("[WAHA AUDIO FALLBACK] Error enviando respuesta para %s", phone_number)
+                return {"status": "accepted", "note": "audio_no_transcription"}
+        except Exception as e:
+            logger.error(f"Error transcribiendo nota de voz WAHA: {str(e)}", exc_info=True)
+            reply = "He recibido tu nota de voz pero no pude procesarla. ¿Podrías escribirme en texto?"
+            await send_waha_text(
+                session_name=agent.whatsapp_qr_instance_name,
+                to_phone=phone_number,
+                text=reply,
+            )
+            return {"status": "accepted", "note": "audio_error"}
 
     if not user_message_text or not user_message_text.strip():
         return {"status": "ignored"}
 
     # Responder con IA
-    from services.conversation_service import process_conversation_message
+    try:
+        from services.conversation_service import process_conversation_message
 
-    reply = await process_conversation_message(
-        db=db,
-        agent=agent,
-        conversation=conversation,
-        user_message_text=user_message_text,
-        source_channel="whatsapp",
-        whatsapp_message_id=whatsapp_msg_id,
-    )
+        reply = await process_conversation_message(
+            db=db,
+            agent=agent,
+            conversation=conversation,
+            user_message_text=user_message_text,
+            source_channel="whatsapp",
+            whatsapp_message_id=whatsapp_msg_id,
+        )
 
-    if not reply or not reply.strip():
-        logger.warning("[WAHA WEBHOOK] IA devolvió respuesta vacía. Enviando fallback.")
-        reply = "Hola, gracias por tu mensaje. ¿En qué puedo ayudarte?"
+        if not reply or not reply.strip():
+            logger.warning("[WAHA WEBHOOK] IA devolvió respuesta vacía. Enviando fallback.")
+            reply = "Hola, gracias por tu mensaje. ¿En qué puedo ayudarte?"
+    except Exception as e:
+        logger.error(f"[WAHA WEBHOOK] Error en process_conversation_message: {str(e)}", exc_info=True)
+        reply = "Ocurrió un error al procesar tu mensaje. Por favor, inténtalo de nuevo."
 
     send_success = await send_waha_text(
         session_name=agent.whatsapp_qr_instance_name,
