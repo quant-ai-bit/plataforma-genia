@@ -109,27 +109,31 @@ async def create_waha_session(session_name: str, webhook_url: str) -> dict:
 
 
 async def get_waha_qr(session_name: str) -> str | None:
-    """Obtiene el código QR en base64 de la sesión."""
+    """Obtiene el código QR en base64 de la sesión usando /api/{session}/auth/qr."""
     if waha_is_mock_mode():
         session = mock_sessions.get(session_name)
         return session.get("qr") if session else MOCK_QR_BASE64
 
-    url = f"{settings.waha_api_url}/api/{session_name}/qr"
+    url = f"{settings.waha_api_url}/api/{session_name}/auth/qr?format=image"
+    headers = _headers()
+    headers["Accept"] = "application/json"
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(url, headers=_headers())
+            response = await client.get(url, headers=headers)
             if response.status_code == 200:
-                text = response.text.strip()
-                # WAHA retorna el data URL directamente o un JSON {"qr": "..."}
-                if text.startswith("data:image"):
-                    return text
                 try:
                     data = response.json()
-                    return data.get("qr") or data.get("base64") or data.get("code")
+                    # WAHA devuelve {"mimetype": "image/png", "data": "base64..."}
+                    b64 = data.get("data") or data.get("base64") or ""
+                    if b64:
+                        return f"data:{data.get('mimetype', 'image/png')};base64,{b64}"
                 except Exception:
+                    text = response.text.strip()
+                    if text.startswith("data:image"):
+                        return text
                     return text or None
             else:
-                logger.error(f"Error al obtener QR de WAHA: {response.text}")
+                logger.error(f"Error al obtener QR de WAHA: {response.text[:200]}")
                 return get_cached_waha_qr(session_name)
     except Exception as e:
         logger.error(f"Excepción al obtener QR de WAHA: {str(e)}")
