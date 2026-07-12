@@ -1059,6 +1059,13 @@ async def update_whatsapp_provider(
             detail="Proveedor no válido. Debe ser 'meta_cloud', 'qr_code' o 'waha'.",
         )
 
+    # Al cambiar de proveedor, limpiar sesión/instancia previa para que
+    # el frontend muestre el botón "Generar" en lugar de reanudar
+    # una sesión huérfana automáticamente.
+    if body.provider in ("waha", "qr_code"):
+        agent.whatsapp_qr_instance_name = None
+        agent.whatsapp_qr_code = None
+        agent.whatsapp_qr_connected = False
     agent.whatsapp_provider = body.provider
     db.commit()
 
