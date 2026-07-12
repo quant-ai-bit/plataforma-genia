@@ -1466,7 +1466,10 @@ async def restart_whatsapp_waha(
 @router.get("/{agent_id}/waha/health")
 async def health_whatsapp_waha():
     """Verifica el estado del servidor WAHA."""
-    return await check_waha_health()
+    health = await check_waha_health()
+    # Include deploy version marker
+    health["_deploy"] = "v20260712_voice_fix"
+    return health
 
 
 @router.post("/{agent_id}/waha/sync")

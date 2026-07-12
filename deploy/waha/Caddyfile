@@ -1,0 +1,8 @@
+# Reemplazado por el script setup.sh con el dominio que pases como argumento.
+# Ejemplo final:
+#   waha.genia.com.co {
+#       reverse_proxy waha:3000
+#   }
+waha.example.com {
+    reverse_proxy waha:3000
+}

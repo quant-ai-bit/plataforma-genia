@@ -177,6 +177,11 @@ class Agent(Base):
         nullable=False,
         doc="Si la línea QR está conectada",
     )
+    whatsapp_qr_code = Column(
+        Text,
+        nullable=True,
+        doc="Último código QR (base64) recibido por webhook para vincular la línea",
+    )
 
     # --- Google Calendar OAuth 2.0 (por agente/cliente) ---
     google_calendar_client_id = Column(

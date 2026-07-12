@@ -1,0 +1,47 @@
+# ===========================================================================
+# WAHA (WhatsApp HTTP API) — servidor de integración QR para PLATAFORMA GENIA
+# ---------------------------------------------------------------------------
+# Levanta un servidor WAHA accesible desde internet para que el backend de
+# GENIA (en Vercel o local) reciba webhooks y envíe mensajes por WhatsApp.
+#
+# Puesta en marcha:
+#   1. Crea un archivo .env.waha junto a este compose (o exporta las vars):
+#        WAHA_API_KEY=tu_clave_secreta_de_waha
+#        WAHA_PORT=3000
+#   2. docker compose up -d
+#   3. En Vercel define WAHA_API_URL=https://<tu-dominio-o-ip>:3000
+#      y WAHA_API_KEY con el mismo valor.
+#
+# Nota: WAHA Core es gratuito y soporta múltiples sesiones + webhooks.
+# Si usas la imagen "plus"/"business" (de pago) cambia la imagen abajo.
+# ===========================================================================
+
+services:
+  waha:
+    image: devlikeapro/waha:latest
+    container_name: genia-waha
+    restart: unless-stopped
+    ports:
+      - "${WAHA_PORT:-3000}:3000"
+    environment:
+      # Esquema de autenticación de la API (apikey vía header X-Api-Key)
+      - WAHA_API_KEY=${WAHA_API_KEY:-}
+      # Habilita Swagger en /api/docs para depurar
+      - WAHA_SWAGGER_ENABLED=true
+      # Límite de tamaño de subida para notas de voz/imágenes
+      - WAHA_FILES_LIMIT=100mb
+      # Conserva las sesiones entre reinicios del contenedor
+      - WHATSAPP_RESTART_ON_AUTH_FAIL=false
+      - WAHA_SESSION_PHONE_NOT_FOUND=keep
+    volumes:
+      # Persiste la sesión de WhatsApp (evita volver a escanear el QR en cada reinicio)
+      - waha-data:/app/.sessions
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/api/version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  waha-data:

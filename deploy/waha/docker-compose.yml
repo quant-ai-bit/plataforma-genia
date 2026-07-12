@@ -1,0 +1,45 @@
+# WAHA (WhatsApp HTTP API) + Caddy reverse proxy para Hetzner VPS
+# Puerto interno 3000; Caddy expone HTTPS (80/443) con certificado Let's Encrypt automático.
+# La sesión de WhatsApp persiste en el volumen waha-data (no re-escanear QR en reinicios).
+
+services:
+  waha:
+    image: devlikeapro/waha:latest
+    restart: unless-stopped
+    # Solo Caddy accede a WAHA (no se expone el 3000 directo a internet)
+    expose:
+      - "3000"
+    environment:
+      # Clave de API: debe coincidir con WAHA_API_KEY en Vercel
+      - WAHA_API_KEY=${WAHA_API_KEY:-}
+      - WAHA_SWAGGER_ENABLED=true
+      - WAHA_FILES_LIMIT=100mb
+      # Conserva la sesión entre reinicios
+      - WHATSAPP_RESTART_ON_AUTH_FAIL=false
+      - WAHA_SESSION_PHONE_NOT_FOUND=keep
+    volumes:
+      - waha-data:/app/.sessions
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - waha
+
+volumes:
+  waha-data:
+  caddy-data:
+  caddy-config:

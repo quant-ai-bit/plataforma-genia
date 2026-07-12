@@ -41,4 +41,23 @@ backend/.env
 .DS_Store
 Thumbs.db
 
+# Environment variables (catch-all)
 .env*
+!.env.example
+
+# Ruff linter cache
+.ruff_cache/
+
+# Pytest / Coverage
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Logs
+*.log
+*.json.log
+
+# Debug files
+.dbg/
+nul

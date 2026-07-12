@@ -1,0 +1,58 @@
+[project]
+name = "plataforma-genia-backend"
+version = "1.0.0"
+description = "Backend FastAPI multi-tenant para PLATAFORMA GENIA"
+requires-python = ">=3.11"
+
+# ───────────────────────────────────────────────────────────────────────
+# pytest
+# ───────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "--tb=short -q"
+
+# ───────────────────────────────────────────────────────────────────────
+# pytest-cov (cobertura)
+# ───────────────────────────────────────────────────────────────────────
+[tool.coverage.run]
+source = ["routers", "services", "models"]
+omit = ["test_*", "alembic/*", "data/*", ".venv/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+fail_under = 0
+
+# ───────────────────────────────────────────────────────────────────────
+# ruff (linter + formatter)
+# ───────────────────────────────────────────────────────────────────────
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # do not perform function calls in argument defaults (FastAPI Depends)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["routers", "services", "models", "config", "database"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

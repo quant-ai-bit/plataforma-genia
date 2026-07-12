@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     evolution_api_url: str = ""
     evolution_api_token: str = ""
 
+    # WAHA (WhatsApp HTTP API, open-source, Baileys-based)
+    waha_api_url: str = ""
+    waha_api_key: str = ""
+
     # Supabase (JWT Secret para autenticación y almacenamiento)
     supabase_jwt_secret: str = ""
     supabase_url: str = ""

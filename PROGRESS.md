@@ -6,6 +6,147 @@
 
 ---
 
+## 2026-07-12 02:15 (COT) — Fix: Notas de voz ahora responden con fallback (sin transcripción)
+**Plataforma:** opencode
+**Tipo:** 🐛 Corrección
+
+- Causa raíz: WAHA CORE no expone `media.storage` en su configuración, por lo que los archivos de audio descargados por su MediaManager no se persisten al filesystem. El endpoint `/api/files/` existe pero está siempre vacío. Sin URL de audio descargable ni base64 en el webhook, la transcripción fallaba silenciosamente.
+- Adicional: `process_conversation_message` no estaba envuelta en try/except — si lanzaba una excepción no capturada, FastAPI devolvía 500, pero WAHA registraba 200 (posible timeout de Vercel con manejo de error confuso).
+- Fix:
+  - Notas de voz sin transcripción responden directamente: "He recibido tu nota de voz. Por el momento no puedo procesar audios, ¿podrías escribirme en texto?"
+  - Todo el bloque de IA (`process_conversation_message`) envuelto en try/except.
+  - `send_waha_text` siempre se llama, incluso en errores.
+  - URL de "audio" como body ya no se intenta como descarga.
+- Se intentó habilitar `media.storage: FILE` en WAHA → opción ignorada por CORE.
+- Commit: `00781b5`.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Si se desea transcripción real de notas de voz, implementar una de: (1) WAHA Plus (tiene files API), (2) VPS con backend local que acceda al volumen Docker, (3) proveedor externo de transcripción que reciba el audio por otro canal.
+
+---
+
+## 2026-07-12 01:15 (COT) — Fix: Sesión WAHA ahora se suscribe a evento `message` para recibir mensajes entrantes
+**Plataforma:** opencode
+**Tipo:** 🐛 Corrección
+
+- Causa raíz: `create_waha_session()` no pasaba el campo `events` en `config.webhooks`, por lo que la sesión se creaba sin suscripción a eventos → WAHA no enviaba mensajes entrantes al webhook.
+- Fix: payload cambió de `{webhooks: [{url}]}` a `{config: {webhooks: [{url, events: ["message", "session.status"]}]}}`.
+- `restart_waha_session()` ahora recibe `webhook_url` y lo pasa en el payload con eventos correctos.
+- Sesión existente `genia_547c07f7_1783832222` actualizada vía `PUT /api/sessions/{name}` con eventos correctos → se reconectó automáticamente.
+- Remove `"qr"` de eventos (WAHA no lo acepta como enum válido).
+- Commits: `d16692e`, `9d5bb3e`.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Probar enviando un mensaje de WhatsApp a +573103125460 — debe activar el agente y responder.
+
+---
+
+## 2026-07-12 00:15 (COT) — Fix: WAHA status WORKING no era reconocido como connected
+**Plataforma:** opencode
+**Tipo:** 🐛 Corrección
+
+- Causa: `verify_waha_connection()` solo verificaba `state == "CONNECTED"`, pero WAHA CORE retorna `"WORKING"` para sesiones activas.
+- Efecto: backend siempre retornaba `connected: False` aunque la sesión estuviera vinculada y funcional.
+- Fix: aceptar tanto `"WORKING"` como `"CONNECTED"` como estados conectados.
+- Adicional: status endpoint ahora auto-descubre sesiones WORKING de WAHA. Frontend tiene estado `waQrRequested` para separar "mostrar botón" de "mostrar QR/waiting".
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Usuario prueba en https://plataforma-genia.vercel.app → agente Socio → WAHA → debe mostrar conectado.
+
+---
+
+## 2026-07-11 23:55 (COT) — Fix RAÍZ: endpoint WAHA incorrecto
+**Plataforma:** opencode
+**Tipo:** 🐛 Corrección
+
+- Causa raíz final: `get_waha_qr()` usaba `GET /api/{session}/qr` (404 en WAHA CORE).
+- Endpoint correcto es `GET /api/{session}/auth/qr` con `Accept: application/json`.
+- Además: persistencia en DB, polling frontend, retry loop corregido.
+- Verificado: el QR se obtiene correctamente del endpoint correcto (6398 bytes base64).
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Usuario prueba en https://plataforma-genia.vercel.app
+
+---
+
+## 2026-07-11 23:45 (COT) — Fix QR WAHA: persistencia BD + polling frontend + retry webhook
+**Plataforma:** opencode
+**Tipo:** 🐛 Corrección
+
+- Diagnóstico: WAHA CORE 2026.6.2 entrega QR solo vía webhook (`event: qr`), no en respuesta REST de `POST /api/sessions/start`.
+- Bug 1: `connect_whatsapp_waha()` no persistía `qr_code` en `agent.whatsapp_qr_code`, por lo que `GET /api/whatsapp/{id}/status` retornaba `qr_code: null`.
+- Bug 2: El polling del frontend solo monitoreaba provider `qr_code`, no `waha`.
+- Bug 3: Sin estado "Esperando QR" — tras crear sesión, al no haber QR aún se mostraba el botón "Generar Código QR" otra vez.
+- Fix backend: `connect_whatsapp_waha()` ahora persiste `agent.whatsapp_qr_code` + llama `store_waha_qr()`. Retry loop de 10s esperando llegada del webhook QR.
+- Fix frontend: polling extendido a `"waha"`. Nuevo estado intermedio "Esperando código QR..." con spinner mientras el QR no ha llegado.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Usuario prueba en https://plataforma-genia.vercel.app → agente Socio → WAHA QR → Generar → esperar QR → escanear.
+
+---
+
+## 2026-07-11 23:20 (COT) — Fix: columna faltante whatsapp_qr_code + agentes visibles
+**Plataforma:** opencode
+**Tipo:** 🐛 Corrección
+
+- Causa raíz confirmada: backend devolvía 500 en `/api/agents` por columna `whatsapp_qr_code` faltante en la tabla `agents` de Supabase PostgreSQL.
+- Migración `b7c8d9e0f1a2` nunca se aplicó porque `init_db()` fallaba con `alembic upgrade head` y caía en `create_all` (no agrega columnas a tablas existentes).
+- Se ejecutó `ALTER TABLE agents ADD COLUMN IF NOT EXISTS whatsapp_qr_code TEXT NULL;` vía Supabase Management API (token del usuario).
+- Verificado: `/api/agents` responde 200 con 2 agentes encontrados: **Mia** (`fecbff76...`) y **Socio** (`547c07f7...`), ambos con `user_id: None`.
+- Al iniciar sesión, el backend reasignará automáticamente los agentes al user_id del usuario (lógica de huérfanos en `routers/agents.py:list_agents`).
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Usuario ingresa al dashboard → agentes visibles → configurar WAHA QR.
+
+---
+
+## 2026-07-11 23:00 (COT) — Usuario reporta que no ve agentes en el panel
+**Plataforma:** opencode
+**Tipo:** 🐛 Corrección pendiente
+
+- Deploy exitoso en `https://plataforma-genia.vercel.app` con WAHA tab visible.
+- Usuario reporta que en el panel creador de agentes no ve los agentes creados ni puede ingresar al agente "socio".
+- Causa posible: sesión no iniciada, database migration pendiente, o error de conexión a Supabase.
+- Backend responde (200 en `/api/agents` con token inválido esperado).
+- Falta determinar si el usuario está autenticado o si la base de datos tiene los agentes.
+
+**Estado:** 🚧 En progreso
+**Pendiente / Siguiente paso:** Confirmar si el usuario inició sesión y qué mensaje/error ve exactamente.
+
+---
+
+## 2026-07-11 22:30 (COT) — Deploy exitoso con WAHA tab + fix build
+**Plataforma:** opencode
+**Tipo:** 🚀 Deploy
+
+- Build fallaba por dos errores: (1) función `handleSimulateScanQR` sin declaración `async` (missing `const handleSimulateScanQR = async () => {` en line 790), (2) `requirements.txt` con `-r backend/requirements.txt` no soportado por Vercel y bundle excedía 500MB.
+- Fix 1: se agregó `const handleSimulateScanQR = async () => {` faltante en `page.tsx`.
+- Fix 2: se aplanó `requirements.txt` con solo dependencias runtime (~275MB, dentro del límite).
+- Deploy final: `https://plataforma-genia-e0vcmz54v-alejos-projects-14de84b4.vercel.app`
+- Alias production actualizado: `https://plataforma-genia.vercel.app`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Usuario debe entrar al dashboard → agente → tab **Código QR (WAHA)** → generar QR → escanear → probar.
+
+---
+
+## 2026-07-11 18:40 (COT) — Redeploy exitoso vía Vercel CLI
+**Plataforma:** opencode
+**Tipo:** 🚀 Deploy
+
+- Redeploy manual bloqueado (API `instantiate` 404). Solucionado usando `vercel redeploy <url>` con Vercel CLI 54.7.1.
+- Último deployment re-desplegado: `https://plataforma-genia-4ma0d60nv-alejos-projects-14de84b4.vercel.app`
+- Nuevo deployment creado: `https://plataforma-genia-ihvz11trl-alejos-projects-14de84b4.vercel.app` (aún procesando).
+- WAHA tunnel Cloudflare sigue activo (responde 401 en `/api/version`, esperado sin key).
+
+**Estado:** 🚧 En progreso
+**Pendiente / Siguiente paso:** Esperar que termine el deploy, luego:
+1. Ir a dashboard → agente → tab WAHA
+2. Generar Código QR y escanear con WhatsApp
+3. Probar enviando un mensaje al agente
+
+---
+
 ## ▶️ Cómo usar esta bitácora
 
 1. **Al empezar una sesión:** lee la entrada más reciente (arriba del todo) para saber en qué punto quedó el proyecto.
@@ -42,6 +183,124 @@
 
 
 
+
+## 2026-07-11 20:47 (COT) — Prueba gratuita de WAHA vía túnel Cloudflare (Opción A)
+**Plataforma:** opencode
+**Tipo:** 🧪 Prueba | 🔧 Refactor
+
+- **Objetivo**: validar el flujo WhatsApp de extremo a extremo sin pagar (portátil como host temporal).
+- **Hecho**: se descargó `cloudflared.exe` a `C:\Users\User\cloudflared\` y se levantó un quick tunnel a `http://localhost:3100` (WAHA local ya corriendo). URL pública asignada: `https://communities-combinations-hour-research.trycloudflare.com`. Verificado: `GET /api/version` vía la URL pública responde (WAHA 2026.6.2).
+- **Siguiente paso del usuario**: en Vercel poner `WAHA_API_URL=https://communities-combinations-hour-research.trycloudflare.com` y `WAHA_API_KEY=GeniaWaha_zRQmVh5makIrAHhSMZ2cfpirnwuXBaVl`, Redeploy, y conectar el agente desde el dashboard (pestaña WAHA). Nota: el agente opencode NO tiene CLI/token de Vercel en este entorno, así que el usuario debe ejecutar el `vercel env add` (estando logueado) o pegarlas en el dashboard. Ya se registraron los valores en `.env.production`/`.env.local` del proyecto.
+- **Caveat**: túnel efímero y gratuito; la URL cambia si cloudflared se reinicia y Cloudflare puede caerlo. Solo para prueba. Para 24/7 usar Hetzner/Oracle (ver entrada anterior).
+
+**Estado:** 🚧 En prueba (túnel activo, pendiente de configurar Vercel + conectar agente)
+**Pendiente / Siguiente paso:** Usuario configura vars en Vercel, Redeploy y prueba enviando un mensaje por WhatsApp al agente.
+
+## 2026-07-11 20:37 (COT) — Despliegue 24/7 de WAHA en VPS Hetzner (sin depender del portátil)
+**Plataforma:** opencode
+**Tipo:** 🚀 Deploy | 🔧 Refactor
+
+- **Decisión**: el agente debe responder por WhatsApp aunque el portátil esté apagado. Vercel/Supabase (serverless) no pueden alojar WAHA (necesita proceso persistente + sesión WhatsApp Web). Se elige **Hetzner VPS (Ubuntu, ~$5/mes)** para correr WAHA 24/7.
+- **Archivos creados en `deploy/waha/`**:
+  - `docker-compose.yml`: servicios `waha` (imagen `devlikeapro/waha:latest`, volumen `waha-data` para persistir sesión) + `caddy` (reverse proxy HTTPS auto con Let's Encrypt en 80/443).
+  - `Caddyfile`: plantilla `reverse_proxy waha:3000` (el script la rellena con el dominio).
+  - `.env.waha.example`: variables de entorno.
+  - `setup.sh`: script one-shot que en un VPS Ubuntu fresco instala Docker, genera `WAHA_API_KEY` aleatoria, escribe `.env`/Caddyfile/compose, abre firewall (22/80/443) y levanta los servicios. Al final imprime los valores exactos para Vercel.
+- **Flujo para el usuario (acciones que el agente no puede hacer)**: crear VPS en Hetzner, apuntar subdominio (DNS A) a la IP, SSH, ejecutar `setup.sh <waha.dominio.com>`, y pegar en Vercel `WAHA_API_URL=https://<dominio>` y `WAHA_API_KEY` (la que imprime el script). Luego Redeploy.
+- **Validación**: `docker-compose.yml` de despliegue validado como YAML.
+
+**Estado:** ✅ Archivos de despliegue listos (pendiente de aprovisionar VPS y configurar DNS + Vercel)
+**Pendiente / Siguiente paso:** Usuario crea el VPS Hetzner, configura el DNS del subdominio y corre `setup.sh`; luego pega las vars en Vercel y hace Redeploy. Verificar con `curl https://<dominio>/api/version`.
+
+## 2026-07-11 19:01 (COT) — Nueva integración QR con WhatsApp vía WAHA (opción alterna a Evolution)
+**Plataforma:** opencode
+**Tipo:** ✨ Mejora | 🔧 Refactor | 🐛 Corrección
+
+- **Contexto**: El agente funcionaba en el sandbox web pero no respondía en WhatsApp. La causa raíz era de transporte: en los `.env.production`/`.env.local` las variables `EVOLUTION_API_URL` y `EVOLUTION_API_TOKEN` estaban vacías (modo *mock*), y Evolution API requiere un servidor propio siempre encendido cuyas sesiones se desincronizan. El usuario eligió evaluar opciones QR y adoptar **WAHA** (WhatsApp HTTP API, open-source, Baileys).
+- **Qué se hizo**:
+  1. `backend/config.py`: nuevas variables `waha_api_url` y `waha_api_key`.
+  2. `backend/services/whatsapp_waha_service.py` (nuevo): cliente completo WAHA — crear sesión, obtener QR, verificar estado, eliminar, enviar texto/imagen, reiniciar, health-check y modo *mock* para desarrollo local.
+  3. `backend/routers/whatsapp.py`: proveedor `"waha"` aceptado en `update_whatsapp_provider`; nuevos endpoints `POST /{id}/waha/connect`, `/waha/disconnect`, `/waha/restart`, `/waha/simulate-scan`, `GET /{id}/waha/health`, y webhook `POST /webhook/waha/{id}` (maneja eventos `message`, `qr`, `session.status`, notas de voz `ptt`, deduplicación y handoff). El endpoint `/status` ahora reporta estado/QR/webhook correctos para `waha`.
+  4. `dashboard/src/app/(dashboard)/agents/[id]/page.tsx`: nueva pestaña **"Código QR (WAHA)"**, handlers `handleConnectWhatsAppWaha/Disconnect/Restart/SimulateScanWaha` y VISTA 3 con flujo de QR espejo al de Evolution.
+  - Se reutilizan los campos `whatsapp_qr_instance_name` (nombre de sesión) y `whatsapp_qr_connected` para WAHA. El QR se persiste en la nueva columna `whatsapp_qr_code` (migración `b7c8d9e0f1a2`) + caché en memoria (WAHA 2026.6.2 CORE solo entrega el QR por webhook `qr`, no por REST).
+- **Archivos clave**: `backend/config.py`, `backend/services/whatsapp_waha_service.py`, `backend/routers/whatsapp.py`, `dashboard/src/app/(dashboard)/agents/[id]/page.tsx`, `docker-compose.yml`, `.env.waha.example`, `backend/alembic/versions/b7c8d9e0f1a2_add_whatsapp_qr_code.py`
+- **Verificación**: backend compila/importa OK; servicio probado contra WAHA real (crear sesión, auth, captura de QR vía webhook, envío/borrado). `docker-compose.yml` validado como YAML y el contenedor **WAHA ya corre localmente** en `http://localhost:3100` (imagen `devlikeapro/waha:latest`, volumen `waha-data` persiste la sesión). Variables generadas en `.env.waha`: `WAHA_PORT=3100`, `WAHA_API_KEY=GeniaWaha_zRQmVh5makIrAHhSMZ2cfpirnwuXBaVl`.
+
+**Estado:** ✅ Servidor WAHA operativo y código integrado (pendiente de exponer WAHA a internet + vars de Vercel + escaneo)
+**Pendiente / Siguiente paso (acciones del usuario, que el agente no puede hacer):**
+1) Exponer el puerto 3100 de WAHA a internet (firewall/router o dominio HTTPS) para que Vercel reciba los webhooks.
+2) En Vercel → Settings → Environment Variables, añadir:
+   - `WAHA_API_URL` = `https://<tu-ip-o-dominio>:3100` (URL pública de WAHA)
+   - `WAHA_API_KEY` = `GeniaWaha_zRQmVh5makIrAHhSMZ2cfpirnwuXBaVl` (misma de `.env.waha`)
+   Luego Redeploy.
+3) Dashboard → agente → pestaña **WAHA** → *Generar Código QR* → escanear con WhatsApp → enviar mensaje de prueba.
+4) (Solo si usas Supabase en prod) ejecutar `alembic upgrade heads` para crear `whatsapp_qr_code`.
+
+
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección | ✨ Mejora | 🔧 Refactor
+
+- **Problemas corregidos**:
+  1. Configuración de Webhook corregida en la Evolution API v2 usando el campo `"webhookByEvents"` (en vez de `"byEvents"`).
+  2. Añadido el evento `"QRCODE_UPDATED"` en la suscripción del webhook para actualización automática de QR.
+  3. Eliminación de instancias obsoletas/huérfanas al reconectar el QR para evitar acumular sesiones en Evolution API.
+  4. Agregado el botón **"Reiniciar Sesión QR"** y **"Regenerar QR"** en la interfaz para permitir a los usuarios re-escanear/re-autenticar fácilmente si la sesión se pierde.
+  5. Agregados nuevos endpoints en el backend: `POST /api/whatsapp/{agent_id}/qr/restart` y `GET /api/whatsapp/{agent_id}/qr/health`.
+  6. Normalización del dominio y protocolo HTTPS en webhooks para despliegues serverless en Vercel.
+  7. Remoción de logs innecesarios de depuración (`_report_debug_event` y escrituras en tabla `PAYLOAD_DEBUG` en base de datos) para agilizar el tiempo de procesamiento y evitar timeouts en Vercel.
+- **Archivos clave**:
+  - Backend: `backend/routers/whatsapp.py`, `backend/services/whatsapp_qr_service.py`
+  - Frontend: `dashboard/src/app/(dashboard)/agents/[id]/page.tsx`
+- **Resultados**: Las pruebas unitarias locales pasaron con éxito (`test_whatsapp_qr.py` ejecutado y validado en entorno virtual). El dashboard compila correctamente sin errores.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Deploy a Vercel producción y prueba de escaneo móvil en vivo.
+
+## 2026-07-09 19:30 (COT) — Diagnóstico y robustez: agente Socio no responde en WhatsApp
+**Plataforma:** opencode
+**Tipo:** 🐛 Corrección | 🔧 Refactor
+
+- **Diagnóstico:** El agente Socio funciona en el sandbox (web) porque el sandbox y WhatsApp comparten `process_conversation_message` (el LLM responde igual). El fallo está en el **transporte** (webhook de entrada + envío de salida), no en el modelo. La BD local (`backend/data/genia.db`) es irrelevante: producción usa Supabase, y el historial reciente confirma que Socio opera vía **QR / Evolution API** (no Meta Cloud).
+- **Causa raíz más probable:** (1) El webhook de Meta Cloud **nunca se suscribe automáticamente** a Meta (se dejaba al usuario configurarlo a mano), por lo que los mensajes del usuario nunca llegan al backend. (2) En la ruta QR, el extractor de payload era frágil ante las variantes de anidación de Evolution API v2 (`data.data` / `data.messages`), descartando mensajes válidos. (3) La ruta Meta no tenía fallback de respuesta vacía (a diferencia de la QR), así que un `reply` vacío enviaba `text:""` y el usuario no veía nada.
+- **Soluciones aplicadas:**
+  1. `backend/services/whatsapp_service.py`: nueva `configure_meta_webhook()` que suscribe el webhook en Meta Graph API (`POST /{phone_number_id}/webhooks`).
+  2. `backend/routers/whatsapp.py`: `connect_whatsapp` ahora **configura el webhook automáticamente** al conectar y devuelve la `webhook_url` real; nuevo endpoint `POST /{agent_id}/configure-webhook` para re-configurar bajo demanda.
+  3. `backend/routers/whatsapp.py`: fallback de respuesta vacía agregado en la ruta Meta (`"Hola, gracias por tu mensaje. ¿En qué puedo ayudarte?"`), igual que en QR.
+  4. `backend/routers/whatsapp.py`: `_extract_qr_message_details` ahora tolera payloads anidados de Evolution v2 (`data` como dict con `data` interno o lista `messages`), sin romper el caso plano.
+- Archivos clave: `backend/routers/whatsapp.py`, `backend/services/whatsapp_service.py`
+
+**Estado:** 🚧 En progreso (código listo; falta validación en producción)
+**Pendiente / Siguiente paso:** En producción, reconectar WhatsApp del agente Socio desde el dashboard (lo que dispara la suscripción automática del webhook) y enviar un mensaje de prueba. Si aún no responde, revisar la conversación `PAYLOAD_DEBUG` en Supabase: debe aparecer el payload entrante y, si falla el envío, `ERROR QR SEND FAILED` con el `instance`. Verificar que `EVOLUTION_API_URL` y `EVOLUTION_API_TOKEN` estén seteadas en Vercel.
+
+
+**Plataforma:** opencode
+**Tipo:** 🐛 Corrección
+
+- **Problema**: El agente Socio recibía mensajes por WhatsApp pero no respondía. Al analizar los payloads de producción (tabla `conversations` con `contact_phone="PAYLOAD_DEBUG"`), se vio que los mensajes entrantes tenían `"status": "DELIVERY_ACK"` — son **recibos de entrega** (el celular del usuario confirma que recibió el mensaje del bot), **no mensajes nuevos del usuario**.
+- **Causa**: `_extract_qr_message_details` no filtraba por `key.status`, procesaba los receipts como mensajes normales, pero al ser duplicados (mismo `whatsapp_message_id` ya guardado) o al no generar respuesta coherente, el agente no respondía.
+- **Solución**: Agregado filtro en `_extract_qr_message_details` para descartar mensajes con `status` en `("DELIVERY_ACK", "READ", "READ_SELF", "PLAYED")` antes de procesar.
+- Archivos clave: `backend/routers/whatsapp.py` (líneas 1516-1522)
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Probar que el agente Socio responda por WhatsApp enviando un mensaje real (no receipt). Verificar en logs: `[QR EXTRACT] Descartando receipt status=DELIVERY_ACK`
+
+## 2026-07-09 18:21 (COT) — Deploy a Vercel producción: fix LID resolver, fallback Groq, nuevos FREE_MODELS
+**Plataforma:** opencode
+**Tipo:** 🚀 Deploy
+
+- Desplegados todos los cambios pendientes a Vercel producción (`genia.com.co`).
+- Build exitoso (1m, estado Ready).
+- Cambios incluidos:
+  - Eliminado LID Resolver en `_extract_qr_message_details` → normaliza `phone_number` a solo dígitos.
+  - Fallback de reply vacío: si `process_conversation_message` devuelve `""`, envía mensaje genérico.
+  - Fallback absoluto a `groq/llama-3.3-70b-versatile` en `chat_with_agent` si todos los modelos fallan.
+  - Nuevos FREE_MODELS: `gemini-2.0-flash`, `groq/llama-3.3-70b-versatile`, `groq/llama-3.1-8b-instant`, `openrouter/deepseek/deepseek-chat`, `openrouter/gpt-4o-mini`.
+  - Logging mejorado en `send_qr_text_raw`.
+  - `_candidate_api_keys` para probar múltiples credenciales en llamadas salientes a Evolution API.
+- Archivos clave: `backend/routers/whatsapp.py`, `backend/services/ai_service.py`, `backend/services/model_rotation_service.py`, `backend/services/whatsapp_qr_service.py`
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Probar que el agente Socio responda por WhatsApp. Si no responde, revisar PAYLOAD_DEBUG en BD, logs de Vercel, y estado de conexión de Evolution API.
 
 ## 2026-07-09 17:18 (COT) — Solución: Enrutamiento compatible con Linked ID (LID) de WhatsApp
 **Plataforma:** Antigravity

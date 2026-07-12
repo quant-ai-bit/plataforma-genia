@@ -25,14 +25,18 @@ groq_client = AsyncGroq(api_key=settings.groq_api_key)
 # ── Estructura Auxiliar y Configuración de OpenRouter ────────────────
 class Struct:
     """Clase auxiliar para acceder a claves de diccionario como atributos."""
+
     def __init__(self, **entries):
         for k, v in entries.items():
             if isinstance(v, dict):
                 self.__dict__[k] = Struct(**v)
             elif isinstance(v, list):
-                self.__dict__[k] = [Struct(**item) if isinstance(item, dict) else item for item in v]
+                self.__dict__[k] = [
+                    Struct(**item) if isinstance(item, dict) else item for item in v
+                ]
             else:
                 self.__dict__[k] = v
+
 
 # Mapa de precios por millón de tokens (input/output) en USD
 PRICING_MAP = {
@@ -44,13 +48,11 @@ PRICING_MAP = {
     "llama3-8b-8192": {"input": 0.05, "output": 0.08},
     "mixtral-8x7b-32768": {"input": 0.24, "output": 0.24},
     "gemma2-9b-it": {"input": 0.20, "output": 0.20},
-    
     # Gemini Models (directo o via OpenRouter)
     "gemini-2.5-flash": {"input": 0.075, "output": 0.30},
     "gemini-2.0-flash": {"input": 0.075, "output": 0.30},
     "gemini-1.5-flash": {"input": 0.075, "output": 0.30},
     "gemini-1.5-pro": {"input": 1.25, "output": 5.00},
-    
     # OpenRouter Models
     "deepseek/deepseek-chat": {"input": 0.14, "output": 0.28},
     "anthropic/claude-3.5-sonnet:beta": {"input": 3.00, "output": 15.00},
@@ -59,6 +61,7 @@ PRICING_MAP = {
     "openai/gpt-4o": {"input": 2.50, "output": 10.00},
 }
 
+
 def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
     """Calcula el costo total en USD a partir de la cantidad de tokens."""
     prices = PRICING_MAP.get(model, {"input": 0.5, "output": 1.5})
@@ -66,27 +69,31 @@ def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> fl
     output_cost = (completion_tokens / 1_000_000.0) * prices["output"]
     return input_cost + output_cost
 
+
 def message_to_dict(message) -> dict:
     """Convierte un mensaje (objeto del SDK de Groq o dict) a un diccionario estándar."""
     if isinstance(message, dict):
         return message
-    
+
     d = {"role": message.role, "content": message.content}
     if hasattr(message, "tool_calls") and message.tool_calls:
         d["tool_calls"] = []
         for tc in message.tool_calls:
-            d["tool_calls"].append({
-                "id": tc.id,
-                "type": tc.type,
-                "function": {
-                    "name": tc.function.name,
-                    "arguments": tc.function.arguments
+            d["tool_calls"].append(
+                {
+                    "id": tc.id,
+                    "type": tc.type,
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    },
                 }
-            })
+            )
     return d
 
 
 # ── Construcción dinámica de herramientas (tools) ────────────────────
+
 
 def build_lead_tools(custom_fields: list[dict]) -> list[dict]:
     """
@@ -114,7 +121,6 @@ def build_lead_tools(custom_fields: list[dict]) -> list[dict]:
         # Forzar 'string' para evitar errores de validación de tipo en los LLM (como Groq 400 validation failed)
         field_type: str = "string"
         field_desc: str = field.get("description", f"Campo personalizado: {field_name}")
-
 
         properties[field_name] = {
             "type": field_type,
@@ -151,12 +157,8 @@ def build_lead_tools(custom_fields: list[dict]) -> list[dict]:
                     "cuando está interesado en planes de oficinas privadas por meses (planes mensuales), "
                     "o cuando realiza una consulta muy compleja que excede tu base de conocimiento."
                 ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }
-            }
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
         },
         {
             "type": "function",
@@ -171,13 +173,13 @@ def build_lead_tools(custom_fields: list[dict]) -> list[dict]:
                     "properties": {
                         "unanswered_question": {
                             "type": "string",
-                            "description": "La pregunta exacta del usuario que no se pudo responder."
+                            "description": "La pregunta exacta del usuario que no se pudo responder.",
                         }
                     },
-                    "required": ["unanswered_question"]
-                }
-            }
-        }
+                    "required": ["unanswered_question"],
+                },
+            },
+        },
     ]
 
     return tools
@@ -204,12 +206,12 @@ def build_calendar_tools() -> list[dict]:
                     "properties": {
                         "date": {
                             "type": "string",
-                            "description": "Fecha a consultar en formato YYYY-MM-DD (ej: 2026-07-03)"
+                            "description": "Fecha a consultar en formato YYYY-MM-DD (ej: 2026-07-03)",
                         }
                     },
-                    "required": ["date"]
-                }
-            }
+                    "required": ["date"],
+                },
+            },
         },
         {
             "type": "function",
@@ -225,36 +227,36 @@ def build_calendar_tools() -> list[dict]:
                     "properties": {
                         "title": {
                             "type": "string",
-                            "description": "Título o resumen de la cita (ej: 'Cita con Mar\u00eda - Consulta')"
+                            "description": "Título o resumen de la cita (ej: 'Cita con Mar\u00eda - Consulta')",
                         },
                         "date": {
                             "type": "string",
-                            "description": "Fecha de la cita en formato YYYY-MM-DD"
+                            "description": "Fecha de la cita en formato YYYY-MM-DD",
                         },
                         "start_time": {
                             "type": "string",
-                            "description": "Hora de inicio en formato HH:MM (24h, ej: '14:30')"
+                            "description": "Hora de inicio en formato HH:MM (24h, ej: '14:30')",
                         },
                         "end_time": {
                             "type": "string",
-                            "description": "Hora de fin en formato HH:MM (24h, ej: '15:30')"
+                            "description": "Hora de fin en formato HH:MM (24h, ej: '15:30')",
                         },
                         "attendee_name": {
                             "type": "string",
-                            "description": "Nombre del cliente o asistente"
+                            "description": "Nombre del cliente o asistente",
                         },
                         "attendee_email": {
                             "type": "string",
-                            "description": "Email del cliente (opcional, para enviarle invitación)"
+                            "description": "Email del cliente (opcional, para enviarle invitación)",
                         },
                         "description": {
                             "type": "string",
-                            "description": "Descripción o notas adicionales de la cita"
-                        }
+                            "description": "Descripción o notas adicionales de la cita",
+                        },
                     },
-                    "required": ["title", "date", "start_time", "end_time"]
-                }
-            }
+                    "required": ["title", "date", "start_time", "end_time"],
+                },
+            },
         },
         {
             "type": "function",
@@ -269,12 +271,12 @@ def build_calendar_tools() -> list[dict]:
                     "properties": {
                         "days_ahead": {
                             "type": "integer",
-                            "description": "Número de días hacia adelante para buscar eventos (default: 7)"
+                            "description": "Número de días hacia adelante para buscar eventos (default: 7)",
                         }
                     },
-                    "required": []
-                }
-            }
+                    "required": [],
+                },
+            },
         },
         {
             "type": "function",
@@ -290,16 +292,16 @@ def build_calendar_tools() -> list[dict]:
                     "properties": {
                         "event_id": {
                             "type": "string",
-                            "description": "ID del evento a cancelar (obtenido de list_upcoming_events)"
+                            "description": "ID del evento a cancelar (obtenido de list_upcoming_events)",
                         },
                         "cancellation_reason": {
                             "type": "string",
-                            "description": "Motivo de la cancelación proporcionado por el cliente"
-                        }
+                            "description": "Motivo de la cancelación proporcionado por el cliente",
+                        },
                     },
-                    "required": ["event_id", "cancellation_reason"]
-                }
-            }
+                    "required": ["event_id", "cancellation_reason"],
+                },
+            },
         },
         {
             "type": "function",
@@ -314,29 +316,36 @@ def build_calendar_tools() -> list[dict]:
                     "properties": {
                         "event_id": {
                             "type": "string",
-                            "description": "ID del evento a reprogramar"
+                            "description": "ID del evento a reprogramar",
                         },
                         "new_date": {
                             "type": "string",
-                            "description": "Nueva fecha en formato YYYY-MM-DD"
+                            "description": "Nueva fecha en formato YYYY-MM-DD",
                         },
                         "new_start_time": {
                             "type": "string",
-                            "description": "Nueva hora de inicio en formato HH:MM"
+                            "description": "Nueva hora de inicio en formato HH:MM",
                         },
                         "new_end_time": {
                             "type": "string",
-                            "description": "Nueva hora de fin en formato HH:MM"
-                        }
+                            "description": "Nueva hora de fin en formato HH:MM",
+                        },
                     },
-                    "required": ["event_id", "new_date", "new_start_time", "new_end_time"]
-                }
-            }
+                    "required": [
+                        "event_id",
+                        "new_date",
+                        "new_start_time",
+                        "new_end_time",
+                    ],
+                },
+            },
         },
     ]
 
 
-async def post_openrouter_with_retries(client: httpx.AsyncClient, payload: dict, max_retries: int = 3) -> httpx.Response:
+async def post_openrouter_with_retries(
+    client: httpx.AsyncClient, payload: dict, max_retries: int = 3
+) -> httpx.Response:
     """Realiza una petición POST a OpenRouter con reintentos para errores transitorios."""
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -345,25 +354,26 @@ async def post_openrouter_with_retries(client: httpx.AsyncClient, payload: dict,
         "X-Title": "Plataforma Genia",
         "Content-Type": "application/json",
     }
-    
+
     last_exc = None
     for attempt in range(max_retries):
         try:
-            logger.info("Enviando petición a OpenRouter (Intento %s/%s)...", attempt + 1, max_retries)
+            logger.info(
+                "Enviando petición a OpenRouter (Intento %s/%s)...",
+                attempt + 1,
+                max_retries,
+            )
             response = await client.post(
-                url,
-                headers=headers,
-                json=payload,
-                timeout=60.0
+                url, headers=headers, json=payload, timeout=60.0
             )
             # Si el código es 429 (rate limit) o 5xx (servidor saturado), reintentamos
             if response.status_code == 429 or response.status_code >= 500:
                 logger.warning(
                     "OpenRouter retornó código %s en intento %s. Reintentando...",
                     response.status_code,
-                    attempt + 1
+                    attempt + 1,
                 )
-                await asyncio.sleep(2 ** attempt)  # Backoff exponencial (1s, 2s, 4s...)
+                await asyncio.sleep(2**attempt)  # Backoff exponencial (1s, 2s, 4s...)
                 continue
             return response
         except (httpx.HTTPError, httpx.StreamError) as exc:
@@ -371,13 +381,15 @@ async def post_openrouter_with_retries(client: httpx.AsyncClient, payload: dict,
             logger.warning(
                 "Error de red/conexión con OpenRouter en intento %s: %s. Reintentando...",
                 attempt + 1,
-                str(exc)
+                str(exc),
             )
-            await asyncio.sleep(2 ** attempt)
-            
+            await asyncio.sleep(2**attempt)
+
     if last_exc:
         raise last_exc
-    raise Exception("Límite de reintentos alcanzado para OpenRouter sin una respuesta exitosa.")
+    raise Exception(
+        "Límite de reintentos alcanzado para OpenRouter sin una respuesta exitosa."
+    )
 
 
 async def chat_with_agent(
@@ -465,6 +477,7 @@ async def chat_with_agent(
 
     try:
         from services.model_rotation_service import FREE_MODELS
+
         max_rotation_attempts = len(FREE_MODELS)
         current_attempt = 0
         last_error = None
@@ -484,7 +497,7 @@ async def chat_with_agent(
                     )
                     response_message = response.choices[0].message
                     tool_calls = response_message.tool_calls
-                    
+
                     if response.usage:
                         prompt_tokens += response.usage.prompt_tokens
                         completion_tokens += response.usage.completion_tokens
@@ -492,6 +505,7 @@ async def chat_with_agent(
                 elif provider == "gemini":
                     from services.providers.gemini_provider import GeminiProvider
                     from services.providers.base import GenerationRequest
+
                     gp = GeminiProvider(model=model_name)
                     req = GenerationRequest(
                         messages=messages,
@@ -518,18 +532,20 @@ async def chat_with_agent(
                     async with httpx.AsyncClient() as client:
                         response = await post_openrouter_with_retries(client, payload)
                         if response.status_code != 200:
-                            raise Exception(f"OpenRouter API error: {response.status_code} - {response.text}")
-                        
+                            raise Exception(
+                                f"OpenRouter API error: {response.status_code} - {response.text}"
+                            )
+
                         resp_json = response.json()
                         choice = resp_json["choices"][0]
                         response_message = choice["message"]
-                        
+
                         raw_tool_calls = response_message.get("tool_calls")
                         if raw_tool_calls:
                             tool_calls = [Struct(**tc) for tc in raw_tool_calls]
                         else:
                             tool_calls = None
-                        
+
                         usage_data = resp_json.get("usage", {})
                         prompt_tokens += usage_data.get("prompt_tokens", 0)
                         completion_tokens += usage_data.get("completion_tokens", 0)
@@ -565,15 +581,19 @@ async def chat_with_agent(
                         if func_name == "save_lead_info":
                             lead_data = args
                             logger.info(
-                                "Datos de lead capturados por function-calling: %s", args
+                                "Datos de lead capturados por function-calling: %s",
+                                args,
                             )
                         elif func_name == "trigger_human_handoff":
                             handoff_triggered = True
                             logger.info("Human handoff triggered by the agent.")
                         elif func_name == "alert_owner_about_unanswered_query":
-                            unanswered_question = args.get("unanswered_question", user_message)
+                            unanswered_question = args.get(
+                                "unanswered_question", user_message
+                            )
                             logger.info(
-                                "Alerta de pregunta sin respuesta registrada: %s", unanswered_question
+                                "Alerta de pregunta sin respuesta registrada: %s",
+                                unanswered_question,
                             )
 
                         # Agregar resultado de la herramienta al historial
@@ -609,16 +629,25 @@ async def chat_with_agent(
                             "max_tokens": max_tokens,
                         }
                         async with httpx.AsyncClient() as client:
-                            second_response = await post_openrouter_with_retries(client, payload)
+                            second_response = await post_openrouter_with_retries(
+                                client, payload
+                            )
                             if second_response.status_code != 200:
-                                raise Exception(f"OpenRouter API error: {second_response.status_code} - {second_response.text}")
-                            
+                                raise Exception(
+                                    f"OpenRouter API error: {second_response.status_code} - {second_response.text}"
+                                )
+
                             second_resp_json = second_response.json()
-                            final_text = second_resp_json["choices"][0]["message"]["content"] or ""
-                            
+                            final_text = (
+                                second_resp_json["choices"][0]["message"]["content"]
+                                or ""
+                            )
+
                             second_usage_data = second_resp_json.get("usage", {})
                             prompt_tokens += second_usage_data.get("prompt_tokens", 0)
-                            completion_tokens += second_usage_data.get("completion_tokens", 0)
+                            completion_tokens += second_usage_data.get(
+                                "completion_tokens", 0
+                            )
                 else:
                     if provider == "openrouter":
                         final_text = response_message.get("content") or ""
@@ -629,19 +658,24 @@ async def chat_with_agent(
 
                 # Limpiar posibles fugas de texto de function-calling (como <function=...>)
                 if final_text:
-                    final_text = re.sub(r"<function=\w+>.*?</function>", "", final_text, flags=re.DOTALL)
-                    final_text = re.sub(r"<function=\w+>.*$", "", final_text, flags=re.DOTALL)
+                    final_text = re.sub(
+                        r"<function=\w+>.*?</function>", "", final_text, flags=re.DOTALL
+                    )
+                    final_text = re.sub(
+                        r"<function=\w+>.*$", "", final_text, flags=re.DOTALL
+                    )
                     final_text = final_text.strip()
 
                 # Registrar el uso exitoso en la base de datos si tenemos db
                 if db:
                     from services.model_rotation_service import ModelRotationService
+
                     ModelRotationService.track_usage_and_check_limits(
                         db=db,
                         provider=provider,
                         model=model_name,
                         input_tokens=prompt_tokens,
-                        output_tokens=completion_tokens
+                        output_tokens=completion_tokens,
                     )
 
                 break
@@ -657,7 +691,7 @@ async def chat_with_agent(
                     error_str,
                 )
                 last_error = attempt_exc
-                
+
                 # Comprobar si es un error de cuota/límites o de indisponibilidad/decommissioning del modelo
                 exc_msg = getattr(attempt_exc, "message", "")
                 if exc_msg is None:
@@ -665,89 +699,147 @@ async def chat_with_agent(
                 is_quota_error = any(
                     kw in error_str.lower() or kw in str(exc_msg).lower()
                     for kw in (
-                        "quota", "429", "rate_limit", "rate limit", "too many requests",
-                        "402", "payment required", "out of tokens", "insufficient_funds",
-                        "decommissioned", "not found", "not supported", "invalid_request_error",
-                        "bad request", "400", "503", "500", "service_unavailable"
+                        "quota",
+                        "429",
+                        "rate_limit",
+                        "rate limit",
+                        "too many requests",
+                        "402",
+                        "payment required",
+                        "out of tokens",
+                        "insufficient_funds",
+                        "decommissioned",
+                        "not found",
+                        "not supported",
+                        "invalid_request_error",
+                        "bad request",
+                        "400",
+                        "503",
+                        "500",
+                        "service_unavailable",
                     )
                 )
-                
+
                 if is_quota_error and db and agent_id:
                     from services.model_rotation_service import ModelRotationService
                     from models.agent import Agent
-                    
+
                     # 1. Registrar el agotamiento del modelo
                     ModelRotationService.mark_model_exhausted(
                         db=db,
                         provider=provider,
                         model=model_name,
-                        reason=f"Agotamiento en chat_with_agent: {error_str}"
+                        reason=f"Agotamiento en chat_with_agent: {error_str}",
                     )
-                    
+
                     # 2. Elegir un modelo sustituto
                     next_model = ModelRotationService.get_next_available_free_model(
-                        db=db,
-                        current_provider=provider,
-                        current_model=model_name
+                        db=db, current_provider=provider, current_model=model_name
                     )
-                    
+
                     logger.info(
                         "Auto-rotación de modelo iniciada para el agente %s. Nuevo modelo: %s/%s",
                         agent_id,
                         next_model["provider"],
-                        next_model["model"]
+                        next_model["model"],
                     )
-                    
+
                     # 3. Actualizar la base de datos para el agente
                     agent_db = db.query(Agent).filter(Agent.id == agent_id).first()
                     if agent_db:
                         agent_db.provider = next_model["provider"]
                         agent_db.model = next_model["model"]
                         db.commit()
-                    
+
                     # 4. Modificar parámetros para el siguiente intento en caliente
                     provider = next_model["provider"]
                     model_name = next_model["model"]
-                    
+
                     # Limpiar contadores de tokens fallidos
                     prompt_tokens = 0
                     completion_tokens = 0
-                    
+
                     # Reintentar en caliente
                     continue
                 else:
                     raise attempt_exc
         else:
-            raise Exception("Todos los reintentos de rotación de modelos gratuitos fallaron.")
+            raise Exception(
+                "Todos los reintentos de rotación de modelos gratuitos fallaron."
+            )
 
     except Exception as exc:
         error_str = str(exc)
         logger.error("Error en chat_with_agent: %s", error_str, exc_info=True)
 
-        if any(kw in error_str for kw in ("Quota exceeded", "429", "rate_limit")):
-            final_text = (
-                "⚠️ Se ha superado el límite de cuota (Rate Limit) de la API. "
-                "Por favor, espera unos segundos e inténtalo de nuevo."
-            )
-        elif any(
-            kw in error_str.lower() for kw in ("api key", "unauthorized", "401")
-        ):
-            final_text = (
-                "⚠️ Error de autenticación: La clave API del proveedor de IA "
-                "no está configurada o es inválida."
-            )
-        else:
-            final_text = (
-                "⚠️ Hubo un error procesando tu solicitud con el servicio de IA. "
-                "Por favor, inténtalo de nuevo más tarde."
-            )
+        fallback_attempted = False
+        if provider != "groq" and settings.groq_api_key:
+            try:
+                logger.warning(
+                    "FALLBACK: Intentando groq/llama-3.3-70b-versatile tras error en %s/%s",
+                    provider,
+                    model_name,
+                )
+                fallback_response = await groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                fallback_text = fallback_response.choices[0].message.content or ""
+                if fallback_text and fallback_text.strip():
+                    final_text = fallback_text
+                    fallback_attempted = True
+                    if fallback_response.usage:
+                        prompt_tokens = fallback_response.usage.prompt_tokens or 0
+                        completion_tokens = (
+                            fallback_response.usage.completion_tokens or 0
+                        )
+                    if db and agent_id:
+                        try:
+                            agent_db = (
+                                db.query(Agent).filter(Agent.id == agent_id).first()
+                            )
+                            if agent_db:
+                                agent_db.provider = "groq"
+                                agent_db.model = "llama-3.3-70b-versatile"
+                                db.commit()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
+        if not fallback_attempted:
+            if any(kw in error_str for kw in ("Quota exceeded", "429", "rate_limit")):
+                final_text = (
+                    "⚠️ Se ha superado el límite de cuota (Rate Limit) de la API. "
+                    "Por favor, espera unos segundos e inténtalo de nuevo."
+                )
+            elif any(
+                kw in error_str.lower() for kw in ("api key", "unauthorized", "401")
+            ):
+                final_text = (
+                    "⚠️ Error de autenticación: La clave API del proveedor de IA "
+                    "no está configurada o es inválida."
+                )
+            else:
+                final_text = (
+                    "⚠️ Hubo un error procesando tu solicitud con el servicio de IA. "
+                    "Por favor, inténtalo de nuevo más tarde."
+                )
 
-
-    return final_text, lead_data, handoff_triggered, unanswered_question, prompt_tokens, completion_tokens
+    return (
+        final_text,
+        lead_data,
+        handoff_triggered,
+        unanswered_question,
+        prompt_tokens,
+        completion_tokens,
+    )
 
 
 # ── Modelos disponibles por proveedor ────────────────────────────────
+
 
 def get_available_models(provider: str) -> list[str]:
     """
@@ -773,6 +865,7 @@ def get_available_models(provider: str) -> list[str]:
 # Nueva ruta de generacion multi-proveedor con timeout/retry/fallback.
 # Se mantiene `chat_with_agent` intacto por compatibilidad; este helper es la
 # via recomendada para la API publica `/v1`, que delega en `ModelService`.
+
 
 async def generate_via_model_service(
     messages: list[dict],
@@ -850,4 +943,3 @@ async def transcribe_audio(
         stt_provider=stt_provider,
         language=language,
     )
-

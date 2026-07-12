@@ -23,6 +23,15 @@ MOCK_QR_BASE64 = (
 )
 
 
+def _candidate_api_keys(token: str | None = None) -> list[str]:
+    """Retorna las claves a probar contra Evolution API, sin duplicados."""
+    keys = []
+    for key in [token, settings.evolution_api_token]:
+        if key and key not in keys:
+            keys.append(key)
+    return keys
+
+
 def is_mock_mode() -> bool:
     """Retorna True si no están configuradas las credenciales de Evolution API."""
     return not settings.evolution_api_url or not settings.evolution_api_token
@@ -38,14 +47,14 @@ async def create_qr_instance(instance_name: str) -> dict:
             "status": "disconnected",
             "qr": MOCK_QR_BASE64,
             "phone": None,
-            "display_name": None
+            "display_name": None,
         }
         return {"status": "created", "instance": instance_name}
 
     url = f"{settings.evolution_api_url}/instance/create"
     headers = {
         "apikey": settings.evolution_api_token,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
     payload = {
         "instanceName": instance_name,
@@ -56,7 +65,7 @@ async def create_qr_instance(instance_name: str) -> dict:
         "groupsIgnore": True,
         "alwaysOnline": True,
         "readMessages": True,
-        "readStatus": False
+        "readStatus": False,
     }
 
     try:
@@ -71,13 +80,21 @@ async def create_qr_instance(instance_name: str) -> dict:
                 elif isinstance(hash_data, str):
                     token_val = hash_data
                 logger.info(f"Instancia QR '{instance_name}' creada en Evolution API.")
-                return {"status": "created", "instance": instance_name, "token": token_val}
+                return {
+                    "status": "created",
+                    "instance": instance_name,
+                    "token": token_val,
+                }
             elif response.status_code == 403:
                 # La instancia ya existe — esto es válido, simplemente continuamos
-                logger.warning(f"Instancia '{instance_name}' ya existe en Evolution API. Reutilizando.")
+                logger.warning(
+                    f"Instancia '{instance_name}' ya existe en Evolution API. Reutilizando."
+                )
                 return {"status": "created", "instance": instance_name, "token": None}
             else:
-                logger.error(f"Error al crear instancia en Evolution API: {response.text}")
+                logger.error(
+                    f"Error al crear instancia en Evolution API: {response.text}"
+                )
                 return {"status": "error", "error": response.text}
     except Exception as e:
         logger.error(f"Excepción al crear instancia en Evolution API: {str(e)}")
@@ -93,9 +110,7 @@ async def get_qr_code(instance_name: str) -> str | None:
         return MOCK_QR_BASE64
 
     url = f"{settings.evolution_api_url}/instance/connect/{instance_name}"
-    headers = {
-        "apikey": settings.evolution_api_token
-    }
+    headers = {"apikey": settings.evolution_api_token}
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -123,20 +138,18 @@ async def verify_qr_connection(instance_name: str) -> dict:
                 "connected": True,
                 "phone_number": session.get("phone", "573103125460"),
                 "display_name": session.get("display_name", "Línea QR Simulada"),
-                "error": None
+                "error": None,
             }
         return {
             "connected": False,
             "phone_number": None,
             "display_name": None,
             "qr_code": session.get("qr"),
-            "error": None
+            "error": None,
         }
 
     url = f"{settings.evolution_api_url}/instance/connectionState/{instance_name}"
-    headers = {
-        "apikey": settings.evolution_api_token
-    }
+    headers = {"apikey": settings.evolution_api_token}
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -144,31 +157,37 @@ async def verify_qr_connection(instance_name: str) -> dict:
             if response.status_code == 200:
                 data = response.json()
                 state = data.get("instance", {}).get("state")
-                connected = (state == "open" or data.get("state") == "open")
-                
+                connected = state == "open" or data.get("state") == "open"
+
                 # Obtener detalles del número conectado si está abierto
                 phone = None
                 name = None
                 if connected:
-                    info_url = f"{settings.evolution_api_url}/instance/info/{instance_name}"
+                    info_url = (
+                        f"{settings.evolution_api_url}/instance/info/{instance_name}"
+                    )
                     info_res = await client.get(info_url, headers=headers)
                     if info_res.status_code == 200:
                         info_data = info_res.json()
-                        phone = info_data.get("instance", {}).get("ownerJid", "").split("@")[0]
+                        phone = (
+                            info_data.get("instance", {})
+                            .get("ownerJid", "")
+                            .split("@")[0]
+                        )
                         name = info_data.get("instance", {}).get("profileName")
 
                 return {
                     "connected": connected,
                     "phone_number": phone,
                     "display_name": name,
-                    "error": None
+                    "error": None,
                 }
             else:
                 return {
                     "connected": False,
                     "phone_number": None,
                     "display_name": None,
-                    "error": response.text
+                    "error": response.text,
                 }
     except Exception as e:
         logger.error(f"Excepción al verificar estado de Evolution API: {str(e)}")
@@ -176,7 +195,7 @@ async def verify_qr_connection(instance_name: str) -> dict:
             "connected": False,
             "phone_number": None,
             "display_name": None,
-            "error": str(e)
+            "error": str(e),
         }
 
 
@@ -192,9 +211,7 @@ async def delete_qr_instance(instance_name: str) -> bool:
 
     logout_url = f"{settings.evolution_api_url}/instance/logout/{instance_name}"
     delete_url = f"{settings.evolution_api_url}/instance/delete/{instance_name}"
-    headers = {
-        "apikey": settings.evolution_api_token
-    }
+    headers = {"apikey": settings.evolution_api_token}
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -208,23 +225,27 @@ async def delete_qr_instance(instance_name: str) -> bool:
         return False
 
 
-async def send_qr_image(instance_name: str, to_phone: str, image_url: str, caption: str = "", token: str = None) -> bool:
+async def send_qr_image(
+    instance_name: str,
+    to_phone: str,
+    image_url: str,
+    caption: str = "",
+    token: str = None,
+) -> bool:
     """
     Envía una imagen a través del servicio QR (Evolution API).
     """
     if is_mock_mode():
-        logger.info(f"[MOCK QR SEND IMAGE] De: '{instance_name}' Para: '{to_phone}': URL={image_url}, Caption={caption}")
+        logger.info(
+            f"[MOCK QR SEND IMAGE] De: '{instance_name}' Para: '{to_phone}': URL={image_url}, Caption={caption}"
+        )
         return True
 
-    auth_token = token or settings.evolution_api_token
     url = f"{settings.evolution_api_url}/message/sendMedia/{instance_name}"
-    headers = {
-        "apikey": auth_token,
-        "Content-Type": "application/json"
-    }
 
     import os
     from urllib.parse import urlparse
+
     parsed_url = urlparse(image_url)
     filename = os.path.basename(parsed_url.path) or "image.jpg"
     if not filename.lower().endswith((".jpg", ".jpeg", ".png", ".gif", ".webp")):
@@ -239,78 +260,118 @@ async def send_qr_image(instance_name: str, to_phone: str, image_url: str, capti
         "mimetype": mimetype,
         "media": image_url,
         "fileName": filename,
-        "caption": caption
+        "caption": caption,
     }
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, headers=headers, json=payload)
-            if response.status_code in [200, 201]:
-                return True
-            logger.error(f"Error al enviar imagen QR de Evolution API: {response.text}")
+            last_response_text = ""
+            for auth_token in _candidate_api_keys(token):
+                headers = {"apikey": auth_token, "Content-Type": "application/json"}
+                response = await client.post(url, headers=headers, json=payload)
+                if response.status_code in [200, 201]:
+                    return True
+                last_response_text = response.text
+                logger.warning(
+                    "Error al enviar imagen QR de Evolution API con credencial candidata: %s",
+                    response.text,
+                )
+            logger.error(
+                f"Error al enviar imagen QR de Evolution API: {last_response_text}"
+            )
             return False
     except Exception as e:
         logger.error(f"Excepción al enviar imagen QR de Evolution API: {str(e)}")
         return False
 
 
-async def send_qr_text_raw(instance_name: str, to_phone: str, text: str, token: str = None) -> bool:
+async def send_qr_text_raw(
+    instance_name: str, to_phone: str, text: str, token: str = None
+) -> bool:
     """
     Envía un mensaje de texto puro a través de la Evolution API.
     """
-    auth_token = token or settings.evolution_api_token
     url = f"{settings.evolution_api_url}/message/sendText/{instance_name}"
-    headers = {
-        "apikey": auth_token,
-        "Content-Type": "application/json"
-    }
     payload = {
         "number": to_phone,
         "text": text,
-        "options": {
-            "delay": 1000,
-            "presence": "composing",
-            "linkPreview": False
-        }
+        "options": {"delay": 1000, "presence": "composing", "linkPreview": False},
     }
+
+    logger.info(
+        "Enviando mensaje QR a %s en instancia %s: text_len=%d, text_preview='%s'",
+        to_phone,
+        instance_name,
+        len(text),
+        text[:80],
+    )
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.post(url, headers=headers, json=payload)
-            if response.status_code in [200, 201]:
-                return True
-            logger.error(f"Error al enviar mensaje QR de Evolution API: {response.text}")
+            last_response_text = ""
+            for auth_token in _candidate_api_keys(token):
+                headers = {"apikey": auth_token, "Content-Type": "application/json"}
+                response = await client.post(url, headers=headers, json=payload)
+                if response.status_code in [200, 201]:
+                    logger.info(
+                        "Mensaje QR enviado exitosamente a %s (status=%d)",
+                        to_phone,
+                        response.status_code,
+                    )
+                    print(f"[QR_DIAG] Evolution sendText OK to={to_phone} status={response.status_code}", flush=True)
+                    return True
+                last_response_text = response.text
+                logger.warning(
+                    "Error al enviar mensaje QR de Evolution API con credencial candidata "
+                    "(status=%d): %s",
+                    response.status_code,
+                    response.text,
+                )
+                print(f"[QR_DIAG] Evolution sendText FALLÓ status={response.status_code} body={response.text[:300]}", flush=True)
+            logger.error(
+                "Error al enviar mensaje QR de Evolution API tras agotar credenciales: %s",
+                last_response_text,
+            )
+            print(f"[QR_DIAG] Evolution sendText AGOTÓ credenciales: {last_response_text[:300]}", flush=True)
             return False
     except Exception as e:
-        logger.error(f"Excepción al enviar mensaje QR de Evolution API: {str(e)}")
+        logger.error("Excepción al enviar mensaje QR de Evolution API: %s", str(e))
+        print(f"[QR_DIAG] Evolution sendText EXCEPCIÓN: {str(e)[:300]}", flush=True)
         return False
 
 
-async def send_qr_text(instance_name: str, to_phone: str, text: str, token: str = None) -> bool:
+async def send_qr_text(
+    instance_name: str, to_phone: str, text: str, token: str = None
+) -> bool:
     """
     Envía un mensaje de texto a través del servicio QR.
     Si el texto contiene imágenes en formato Markdown ![alt](url),
     las extrae y las envía como mensajes multimedia nativos de WhatsApp.
     """
     import re
+
     # Encontrar imágenes en formato ![descripción](url)
-    image_matches = re.findall(r'!\[(.*?)\]\((.*?)\)', text)
-    
+    image_matches = re.findall(r"!\[(.*?)\]\((.*?)\)", text)
+
     if image_matches:
         # Extraer texto limpio sin el formato de imagen de markdown
-        cleaned_text = re.sub(r'!\[(.*?)\]\((.*?)\)', '', text).strip()
-        cleaned_text = re.sub(r'\n{3,}', '\n\n', cleaned_text).strip()
-        
+        cleaned_text = re.sub(r"!\[(.*?)\]\((.*?)\)", "", text).strip()
+        cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text).strip()
+
         success = True
         if cleaned_text:
             # Enviar el texto limpio primero
-            success = await send_qr_text_raw(instance_name, to_phone, cleaned_text, token)
-            
+            success = await send_qr_text_raw(
+                instance_name, to_phone, cleaned_text, token
+            )
+
         for caption, image_url in image_matches:
             # Enviar cada imagen de manera nativa
-            img_success = await send_qr_image(instance_name, to_phone, image_url, caption, token)
+            img_success = await send_qr_image(
+                instance_name, to_phone, image_url, caption, token
+            )
             success = success and img_success
-            
+
         return success
     else:
         return await send_qr_text_raw(instance_name, to_phone, text, token)
@@ -321,23 +382,26 @@ async def configure_qr_webhook(instance_name: str, webhook_url: str) -> bool:
     Configura el webhook de eventos entrantes para la instancia en Evolution API.
     """
     if is_mock_mode():
-        logger.info(f"[MOCK QR] Configurando webhook simulado en '{instance_name}' apuntando a: {webhook_url}")
+        logger.info(
+            f"[MOCK QR] Configurando webhook simulado en '{instance_name}' apuntando a: {webhook_url}"
+        )
         return True
 
     url = f"{settings.evolution_api_url}/webhook/set/{instance_name}"
     headers = {
         "apikey": settings.evolution_api_token,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
     payload = {
         "webhook": {
             "enabled": True,
             "url": webhook_url,
-            "byEvents": False, # Enviar todos los eventos
+            "webhookByEvents": False,
             "events": [
                 "MESSAGES_UPSERT",
-                "CONNECTION_UPDATE"
-            ]
+                "CONNECTION_UPDATE",
+                "QRCODE_UPDATED",
+            ],
         }
     }
 
@@ -345,12 +409,99 @@ async def configure_qr_webhook(instance_name: str, webhook_url: str) -> bool:
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(url, headers=headers, json=payload)
             if response.status_code in [200, 201]:
-                logger.info(f"Webhook configurado para instancia '{instance_name}'.")
+                logger.info(
+                    f"Webhook configurado para instancia '{instance_name}' → {webhook_url}"
+                )
                 return True
-            logger.error(f"Error al configurar webhook de Evolution API: {response.text}")
+            logger.error(
+                f"Error al configurar webhook de Evolution API (status={response.status_code}): {response.text}"
+            )
             return False
     except Exception as e:
         logger.error(f"Excepción al configurar webhook de Evolution API: {str(e)}")
+        return False
+
+
+async def restart_qr_instance(instance_name: str) -> str | None:
+    """
+    Reinicia la instancia de Evolution API para obtener un nuevo QR
+    sin destruir y recrear la instancia.
+    """
+    if is_mock_mode():
+        logger.info(f"[MOCK QR] Reiniciando instancia simulada: '{instance_name}'")
+        return MOCK_QR_BASE64
+
+    # 1. Cerrar sesión (logout) para forzar nuevo QR
+    logout_url = f"{settings.evolution_api_url}/instance/logout/{instance_name}"
+    headers = {"apikey": settings.evolution_api_token}
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            await client.delete(logout_url, headers=headers)
+            logger.info(f"Logout de instancia '{instance_name}' ejecutado.")
+
+            # 2. Reconectar para generar nuevo QR
+            connect_url = f"{settings.evolution_api_url}/instance/connect/{instance_name}"
+            response = await client.get(connect_url, headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                qr = data.get("base64") or data.get("code")
+                if qr:
+                    logger.info(f"Nuevo QR generado para instancia '{instance_name}'.")
+                    return qr
+            logger.warning(
+                f"No se pudo obtener nuevo QR tras restart: status={response.status_code}"
+            )
+            return None
+    except Exception as e:
+        logger.error(f"Excepción al reiniciar instancia '{instance_name}': {str(e)}")
+        return None
+
+
+async def check_evolution_health() -> dict:
+    """
+    Verifica la conectividad y estado del servidor Evolution API.
+    Retorna dict con 'healthy' (bool) y 'error' (str|None).
+    """
+    if is_mock_mode():
+        return {"healthy": True, "mode": "mock", "error": None}
+
+    if not settings.evolution_api_url:
+        return {"healthy": False, "error": "EVOLUTION_API_URL no configurada"}
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Intentar listar instancias como health check
+            url = f"{settings.evolution_api_url}/instance/fetchInstances"
+            headers = {"apikey": settings.evolution_api_token}
+            response = await client.get(url, headers=headers)
+            if response.status_code in [200, 201]:
+                return {"healthy": True, "mode": "production", "error": None}
+            return {
+                "healthy": False,
+                "error": f"Evolution API respondió con status {response.status_code}: {response.text[:200]}",
+            }
+    except Exception as e:
+        return {"healthy": False, "error": f"No se pudo conectar: {str(e)}"}
+
+
+async def delete_qr_instance_safe(instance_name: str) -> bool:
+    """
+    Elimina una instancia de Evolution API de forma segura (no falla si no existe).
+    """
+    if not instance_name:
+        return True
+
+    if is_mock_mode():
+        mock_sessions.pop(instance_name, None)
+        return True
+
+    try:
+        return await delete_qr_instance(instance_name)
+    except Exception as e:
+        logger.warning(
+            f"No se pudo eliminar instancia '{instance_name}' (puede no existir): {str(e)}"
+        )
         return False
 
 
@@ -362,6 +513,8 @@ def simulate_qr_scan(instance_name: str, phone: str = "573103125460") -> bool:
         mock_sessions[instance_name]["status"] = "connected"
         mock_sessions[instance_name]["phone"] = phone
         mock_sessions[instance_name]["display_name"] = "Cliente QR Mock"
-        logger.info(f"[MOCK QR] Instancia '{instance_name}' simulada como CONECTADA con número {phone}.")
+        logger.info(
+            f"[MOCK QR] Instancia '{instance_name}' simulada como CONECTADA con número {phone}."
+        )
         return True
     return False

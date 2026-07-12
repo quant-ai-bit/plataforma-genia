@@ -259,6 +259,51 @@ async def verify_whatsapp_connection(
         }
 
 
+async def configure_meta_webhook(
+    phone_number_id: str,
+    webhook_url: str,
+    verify_token: str,
+    access_token: str,
+) -> dict:
+    """
+    Configura el webhook para recibir eventos de WhatsApp Cloud API.
+    
+    Args:
+        phone_number_id: ID del número de teléfono en Meta
+        webhook_url: URL donde Meta enviará los eventos
+        verify_token: Token para verificar la autenticidad del webhook
+        access_token: Access token de la app de Meta
+    
+    Returns:
+        dict con 'success' (bool) y 'error' (str|None)
+    """
+    url = f"https://graph.facebook.com/v21.0/{phone_number_id}/webhooks"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "url": webhook_url,
+        "verify_token": verify_token,
+        "fields": ["messages", "statuses", "errors"]
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(url, headers=headers, json=payload)
+            if response.status_code in [200, 201]:
+                logger.info(f"Webhook configurado exitosamente para {phone_number_id}")
+                return {"success": True, "error": None}
+            else:
+                error_data = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
+                error_msg = error_data.get("error", {}).get("message", response.text)
+                logger.error(f"Error al configurar webhook: {error_msg}")
+                return {"success": False, "error": error_msg}
+    except Exception as e:
+        logger.error(f"Excepción al configurar webhook: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+
 async def send_whatsapp_notification(
     to_phone: str,
     text: str,

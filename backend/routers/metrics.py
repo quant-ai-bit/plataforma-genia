@@ -17,6 +17,7 @@ from models.conversation import Conversation
 from models.lead import Lead
 from models.agent_usage import AgentUsage
 from models.action_log import ActionLog
+from services.model_rotation_service import ModelRotationService
 
 router = APIRouter(prefix="/api/metrics", tags=["Public Metrics"])
 
@@ -208,3 +209,19 @@ async def get_public_logs(db: Session = Depends(get_db)):
         ]
         
     return clean_logs
+
+
+@router.get("/free-models-potential")
+async def get_public_free_models_potential(db: Session = Depends(get_db)):
+    """
+    Retorna el potencial de tokens gratuitos disponibles en la plataforma
+    (para la landing page pública y el panel de evaluación del hackathon).
+    """
+    try:
+        data = ModelRotationService.get_free_tier_potentials(db)
+        return data
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error("Error al obtener potencial de modelos gratuitos: %s", str(e), exc_info=True)
+        return {"error": str(e)}
