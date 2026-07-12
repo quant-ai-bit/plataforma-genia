@@ -1619,27 +1619,7 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
         f"[WAHA WEBHOOK IMPL] event={data.get('event')}, type={data.get('payload', {}).get('type')}, keys={list(data.keys()) if isinstance(data, dict) else type(data).__name__}"
     )
 
-    # DIAG: log every webhook payload excerpt to /tmp for debugging
-    import json as _json
-    try:
-        _payload = data.get("payload", {}) or {}
-        _payload_keys = list(_payload.keys()) if isinstance(_payload, dict) else []
-        _diag = {
-            "event": data.get("event"),
-            "type": _payload.get("type") if isinstance(_payload, dict) else None,
-            "fromMe": _payload.get("fromMe") if isinstance(_payload, dict) else None,
-            "has_media": bool(_payload.get("media")) if isinstance(_payload, dict) else None,
-            "has_base64": bool(_payload.get("base64")) if isinstance(_payload, dict) else None,
-            "body_len": len(str(_payload.get("body", ""))) if isinstance(_payload, dict) else None,
-            "body_preview": str(_payload.get("body", ""))[:50] if isinstance(_payload, dict) else None,
-            "agent_id": agent_id,
-            "payload_keys": _payload_keys,
-            "payload_preview": str(dict(list(_payload.items())[:10]))[:300] if isinstance(_payload, dict) else str(_payload)[:300],
-        }
-        with open("/tmp/waha_last_diag.json", "w") as _f:
-            _f.write(_json.dumps(_diag, default=str))
-    except Exception:
-        pass
+
 
     agent = (
         db.query(Agent).filter(Agent.id == agent_id, Agent.status == "active").first()
@@ -1762,19 +1742,7 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
             logger.info(f"Conversación WAHA {conversation.id} en handoff. Ignorando IA.")
             return {"status": "ignored"}
 
-    # DIAG: save payload type info in DB for voice notes
-    if msg_type in ("ptt", "audio"):
-        try:
-            diag = DBMessage(
-                conversation_id=conversation.id,
-                role="system",
-                content=f"[DIAG] voice note received. media={bool(payload.get('media'))}, base64={bool(payload.get('base64'))}, body='{payload.get('body', '')[:50]}', mime={payload.get('mimetype')}",
-                whatsapp_message_id=f"diag_{whatsapp_msg_id}",
-            )
-            db.add(diag)
-            db.commit()
-        except Exception:
-            db.rollback()
+
 
     # Nota de voz (ptt/audio) — descargar y transcribir
     is_media_msg = msg_type in ("ptt", "audio") or (has_media_key and not user_message_text.strip())
@@ -1807,7 +1775,25 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
                 logger.info(f"[WAHA AUDIO] Transcripción: {user_message_text[:80]}")
             else:
                 # WAHA CORE no sirve archivos de audio — responder directamente
+                logger.warning("[WAHA AUDIO] No se pudo obtener audio bytes para %s", phone_number)
                 reply = "He recibido tu nota de voz. Por el momento no puedo procesar audios, ¿podrías escribirme en texto?"
+                # Guardar el mensaje del usuario en la conversación para mantener contexto
+                user_msg = Message(
+                    conversation_id=conversation.id,
+                    role="user",
+                    content="[Nota de voz recibida - sin transcripción disponible]",
+                    whatsapp_message_id=whatsapp_msg_id,
+                )
+                db.add(user_msg)
+                # Guardar la respuesta del agente
+                agent_msg = Message(
+                    conversation_id=conversation.id,
+                    role="assistant",
+                    content=reply,
+                )
+                db.add(agent_msg)
+                conversation.last_message_at = datetime.now(timezone.utc)
+                db.commit()
                 send_success = await send_waha_text(
                     session_name=agent.whatsapp_qr_instance_name,
                     to_phone=phone_number,
@@ -1850,8 +1836,6 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
         err_msg = str(e)[:200]
         logger.error(f"[WAHA WEBHOOK] Error en process_conversation_message: [{err_type}] {err_msg}", exc_info=True)
         reply = "Ocurrió un error al procesar tu mensaje. Por favor, inténtalo de nuevo."
-        # Return diag info so WAHA logs show the error
-        return {"status": "accepted", "_ai_error": f"[{err_type}] {err_msg}"}
 
     send_success = await send_waha_text(
         session_name=agent.whatsapp_qr_instance_name,
