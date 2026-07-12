@@ -102,7 +102,7 @@ async def create_waha_session(session_name: str, webhook_url: str) -> dict:
         "config": {
             "webhooks": [{
                 "url": webhook_url,
-                "events": ["message", "session.status", "qr"],
+                "events": ["message", "session.status"],
             }],
         },
         "waitForScan": True,
