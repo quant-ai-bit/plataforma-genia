@@ -6,7 +6,26 @@
 
 ---
 
-## 2026-07-12 02:15 (COT) — Fix: Notas de voz ahora responden con fallback (sin transcripción)
+## 2026-07-12 01:55 (COT) — Fix: 4 bugs críticos en WAHA webhook (respuestas silenciadas + diag spam)
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección
+
+- **Bug 1 (Crítico):** `_receive_waha_webhook_impl` tenía `return` en el bloque `except` **antes** de `send_waha_text`. Si `process_conversation_message` lanzaba excepción, el mensaje de error se asignaba a `reply` pero **nunca se enviaba** al usuario → WhatsApp no respondía nada en caso de error de IA.
+- **Bug 2:** Bloque `[DIAG]` escribía mensajes `system` a la BD por cada nota de voz recibida, contaminando el historial de conversación y confundiendo al modelo de IA.
+- **Bug 3:** Escritura de JSON diagnóstico a `/tmp/waha_last_diag.json` en cada invocación del webhook. En Vercel serverless es efímero e inútil, solo añadía latencia.
+- **Bug 4:** Fallback de notas de voz (cuando WAHA CORE no puede servir audio) no guardaba el mensaje del usuario ni la respuesta del agente en la conversación → se perdía el contexto.
+- Fix:
+  - Eliminado `return` prematuro en error de IA → ahora el reply de error siempre se envía vía `send_waha_text`.
+  - Eliminados bloques DIAG de BD y `/tmp`.
+  - Fallback de voz ahora persiste `[Nota de voz recibida - sin transcripción disponible]` como mensaje del usuario y el fallback como respuesta del asistente.
+- Commit: `81f8b5f`.
+
+**Estado:** ✅ Completado
+**Pendiente / Siguiente paso:** Probar en producción: enviar nota de voz y mensaje de texto por WhatsApp → ambos deben recibir respuesta.
+
+---
+
+
 **Plataforma:** opencode
 **Tipo:** 🐛 Corrección
 
