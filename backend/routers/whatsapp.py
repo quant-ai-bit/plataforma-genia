@@ -1575,13 +1575,16 @@ async def simulate_scan_waha(
 
 @router.get("/webhook/waha/diag")
 async def waha_webhook_diag():
-    """Retorna el último webhook diagnosticado (para debug). Debe ir ANTES de /webhook/waha/{agent_id."""
-    import json as _json
-    try:
-        with open("/tmp/waha_last_diag.json") as _f:
-            return _json.loads(_f.read())
-    except Exception as e:
-        return {"error": str(e)}
+    """Diagnóstico: verifica qué API keys están configuradas en Vercel."""
+    from config import settings
+    return {
+        "groq_key_set": bool(settings.groq_api_key),
+        "gemini_key_set": bool(settings.gemini_api_key),
+        "openrouter_key_set": bool(settings.openrouter_api_key),
+        "waha_api_url": settings.waha_api_url[:50] + "..." if settings.waha_api_url else None,
+        "waha_api_key_set": bool(settings.waha_api_key),
+        "database_url_set": bool(settings.database_url),
+    }
 
 
 @router.post("/webhook/waha/{agent_id}")
@@ -1816,6 +1819,14 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
         return {"status": "ignored"}
 
     # Responder con IA
+    from config import settings
+    logger.info(
+        "[WAHA AI DIAG] Agent provider=%s model=%s groq_key_set=%s gemini_key_set=%s openrouter_key_set=%s",
+        agent.provider, agent.model,
+        bool(settings.groq_api_key),
+        bool(settings.gemini_api_key),
+        bool(settings.openrouter_api_key),
+    )
     try:
         from services.conversation_service import process_conversation_message
 
@@ -1836,6 +1847,9 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
         err_msg = str(e)[:200]
         logger.error(f"[WAHA WEBHOOK] Error en process_conversation_message: [{err_type}] {err_msg}", exc_info=True)
         reply = "Ocurrió un error al procesar tu mensaje. Por favor, inténtalo de nuevo."
+
+    # Log AI reply diagnostic
+    logger.info("[WAHA AI REPLY DIAG] reply_preview=%s reply_len=%d", str(reply)[:100], len(reply))
 
     send_success = await send_waha_text(
         session_name=agent.whatsapp_qr_instance_name,
