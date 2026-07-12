@@ -631,8 +631,32 @@ async def get_whatsapp_status(
                     result["error"] = verification.get("error")
     elif whatsapp_provider == "waha":
         # WAHA Provider
-        if agent.whatsapp_qr_instance_name:
-            verification = await verify_waha_connection(agent.whatsapp_qr_instance_name)
+        session_name = agent.whatsapp_qr_instance_name
+        if not session_name:
+            # Sin session_name en BD → buscar en sesiones activas de WAHA
+            from services.whatsapp_waha_service import list_waha_sessions
+            try:
+                sessions = await list_waha_sessions()
+                prefix = f"genia_{agent.id[:8]}"
+                for s in sessions:
+                    n = s.get("name", "")
+                    st = s.get("status", "").upper()
+                    if n.startswith(prefix) and st == "WORKING":
+                        session_name = n
+                        agent.whatsapp_qr_instance_name = n
+                        agent.whatsapp_qr_connected = True
+                        result["connected"] = True
+                        result["whatsapp_qr_connected"] = True
+                        me = s.get("me") or {}
+                        result["phone_number"] = str(me.get("id", "")).split("@")[0]
+                        result["display_name"] = me.get("pushName")
+                        db.commit()
+                        break
+            except Exception:
+                pass
+
+        if session_name:
+            verification = await verify_waha_connection(session_name)
             result["connected"] = verification["connected"]
             result["whatsapp_qr_connected"] = verification["connected"]
             result["phone_number"] = verification.get("phone_number")
@@ -641,7 +665,7 @@ async def get_whatsapp_status(
 
             if not verification["connected"]:
                 persisted = getattr(agent, "whatsapp_qr_code", None)
-                result["qr_code"] = persisted or await get_waha_qr(agent.whatsapp_qr_instance_name)
+                result["qr_code"] = persisted or await get_waha_qr(session_name)
             else:
                 result["qr_code"] = None
 
@@ -1059,13 +1083,6 @@ async def update_whatsapp_provider(
             detail="Proveedor no válido. Debe ser 'meta_cloud', 'qr_code' o 'waha'.",
         )
 
-    # Al cambiar de proveedor, limpiar sesión/instancia previa para que
-    # el frontend muestre el botón "Generar" en lugar de reanudar
-    # una sesión huérfana automáticamente.
-    if body.provider in ("waha", "qr_code"):
-        agent.whatsapp_qr_instance_name = None
-        agent.whatsapp_qr_code = None
-        agent.whatsapp_qr_connected = False
     agent.whatsapp_provider = body.provider
     db.commit()
 
@@ -1445,6 +1462,71 @@ async def restart_whatsapp_waha(
 async def health_whatsapp_waha():
     """Verifica el estado del servidor WAHA."""
     return await check_waha_health()
+
+
+@router.post("/{agent_id}/waha/sync")
+async def sync_whatsapp_waha(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Sincroniza el estado de la BD con las sesiones activas de WAHA.
+    Útil cuando WAHA CORE no envía webhooks y la sesión se conectó
+    sin que el backend lo sepa.
+    """
+    from services.whatsapp_waha_service import list_waha_sessions
+
+    query = db.query(Agent).filter(Agent.id == agent_id)
+    if current_user["id"] != "local_dev_user":
+        query = query.filter(Agent.user_id == current_user["id"])
+
+    agent = query.first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agente no encontrado.")
+
+    sessions = await list_waha_sessions()
+    # Buscar sesiones cuyo nombre contenga el agent_id (ej: genia_547c07f7_...)
+    agent_prefix = f"genia_{agent.id[:8]}"
+    for s in sessions:
+        name = s.get("name", "")
+        status = s.get("status", "").upper()
+        me = s.get("me") or {}
+        if name.startswith(agent_prefix) and status == "WORKING" and me.get("id"):
+            agent.whatsapp_qr_instance_name = name
+            agent.whatsapp_qr_connected = True
+            agent.whatsapp_qr_code = None
+            db.commit()
+            return {
+                "status": "synced",
+                "connected": True,
+                "session_name": name,
+                "phone_number": str(me.get("id", "")).split("@")[0],
+                "display_name": me.get("pushName"),
+                "message": "Sesión WAHA sincronizada exitosamente.",
+            }
+
+    # Si llegamos aquí, no se encontró sesión WORKING
+    if agent.whatsapp_qr_instance_name:
+        # Verificar la sesión actual
+        v = await verify_waha_connection(agent.whatsapp_qr_instance_name)
+        if v["connected"]:
+            agent.whatsapp_qr_connected = True
+            db.commit()
+            return {
+                "status": "synced",
+                "connected": True,
+                "session_name": agent.whatsapp_qr_instance_name,
+                "phone_number": v.get("phone_number"),
+                "display_name": v.get("display_name"),
+                "message": "Sesión WAHA verificada y conectada.",
+            }
+
+    return {
+        "status": "not_found",
+        "connected": False,
+        "message": "No se encontró ninguna sesión WAHA conectada para este agente. Genera un nuevo código QR.",
+    }
 
 
 @router.post("/{agent_id}/waha/simulate-scan")

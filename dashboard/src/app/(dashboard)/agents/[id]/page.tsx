@@ -117,6 +117,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
   const [waStatusLoading, setWaStatusLoading] = useState<boolean>(false);
   const [waConnecting, setWaConnecting] = useState<boolean>(false);
   const [waDisconnecting, setWaDisconnecting] = useState<boolean>(false);
+  const [waQrRequested, setWaQrRequested] = useState<boolean>(false);
   const [showWaSecrets, setShowWaSecrets] = useState<boolean>(false);
   const [copiedWebhook, setCopiedWebhook] = useState<boolean>(false);
   const [copiedToken, setCopiedToken] = useState<boolean>(false);
@@ -179,7 +180,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     if (
       (waStatus?.whatsapp_provider === "waha" || waStatus?.whatsapp_provider === "qr_code") &&
       !waStatus.connected &&
-      waStatus.whatsapp_qr_instance_name
+      (waStatus.whatsapp_qr_instance_name || waQrRequested)
     ) {
       interval = setInterval(() => {
         fetchWhatsAppStatus();
@@ -188,7 +189,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [waStatus?.whatsapp_provider, waStatus?.connected, waStatus?.whatsapp_qr_instance_name]);
+  }, [waStatus?.whatsapp_provider, waStatus?.connected, waStatus?.whatsapp_qr_instance_name, waQrRequested]);
 
   const loadKbImages = async () => {
     setKbImagesLoading(true);
@@ -591,6 +592,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
 
   const handleConnectWhatsAppWaha = async () => {
     setWaConnecting(true);
+    setWaQrRequested(true);
     if (!isBackendOnline) {
       setTimeout(() => {
         setWaStatus({
@@ -642,6 +644,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
   const handleDisconnectWhatsAppWaha = async () => {
     if (!confirm("¿Estás seguro de que deseas desconectar WhatsApp WAHA de este agente?")) return;
     setWaDisconnecting(true);
+    setWaQrRequested(false);
 
     if (!isBackendOnline) {
       setTimeout(() => {
@@ -1878,7 +1881,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                                 )}
                               </div>
                             </div>
-                          ) : waStatus?.whatsapp_qr_instance_name && !waStatus.qr_code ? (
+                          ) : waQrRequested && !waStatus.qr_code ? (
                             <div className="flex flex-col items-center p-6 bg-[#070b16]/60 border border-gray-850 rounded-xl space-y-4 text-center">
                               <div className="flex items-center gap-2 p-3 bg-blue-500/10 rounded-xl">
                                 <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
@@ -1887,13 +1890,23 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                               <p className="text-[10px] text-gray-400 max-w-sm leading-relaxed">
                                 La sesión WAHA se está iniciando. El código QR aparecerá automáticamente cuando esté listo.
                               </p>
-                              <button
-                                type="button"
-                                onClick={handleDisconnectWhatsAppWaha}
-                                className="px-4 py-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/25 rounded-xl transition text-xs font-semibold cursor-pointer"
-                              >
-                                Cancelar
-                              </button>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => { fetchWhatsAppStatus(); }}
+                                  className="px-4 py-2 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/25 rounded-xl transition text-xs font-semibold cursor-pointer"
+                                >
+                                  <RefreshCw className="w-3.5 h-3.5 inline mr-1" />
+                                  Verificar conexión
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleDisconnectWhatsAppWaha}
+                                  className="px-4 py-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/25 rounded-xl transition text-xs font-semibold cursor-pointer"
+                                >
+                                  Cancelar
+                                </button>
+                              </div>
                             </div>
                           ) : (
                             <div className="flex flex-col items-center p-6 bg-[#070b16]/60 border border-gray-850 rounded-xl space-y-4 text-center">

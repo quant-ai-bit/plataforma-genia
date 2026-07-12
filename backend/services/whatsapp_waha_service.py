@@ -65,6 +65,23 @@ def _normalize_chat_id(phone: str) -> str:
     return f"{digits}@c.us"
 
 
+async def list_waha_sessions() -> list[dict]:
+    """Lista todas las sesiones WAHA."""
+    if waha_is_mock_mode():
+        return list(mock_sessions.values())
+
+    url = f"{settings.waha_api_url}/api/sessions"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(url, headers=_headers())
+            if r.status_code in [200, 201]:
+                return r.json()
+            return []
+    except Exception as e:
+        logger.error(f"Excepción al listar sesiones WAHA: {str(e)}")
+        return []
+
+
 async def create_waha_session(session_name: str, webhook_url: str) -> dict:
     """
     Crea (o reutiliza) una sesión en WAHA y retorna el QR inicial.
