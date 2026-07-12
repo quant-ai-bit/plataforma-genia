@@ -1602,7 +1602,7 @@ async def receive_waha_webhook(
 
 async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
     logger.info(
-        f"[WAHA WEBHOOK IMPL] event={data.get('event')}, keys={list(data.keys()) if isinstance(data, dict) else type(data).__name__}"
+        f"[WAHA WEBHOOK IMPL] event={data.get('event')}, type={data.get('payload', {}).get('type')}, keys={list(data.keys()) if isinstance(data, dict) else type(data).__name__}"
     )
 
     agent = (
@@ -1724,6 +1724,20 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
         else:
             logger.info(f"Conversación WAHA {conversation.id} en handoff. Ignorando IA.")
             return {"status": "ignored"}
+
+    # DIAG: save payload type info in DB for voice notes
+    if msg_type in ("ptt", "audio"):
+        try:
+            diag = DBMessage(
+                conversation_id=conversation.id,
+                role="system",
+                content=f"[DIAG] voice note received. media={bool(payload.get('media'))}, base64={bool(payload.get('base64'))}, body='{payload.get('body', '')[:50]}', mime={payload.get('mimetype')}",
+                whatsapp_message_id=f"diag_{whatsapp_msg_id}",
+            )
+            db.add(diag)
+            db.commit()
+        except Exception:
+            db.rollback()
 
     # Nota de voz (ptt/audio) — descargar y transcribir
     if msg_type in ("ptt", "audio") and not waha_is_mock_mode():
