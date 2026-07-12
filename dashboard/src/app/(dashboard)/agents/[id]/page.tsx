@@ -30,7 +30,8 @@ import {
   Eye,
   EyeOff,
   Copy,
-  Check
+  Check,
+  RefreshCw
 } from "lucide-react";
 
 export default function AgentConfigPage({ params }: { params: Promise<{ id: string }> }) {
@@ -584,7 +585,209 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     }
   };
 
-  const handleSimulateScan = async () => {
+  const handleConnectWhatsAppWaha = async () => {
+    setWaConnecting(true);
+    if (!isBackendOnline) {
+      setTimeout(() => {
+        setWaStatus({
+          connected: false,
+          phone_number_id: null,
+          phone_number: null,
+          display_name: null,
+          webhook_url: `/api/whatsapp/webhook/waha/${id}`,
+          verify_token: `genia_verify_${id.split("-")[0]}`,
+          whatsapp_provider: "waha",
+          whatsapp_qr_connected: false,
+          whatsapp_qr_instance_name: `genia_waha_${id}`,
+          qr_code: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJQAAACUAQMAAABvMD4ZAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAAlwSFlzAAAOxAAADsQBlbZJywAAABpJREFUeNpiYGBgYGBgYGBgYGBgYGBgYGBgYADADAADwABg4m4AAAAASUVORK5CYII=",
+          is_mock_mode: true
+        });
+        setForm(prev => ({
+          ...prev,
+          channels: prev.channels.includes("whatsapp") ? prev.channels : [...prev.channels, "whatsapp"]
+        }));
+        setWaConnecting(false);
+        alert("🔌 Sesión WAHA generada en modo simulación (Mock)");
+      }, 1000);
+      return;
+    }
+
+    try {
+      const res = await authenticatedFetch(`/api/whatsapp/${id}/waha/connect`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.qr_code) {
+          setWaStatus(prev => prev ? { ...prev, qr_code: data.qr_code } : prev);
+        }
+        await fetchWhatsAppStatus();
+        alert("🔌 Sesión WAHA generada. Por favor escanea el código QR.");
+      } else {
+        const data = await res.json();
+        alert(`Error al generar código QR WAHA: ${data.detail || JSON.stringify(data)}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de conexión al generar QR WAHA.");
+    } finally {
+      setWaConnecting(false);
+    }
+  };
+
+  const handleDisconnectWhatsAppWaha = async () => {
+    if (!confirm("¿Estás seguro de que deseas desconectar WhatsApp WAHA de este agente?")) return;
+    setWaDisconnecting(true);
+
+    if (!isBackendOnline) {
+      setTimeout(() => {
+        setWaStatus({
+          connected: false,
+          phone_number_id: null,
+          phone_number: null,
+          display_name: null,
+          webhook_url: "/api/whatsapp/webhook",
+          verify_token: `genia_verify_${id.split("-")[0]}`,
+          whatsapp_provider: "meta_cloud",
+          whatsapp_qr_connected: false,
+          whatsapp_qr_instance_name: null,
+          qr_code: null
+        });
+        setWaDisconnecting(false);
+        alert("🔌 WhatsApp WAHA desconectado en modo simulación (Mock)");
+      }, 1000);
+      return;
+    }
+
+    try {
+      const res = await authenticatedFetch(`/api/whatsapp/${id}/waha/disconnect`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        alert("🔌 WhatsApp WAHA desconectado exitosamente.");
+        await fetchWhatsAppStatus();
+        await loadBackendData();
+      } else {
+        const data = await res.json();
+        alert(`Error al desconectar WhatsApp WAHA: ${data.detail || JSON.stringify(data)}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de conexión al desconectar WAHA.");
+    } finally {
+      setWaDisconnecting(false);
+    }
+  };
+
+  const handleRestartWhatsAppWaha = async () => {
+    setWaConnecting(true);
+    if (!isBackendOnline) {
+      setTimeout(() => {
+        setWaStatus(prev => prev ? {
+          ...prev,
+          qr_code: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJQAAACUAQMAAABvMD4ZAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAAlwSFlzAAAOxAAADsQBlbZJywAAABpJREFUeNpiYGBgYGBgYGBgYGBgYGBgYGBgYADADAADwABg4m4AAAAASUVORK5CYII=",
+          connected: false,
+          whatsapp_qr_connected: false
+        } : null);
+        setWaConnecting(false);
+        alert("🔌 Sesión WAHA reiniciada en modo simulación (Mock)");
+      }, 1000);
+      return;
+    }
+
+    try {
+      const res = await authenticatedFetch(`/api/whatsapp/${id}/waha/restart`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.qr_code) {
+          setWaStatus(prev => prev ? { ...prev, qr_code: data.qr_code, connected: false } : prev);
+        }
+        await fetchWhatsAppStatus();
+        alert("🔌 Sesión WAHA reiniciada. Escanea el nuevo código QR.");
+      } else {
+        const data = await res.json();
+        alert(`Error al reiniciar WAHA: ${data.detail || JSON.stringify(data)}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de conexión al reiniciar WAHA.");
+    } finally {
+      setWaConnecting(false);
+    }
+  };
+
+  const handleRestartWhatsAppQR = async () => {
+    setWaConnecting(true);
+    if (!isBackendOnline) {
+      setTimeout(() => {
+        setWaStatus(prev => prev ? {
+          ...prev,
+          qr_code: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJQAAACUAQMAAABvMD4ZAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAAlwSFlzAAAOxAAADsQBlbZJywAAABpJREFUeNpiYGBgYGBgYGBgYGBgYGBgYGBgYADADAADwABg4m4AAAAASUVORK5CYII=",
+          connected: false,
+          whatsapp_qr_connected: false
+        } : null);
+        setWaConnecting(false);
+        alert("🔌 Instancia QR reiniciada en modo simulación (Mock)");
+      }, 1000);
+      return;
+    }
+
+    try {
+      const res = await authenticatedFetch(`/api/whatsapp/${id}/qr/restart`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        const data = await res.json();
+        await fetchWhatsAppStatus();
+        if (data.qr_code) {
+          setWaStatus(prev => prev ? { ...prev, qr_code: data.qr_code, connected: false } : prev);
+        }
+        alert("🔌 Instancia QR reiniciada. Escanea el nuevo código QR.");
+      } else {
+        const data = await res.json();
+        alert(`Error al reiniciar QR: ${data.detail || JSON.stringify(data)}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de conexión al reiniciar QR.");
+    } finally {
+      setWaConnecting(false);
+    }
+  };
+
+  const handleSimulateScanWaha = async () => {
+    if (!isBackendOnline) {
+      setWaStatus(prev => prev ? {
+        ...prev,
+        connected: true,
+        whatsapp_qr_connected: true,
+        phone_number: "573103125460",
+        display_name: "Línea WAHA Simulada"
+      } : null);
+      alert("🔌 Escaneo de QR WAHA simulado exitosamente en modo local.");
+      return;
+    }
+
+    try {
+      const res = await authenticatedFetch(`/api/whatsapp/${id}/waha/simulate-scan`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        await fetchWhatsAppStatus();
+        alert("🔌 Escaneo de QR WAHA simulado exitosamente.");
+      } else {
+        const data = await res.json();
+        alert(`Error al simular escaneo WAHA: ${data.detail || JSON.stringify(data)}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de conexión con el backend.");
+    }
+  };
+
+  const handleSimulateScanQR = async () => {
     if (!isBackendOnline) {
       setWaStatus(prev => prev ? {
         ...prev,
@@ -614,7 +817,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     }
   };
 
-  const changeWhatsAppProvider = async (provider: "meta_cloud" | "qr_code") => {
+  const changeWhatsAppProvider = async (provider: "meta_cloud" | "qr_code" | "waha") => {
     if (!isBackendOnline) {
       setWaStatus(prev => prev ? { ...prev, whatsapp_provider: provider } : null);
       return;
@@ -1346,6 +1549,17 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                       >
                         Código QR (Baileys)
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => changeWhatsAppProvider("waha")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                          waStatus?.whatsapp_provider === "waha"
+                            ? "bg-green-500/20 text-green-400 border border-green-500/20"
+                            : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        Código QR (WAHA)
+                      </button>
                     </div>
 
                     {/* Estado de Conexión */}
@@ -1558,6 +1772,140 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                     </div>
                   )}
 
+                  {/* VISTA 3: Proveedor CÓDIGO QR (WAHA) */}
+                  {waStatus?.whatsapp_provider === "waha" && (
+                    <div className="space-y-5">
+                      {waStatus?.connected ? (
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-green-500/[0.02] p-4 border border-green-500/10 rounded-xl">
+                            <div>
+                              <span className="text-gray-400 text-[10px] block">Nombre del Dispositivo Vinculado</span>
+                              <span className="text-white text-xs font-semibold">{waStatus.display_name || 'Línea WAHA Conectada'}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-400 text-[10px] block">Número de Teléfono</span>
+                              <span className="text-white text-xs font-semibold">+{waStatus.phone_number || 'No disponible'}</span>
+                            </div>
+                            <div className="md:col-span-2">
+                              <span className="text-gray-400 text-[10px] block">ID de Sesión WAHA</span>
+                              <span className="font-mono text-gray-300 text-xs">{waStatus.whatsapp_qr_instance_name}</span>
+                            </div>
+                          </div>
+
+                          <div className="bg-[#070b16]/60 p-4 border border-gray-850 rounded-xl space-y-2">
+                            <span className="text-xs font-bold text-blue-400 block">Webhook de Eventos WAHA</span>
+                            <span className="text-gray-400 text-[10px] block mb-1">Ruta del Webhook Activo</span>
+                            <div className="flex items-center gap-2 bg-[#0c101c] border border-gray-800 rounded-lg p-2 font-mono">
+                              <span className="text-gray-300 truncate flex-1 text-[11px]">
+                                {typeof window !== "undefined" ? `${window.location.origin}${waStatus.webhook_url}` : `https://plataforma.genia.com.co${waStatus.webhook_url}`}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-gray-500">
+                              Los mensajes entrantes son recibidos automáticamente desde tu servidor WAHA (WhatsApp HTTP API).
+                            </p>
+                          </div>
+
+                          <div className="flex justify-end gap-3">
+                            <button
+                              type="button"
+                              disabled={waConnecting}
+                              onClick={handleRestartWhatsAppWaha}
+                              className="flex items-center gap-1.5 px-4 py-2 border border-blue-500/25 bg-blue-500/10 text-blue-400 hover:bg-blue-500/15 rounded-xl transition text-xs font-semibold disabled:opacity-50 cursor-pointer"
+                            >
+                              {waConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                              Reiniciar Sesión WAHA
+                            </button>
+                            <button
+                              type="button"
+                              disabled={waDisconnecting}
+                              onClick={handleDisconnectWhatsAppWaha}
+                              className="flex items-center gap-1.5 px-4 py-2 border border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/15 rounded-xl transition text-xs font-semibold disabled:opacity-50 cursor-pointer"
+                            >
+                              {waDisconnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                              Desconectar WAHA
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-5">
+                          {waStatus?.qr_code ? (
+                            <div className="flex flex-col items-center p-6 bg-[#070b16]/60 border border-gray-850 rounded-xl space-y-4">
+                              <span className="text-xs font-bold text-white">Escanea el Código QR (WAHA)</span>
+                              <p className="text-[10px] text-gray-400 text-center max-w-sm leading-relaxed">
+                                Abre WhatsApp en tu celular, ve a <strong>Dispositivos Vinculados</strong> y escanea este código para conectar el agente vía WAHA.
+                              </p>
+
+                              <div className="p-4 bg-white rounded-xl border border-gray-700 shadow-md">
+                                <img
+                                  src={waStatus.qr_code}
+                                  alt="Código QR WhatsApp WAHA"
+                                  className="w-44 h-44 object-contain"
+                                />
+                              </div>
+
+                              <div className="flex items-center gap-2 text-xs text-green-400 font-medium">
+                                <Loader2 className="w-4 h-4 animate-spin text-green-400" />
+                                <span>Esperando escaneo en el móvil...</span>
+                              </div>
+
+                              <div className="flex flex-wrap justify-center gap-3 pt-2">
+                                <button
+                                  type="button"
+                                  onClick={handleRestartWhatsAppWaha}
+                                  className="px-4 py-2 bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700 rounded-xl transition text-xs font-semibold cursor-pointer"
+                                >
+                                  Regenerar QR
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleDisconnectWhatsAppWaha}
+                                  className="px-4 py-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/25 rounded-xl transition text-xs font-semibold cursor-pointer"
+                                >
+                                  Cancelar
+                                </button>
+                                {waStatus?.is_mock_mode && (
+                                  <button
+                                    type="button"
+                                    onClick={handleSimulateScanWaha}
+                                    className="px-4 py-2 bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/35 rounded-xl transition text-xs font-bold flex items-center gap-1 cursor-pointer animate-bounce"
+                                  >
+                                    ⚡ Simular Escaneo
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center p-6 bg-[#070b16]/60 border border-gray-850 rounded-xl space-y-4 text-center">
+                              <span className="text-xs font-bold text-white">Vincular mediante Código QR (WAHA)</span>
+                              <p className="text-[10px] text-gray-400 max-w-sm leading-relaxed">
+                                WAHA (WhatsApp HTTP API) es una alternativa open-source para vincular cualquier número de WhatsApp sin depender de Meta Developer Portal.
+                              </p>
+
+                              <button
+                                type="button"
+                                disabled={waConnecting}
+                                onClick={handleConnectWhatsAppWaha}
+                                className="flex items-center gap-2 px-5 py-2.5 bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/30 rounded-xl transition text-xs font-bold disabled:opacity-50 cursor-pointer"
+                              >
+                                {waConnecting ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 animate-spin text-green-400" />
+                                    <span>Generando sesión...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Phone className="w-4 h-4" />
+                                    <span>Generar Código QR</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* VISTA 2: Proveedor CÓDIGO QR */}
                   {waStatus?.whatsapp_provider === "qr_code" && (
                     <div className="space-y-5">
@@ -1593,7 +1941,16 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                             </p>
                           </div>
 
-                          <div className="flex justify-end">
+                          <div className="flex justify-end gap-3">
+                            <button
+                              type="button"
+                              disabled={waConnecting}
+                              onClick={handleRestartWhatsAppQR}
+                              className="flex items-center gap-1.5 px-4 py-2 border border-blue-500/25 bg-blue-500/10 text-blue-400 hover:bg-blue-500/15 rounded-xl transition text-xs font-semibold disabled:opacity-50 cursor-pointer"
+                            >
+                              {waConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                              Reiniciar Sesión QR
+                            </button>
                             <button
                               type="button"
                               disabled={waDisconnecting}
@@ -1630,13 +1987,13 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
 
                               {/* Botones de Acción QR */}
                               <div className="flex flex-wrap justify-center gap-3 pt-2">
-                                <button
-                                  type="button"
-                                  onClick={handleConnectWhatsAppQR}
-                                  className="px-4 py-2 bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700 rounded-xl transition text-xs font-semibold cursor-pointer"
-                                >
-                                  Regenerar QR
-                                </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleRestartWhatsAppQR}
+                                    className="px-4 py-2 bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700 rounded-xl transition text-xs font-semibold cursor-pointer"
+                                  >
+                                    Regenerar QR
+                                  </button>
                                 <button
                                   type="button"
                                   onClick={handleDisconnectWhatsAppQR}

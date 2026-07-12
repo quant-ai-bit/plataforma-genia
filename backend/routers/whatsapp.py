@@ -29,16 +29,33 @@ from services.whatsapp_service import (
     send_whatsapp_text,
     verify_whatsapp_connection,
     download_whatsapp_media,
+    configure_meta_webhook,
 )
 from services.whatsapp_qr_service import (
     create_qr_instance,
     get_qr_code,
     verify_qr_connection,
     delete_qr_instance,
+    delete_qr_instance_safe,
     send_qr_text,
     configure_qr_webhook,
+    restart_qr_instance,
+    check_evolution_health,
     simulate_qr_scan,
     is_mock_mode as qr_is_mock_mode,
+)
+from services.whatsapp_waha_service import (
+    create_waha_session,
+    get_waha_qr,
+    verify_waha_connection,
+    delete_waha_session,
+    send_waha_text,
+    send_waha_image,
+    restart_waha_session,
+    check_waha_health,
+    simulate_waha_scan,
+    waha_is_mock_mode,
+    store_waha_qr,
 )
 from services.encryption_service import encrypt, decrypt
 from services.ai_service import chat_with_agent
@@ -50,52 +67,32 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/whatsapp", tags=["WhatsApp Integration"])
 
 
-# #region debug-point shared:reporter
-def _report_debug_event(
-    hypothesis_id: str,
-    location: str,
-    msg: str,
-    data: dict | None = None,
-    run_id: str = "pre-fix",
-):
-    try:
-        import json as _json
-        import urllib.request as _urlreq
+def _get_webhook_base_url(request: "Request") -> str:
+    """
+    Retorna la URL base correcta para configurar webhooks.
+    En Vercel/producción, fuerza HTTPS y usa el header X-Forwarded-Host.
+    """
+    import os
 
-        env_path = ".dbg/whatsapp-no-response.env"
-        debug_url = "http://127.0.0.1:7777/event"
-        session_id = "whatsapp-no-response"
-        try:
-            with open(env_path, "r", encoding="utf-8") as env_file:
-                env_content = env_file.read().splitlines()
-            for line in env_content:
-                if line.startswith("DEBUG_SERVER_URL="):
-                    debug_url = line.split("=", 1)[1].strip()
-                elif line.startswith("DEBUG_SESSION_ID="):
-                    session_id = line.split("=", 1)[1].strip()
-        except Exception:
-            pass
+    env = os.getenv("ENVIRONMENT", "development")
 
-        payload = {
-            "sessionId": session_id,
-            "runId": run_id,
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "msg": f"[DEBUG] {msg}",
-            "data": data or {},
-        }
-        request = _urlreq.Request(
-            debug_url,
-            data=_json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-        )
-        _urlreq.urlopen(request, timeout=1).read()
-    except Exception:
-        pass
+    # En producción Vercel, request.base_url puede ser http://
+    # Usar X-Forwarded-Host para obtener el dominio real
+    forwarded_host = request.headers.get("x-forwarded-host")
+    forwarded_proto = request.headers.get("x-forwarded-proto", "https")
+
+    if forwarded_host:
+        base = f"{forwarded_proto}://{forwarded_host}"
+    else:
+        base = str(request.base_url).rstrip("/")
+
+    # Forzar HTTPS en producción
+    if env == "production" and base.startswith("http://"):
+        base = base.replace("http://", "https://", 1)
+
+    return base
 
 
-# #endregion
-#
 # ---------------------------------------------------------------------------
 # Schemas para connect/disconnect
 # ---------------------------------------------------------------------------
@@ -308,6 +305,7 @@ async def receive_webhook(
 async def connect_whatsapp(
     agent_id: str,
     body: WhatsAppConnectRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -370,19 +368,41 @@ async def connect_whatsapp(
 
     db.commit()
 
+    # Configurar el webhook en Meta automáticamente para recibir mensajes
+    try:
+        base_url = _get_webhook_base_url(request)
+        webhook_url = f"{base_url}/api/whatsapp/webhook"
+        await configure_meta_webhook(
+            phone_number_id=body.phone_number_id,
+            webhook_url=webhook_url,
+            verify_token=body.verify_token,
+            access_token=body.access_token,
+        )
+        logger.info(
+            f"Webhook de Meta configurado para agente '{agent.name}' en {webhook_url}"
+        )
+    except Exception as hook_err:
+        logger.warning(
+            "No se pudo configurar el webhook de Meta automáticamente para "
+            f"'{agent.name}': {hook_err}"
+        )
+
     logger.info(
         f"WhatsApp conectado exitosamente para agente '{agent.name}' "
         f"(phone_number_id={body.phone_number_id}, "
         f"display_name={verification['display_name']})."
     )
 
+    base_url = _get_webhook_base_url(request)
     return {
         "status": "connected",
         "phone_number_id": body.phone_number_id,
         "phone_number": verification.get("phone_number"),
         "display_name": verification.get("display_name"),
         "quality_rating": verification.get("quality_rating"),
-        "message": f"WhatsApp conectado exitosamente al agente '{agent.name}'.",
+        "webhook_url": f"{base_url}/api/whatsapp/webhook",
+        "message": f"WhatsApp conectado exitosamente al agente '{agent.name}'. "
+        f"Webhook configurado en: {base_url}/api/whatsapp/webhook",
     }
 
 
@@ -422,9 +442,137 @@ async def disconnect_whatsapp(
     }
 
 
+@router.post("/{agent_id}/configure-webhook")
+async def configure_webhook_meta(
+    agent_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Configura el webhook de Meta Cloud API para recibir eventos de WhatsApp.
+    Llama al endpoint de configuración del webhook en Meta Graph API.
+    """
+    from services.whatsapp_service import configure_meta_webhook
+
+    query = db.query(Agent).filter(Agent.id == agent_id)
+    if current_user["id"] != "local_dev_user":
+        query = query.filter(Agent.user_id == current_user["id"])
+
+    agent = query.first()
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agente {agent_id} no encontrado.",
+        )
+
+    if not agent.whatsapp_connected:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El agente no tiene WhatsApp conectado.",
+        )
+
+    if not agent.whatsapp_phone_number_id or not agent.whatsapp_access_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El agente no tiene phone_number_id o access_token configurados.",
+        )
+
+    access_token = decrypt(agent.whatsapp_access_token)
+    if not access_token:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No se pudo descifrar el access_token del agente.",
+        )
+
+    base_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{base_url}/api/whatsapp/webhook"
+    verify_token = agent.whatsapp_verify_token or f"genia_verify_{agent_id[:8]}"
+
+    result = await configure_meta_webhook(
+        phone_number_id=agent.whatsapp_phone_number_id,
+        webhook_url=webhook_url,
+        verify_token=verify_token,
+        access_token=access_token,
+    )
+
+    if result["success"]:
+        logger.info(f"Webhook configurado exitosamente para agente '{agent.name}'")
+        return {
+            "status": "webhook_configured",
+            "webhook_url": webhook_url,
+            "verify_token": verify_token,
+            "message": "Webhook configurado exitosamente. Verifica la configuración en Meta Developers.",
+        }
+    else:
+        logger.error(f"Error configurando webhook: {result['error']}")
+        return {
+            "status": "webhook_error",
+            "error": result["error"],
+            "message": f"Error al configurar webhook: {result['error']}",
+        }
+
+
+@router.get("/{agent_id}/qr/debug-state")
+async def debug_qr_state(
+    agent_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    ENDPOINT DE DIAGNÓSTICO TEMPORAL (público). Verifica el estado de la
+    instancia Evolution usando el token de instancia almacenado (desencriptado
+    en runtime). No expone el token en la respuesta.
+    """
+    from services.whatsapp_qr_service import _candidate_api_keys
+
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        return {"error": "agente no encontrado"}
+
+    instance = agent.whatsapp_qr_instance_name
+    token_dec = decrypt(agent.whatsapp_qr_instance_token) if agent.whatsapp_qr_instance_token else None
+
+    result = {
+        "instance_name": instance,
+        "has_instance_token": bool(token_dec),
+        "evolution_url_set": bool(settings.evolution_api_url),
+        "evolution_token_set": bool(settings.evolution_api_token),
+        "checks": [],
+    }
+
+    if not instance or not settings.evolution_api_url:
+        result["error"] = "Falta instance_name o evolution_api_url"
+        return result
+
+    url = f"{settings.evolution_api_url}/instance/connectionState/{instance}"
+    for tk in _candidate_api_keys(token_dec):
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                r = await client.get(url, headers={"apikey": tk})
+                body = r.text[:500]
+                result["checks"].append({
+                    "status_code": r.status_code,
+                    "body": body,
+                })
+        except Exception as e:
+            result["checks"].append({"exception": str(e)[:300]})
+
+    # Además: info de la instancia
+    info_url = f"{settings.evolution_api_url}/instance/info/{instance}"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            ri = await client.get(info_url, headers={"apikey": token_dec or settings.evolution_api_token})
+            result["instance_info"] = {"status_code": ri.status_code, "body": ri.text[:500]}
+    except Exception as e:
+        result["instance_info"] = {"exception": str(e)[:300]}
+
+    return result
+
+
 @router.get("/{agent_id}/status")
 async def get_whatsapp_status(
     agent_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -445,11 +593,13 @@ async def get_whatsapp_status(
         )
 
     whatsapp_provider = agent.whatsapp_provider or "meta_cloud"
-    webhook_url = (
-        "/api/whatsapp/webhook"
-        if whatsapp_provider == "meta_cloud"
-        else f"/api/whatsapp/webhook/qr/{agent.id}"
-    )
+    base_url = _get_webhook_base_url(request)
+    if whatsapp_provider == "meta_cloud":
+        webhook_url = f"{base_url}/api/whatsapp/webhook"
+    elif whatsapp_provider == "waha":
+        webhook_url = f"{base_url}/api/whatsapp/webhook/waha/{agent.id}"
+    else:
+        webhook_url = f"{base_url}/api/whatsapp/webhook/qr/{agent.id}"
 
     result = {
         "connected": False,
@@ -462,7 +612,7 @@ async def get_whatsapp_status(
         "whatsapp_qr_connected": agent.whatsapp_qr_connected or False,
         "whatsapp_qr_instance_name": agent.whatsapp_qr_instance_name,
         "qr_code": None,
-        "is_mock_mode": qr_is_mock_mode(),
+        "is_mock_mode": qr_is_mock_mode() if whatsapp_provider == "qr_code" else waha_is_mock_mode(),
     }
 
     if whatsapp_provider == "meta_cloud":
@@ -479,8 +629,30 @@ async def get_whatsapp_status(
                 if not verification["connected"]:
                     result["connected"] = False
                     result["error"] = verification.get("error")
+    elif whatsapp_provider == "waha":
+        # WAHA Provider
+        if agent.whatsapp_qr_instance_name:
+            verification = await verify_waha_connection(agent.whatsapp_qr_instance_name)
+            result["connected"] = verification["connected"]
+            result["whatsapp_qr_connected"] = verification["connected"]
+            result["phone_number"] = verification.get("phone_number")
+            result["display_name"] = verification.get("display_name")
+            result["error"] = verification.get("error")
+
+            if not verification["connected"]:
+                persisted = getattr(agent, "whatsapp_qr_code", None)
+                result["qr_code"] = persisted or await get_waha_qr(agent.whatsapp_qr_instance_name)
+            else:
+                result["qr_code"] = None
+
+            if agent.whatsapp_qr_connected != verification["connected"]:
+                agent.whatsapp_qr_connected = verification["connected"]
+                db.commit()
+        else:
+            result["connected"] = False
+            result["whatsapp_qr_connected"] = False
     else:
-        # QR Code Provider
+        # QR Code Provider (Evolution API)
         if agent.whatsapp_qr_instance_name:
             verification = await verify_qr_connection(agent.whatsapp_qr_instance_name)
             result["connected"] = verification["connected"]
@@ -696,6 +868,15 @@ async def _process_agent_webhook(
                     whatsapp_message_id=whatsapp_msg_id,
                 )
 
+                if not reply or not reply.strip():
+                    logger.warning(
+                        "[META WEBHOOK] IA devolvió respuesta vacía para agente %s, "
+                        "mensaje %s. Enviando fallback.",
+                        agent.id,
+                        whatsapp_msg_id,
+                    )
+                    reply = "Hola, gracias por tu mensaje. ¿En qué puedo ayudarte?"
+
                 # Enviar respuesta con las credenciales del agente
                 await send_whatsapp_text(
                     phone_number,
@@ -872,10 +1053,10 @@ async def update_whatsapp_provider(
             detail=f"Agente {agent_id} no encontrado.",
         )
 
-    if body.provider not in ["meta_cloud", "qr_code"]:
+    if body.provider not in ["meta_cloud", "qr_code", "waha"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Proveedor no válido. Debe ser 'meta_cloud' o 'qr_code'.",
+            detail="Proveedor no válido. Debe ser 'meta_cloud', 'qr_code' o 'waha'.",
         )
 
     agent.whatsapp_provider = body.provider
@@ -915,6 +1096,12 @@ async def connect_whatsapp_qr(
 
     # Definir nombre de instancia único para evitar colisiones de caché de Baileys
     import time
+
+    # Eliminar instancia previa si existe para evitar acumular sesiones huérfanas
+    if agent.whatsapp_qr_instance_name:
+        logger.info(f"Eliminando instancia previa '{agent.whatsapp_qr_instance_name}' antes de crear nueva.")
+        await delete_qr_instance_safe(agent.whatsapp_qr_instance_name)
+
     instance_name = f"genia_{agent.id[:8]}_{int(time.time())}"
     agent.whatsapp_qr_instance_name = instance_name
 
@@ -930,7 +1117,7 @@ async def connect_whatsapp_qr(
         agent.whatsapp_qr_instance_token = encrypt(init_res["token"])
 
     # Configurar Webhook apuntando dinámicamente al host actual de la petición
-    base_url = str(request.base_url).rstrip("/")
+    base_url = _get_webhook_base_url(request)
     webhook_url = f"{base_url}/api/whatsapp/webhook/qr/{agent.id}"
     await configure_qr_webhook(instance_name, webhook_url)
 
@@ -986,6 +1173,64 @@ async def disconnect_whatsapp_qr(
     }
 
 
+@router.post("/{agent_id}/qr/restart")
+async def restart_whatsapp_qr(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Fuerza el reinicio de la instancia de WhatsApp QR para obtener un nuevo
+    código QR limpio si el dispositivo se desconectó.
+    """
+    query = db.query(Agent).filter(Agent.id == agent_id)
+    if current_user["id"] != "local_dev_user":
+        query = query.filter(Agent.user_id == current_user["id"])
+
+    agent = query.first()
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agente {agent_id} no encontrado.",
+        )
+
+    if not agent.whatsapp_qr_instance_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El agente no tiene una instancia QR activa.",
+        )
+
+    qr_code = await restart_qr_instance(agent.whatsapp_qr_instance_name)
+    if not qr_code:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No se pudo obtener un nuevo código QR tras reiniciar la instancia.",
+        )
+
+    agent.whatsapp_qr_connected = False
+    db.commit()
+
+    return {
+        "status": "connecting",
+        "instance_name": agent.whatsapp_qr_instance_name,
+        "qr_code": qr_code,
+        "message": "Instancia reiniciada. Por favor, escanea el nuevo código QR.",
+    }
+
+
+@router.get("/{agent_id}/qr/health")
+async def health_whatsapp_qr(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Verifica el estado del servidor de la Evolution API de forma rápida.
+    """
+    status_health = await check_evolution_health()
+    return status_health
+
+
 @router.post("/{agent_id}/qr/simulate-scan")
 async def simulate_scan_qr(
     agent_id: str,
@@ -1025,6 +1270,416 @@ async def simulate_scan_qr(
     }
 
 
+# ---------------------------------------------------------------------------
+# Integración WAHA (Código QR, open-source)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{agent_id}/waha/connect")
+async def connect_whatsapp_waha(
+    agent_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Inicializa una sesión WAHA (WhatsApp HTTP API) para vincular el agente
+    mediante código QR. Crea la sesión, configura el webhook y retorna el QR.
+    """
+    query = db.query(Agent).filter(Agent.id == agent_id)
+    if current_user["id"] != "local_dev_user":
+        query = query.filter(Agent.user_id == current_user["id"])
+
+    agent = query.first()
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agente {agent_id} no encontrado.",
+        )
+
+    import time
+
+    # Eliminar sesión previa si existe para evitar acumular sesiones huérfanas
+    if agent.whatsapp_qr_instance_name:
+        logger.info(f"Eliminando sesión WAHA previa '{agent.whatsapp_qr_instance_name}'.")
+        await delete_waha_session(agent.whatsapp_qr_instance_name)
+
+    session_name = f"genia_{agent.id[:8]}_{int(time.time())}"
+    agent.whatsapp_qr_instance_name = session_name
+
+    # Webhook apuntando al host actual
+    base_url = _get_webhook_base_url(request)
+    webhook_url = f"{base_url}/api/whatsapp/webhook/waha/{agent.id}"
+
+    init_res = await create_waha_session(session_name, webhook_url)
+    if init_res.get("status") == "error":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No se pudo crear la sesión WAHA: {init_res.get('error')}",
+        )
+
+    qr_code = init_res.get("qr")
+
+    # Persistir QR en BD para que el status endpoint lo encuentre
+    if qr_code:
+        agent.whatsapp_qr_code = qr_code
+        store_waha_qr(session_name, qr_code)
+
+    agent.whatsapp_provider = "waha"
+    channels = agent.channels or []
+    if "whatsapp" not in channels:
+        agent.channels = channels + ["whatsapp"]
+
+    db.commit()
+
+    return {
+        "status": "connecting",
+        "session_name": session_name,
+        "qr_code": qr_code,
+        "message": "Escanea el código QR desde tu celular en WhatsApp > Dispositivos Vinculados.",
+    }
+
+
+@router.post("/{agent_id}/waha/disconnect")
+async def disconnect_whatsapp_waha(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Desconecta la línea WAHA y destruye la sesión."""
+    query = db.query(Agent).filter(Agent.id == agent_id)
+    if current_user["id"] != "local_dev_user":
+        query = query.filter(Agent.user_id == current_user["id"])
+
+    agent = query.first()
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agente {agent_id} no encontrado.",
+        )
+
+    if agent.whatsapp_qr_instance_name:
+        await delete_waha_session(agent.whatsapp_qr_instance_name)
+
+    agent.whatsapp_qr_instance_name = None
+    agent.whatsapp_qr_connected = False
+    db.commit()
+
+    logger.info(f"WhatsApp WAHA desconectado para agente '{agent.name}'.")
+    return {
+        "status": "disconnected",
+        "message": f"WhatsApp WAHA desconectado del agente '{agent.name}'.",
+    }
+
+
+@router.post("/{agent_id}/waha/restart")
+async def restart_whatsapp_waha(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Reinicia la sesión WAHA para obtener un nuevo QR limpio."""
+    query = db.query(Agent).filter(Agent.id == agent_id)
+    if current_user["id"] != "local_dev_user":
+        query = query.filter(Agent.user_id == current_user["id"])
+
+    agent = query.first()
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agente {agent_id} no encontrado.",
+        )
+
+    if not agent.whatsapp_qr_instance_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El agente no tiene una sesión WAHA activa.",
+        )
+
+    qr_code = await restart_waha_session(agent.whatsapp_qr_instance_name)
+    if not qr_code:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No se pudo obtener un nuevo código QR tras reiniciar la sesión WAHA.",
+        )
+
+    agent.whatsapp_qr_code = qr_code
+    agent.whatsapp_qr_connected = False
+    db.commit()
+
+    return {
+        "status": "connecting",
+        "session_name": agent.whatsapp_qr_instance_name,
+        "qr_code": qr_code,
+        "message": "Sesión WAHA reiniciada. Por favor, escanea el nuevo código QR.",
+    }
+
+
+@router.get("/{agent_id}/waha/health")
+async def health_whatsapp_waha():
+    """Verifica el estado del servidor WAHA."""
+    return await check_waha_health()
+
+
+@router.post("/{agent_id}/waha/simulate-scan")
+async def simulate_scan_waha(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Utilidad de pruebas (modo desarrollo): simula el escaneo del QR WAHA."""
+    if not waha_is_mock_mode():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La simulación solo está disponible en modo desarrollo local sin WAHA.",
+        )
+
+    query = db.query(Agent).filter(Agent.id == agent_id)
+    if current_user["id"] != "local_dev_user":
+        query = query.filter(Agent.user_id == current_user["id"])
+
+    agent = query.first()
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agente {agent_id} no encontrado.",
+        )
+
+    session_name = agent.whatsapp_qr_instance_name or f"genia_agent_{agent.id}"
+    simulate_waha_scan(session_name)
+    agent.whatsapp_qr_connected = True
+    db.commit()
+
+    logger.info(f"[SIMULACIÓN WAHA] QR escaneado para agente '{agent.name}'.")
+    return {
+        "status": "connected",
+        "message": f"Línea WAHA simulada y conectada para el agente '{agent.name}'.",
+    }
+
+
+@router.post("/webhook/waha/{agent_id}")
+async def receive_waha_webhook(
+    agent_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Webhook para recibir eventos de WAHA (mensajes, qr, session.status).
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Payload JSON no válido.",
+        )
+
+    logger.info(
+        f"[WAHA WEBHOOK] Recibido para agent_id={agent_id}, event={data.get('event')}"
+    )
+
+    try:
+        return await _receive_waha_webhook_impl(agent_id, db, data)
+    except Exception as e:
+        import traceback
+        err_msg = traceback.format_exc()
+        logger.error(f"[WAHA WEBHOOK ERROR] Agent {agent_id}: {err_msg}")
+        return {"status": "accepted", "warning": f"Error interno procesado: {str(e)[:200]}"}
+
+
+async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
+    logger.info(
+        f"[WAHA WEBHOOK IMPL] event={data.get('event')}, keys={list(data.keys()) if isinstance(data, dict) else type(data).__name__}"
+    )
+
+    agent = (
+        db.query(Agent).filter(Agent.id == agent_id, Agent.status == "active").first()
+    )
+    if not agent:
+        logger.warning(f"Webhook WAHA para agente inexistente/inactivo: {agent_id}")
+        return {"status": "ignored"}
+
+    event = str(data.get("event", "")).lower()
+    payload = data.get("payload", {}) or {}
+
+    # Eventos administrativos
+    if event in ("session.status", "session_status"):
+        state = (payload.get("state") or "").upper()
+        if state == "CONNECTED":
+            agent.whatsapp_qr_connected = True
+            db.commit()
+            logger.info(f"Línea WAHA de '{agent.name}' marcada CONECTADA.")
+        elif state in ("DISCONNECTED", "SCAN_QR", "STARTING", "QRISREADY"):
+            if state != "SCAN_QR":
+                agent.whatsapp_qr_connected = False
+                db.commit()
+            logger.info(f"Línea WAHA de '{agent.name}' estado={state}.")
+        elif state == "FAILED":
+            agent.whatsapp_qr_connected = False
+            db.commit()
+            logger.warning(f"Línea WAHA de '{agent.name}' FALLÓ: {payload.get('reason')}")
+        return {"status": "accepted"}
+
+    if event == "qr":
+        # WAHA 2024+ entrega el QR solo por webhook; lo guardamos para el frontend.
+        qr_data = payload.get("qr") if isinstance(payload, dict) else None
+        if not qr_data and isinstance(payload, str):
+            qr_data = payload
+        if qr_data:
+            store_waha_qr(agent.whatsapp_qr_instance_name or "", qr_data)
+            # Persistir en BD (si la migración está aplicada) para sobrevivir
+            # en serverless; si la columna no existe aún, se ignora sin fallar.
+            try:
+                agent.whatsapp_qr_code = qr_data
+                db.add(agent)
+                db.commit()
+            except Exception:
+                db.rollback()
+            logger.info(f"Código QR WAHA capturado para '{agent.name}'.")
+        else:
+            logger.info(f"Evento QR WAHA sin datos para '{agent.name}'.")
+        return {"status": "accepted"}
+
+    if event != "message":
+        logger.info(f"[WAHA] Evento no manejado: {event}")
+        return {"status": "accepted"}
+
+    # Mensaje entrante
+    if payload.get("fromMe"):
+        return {"status": "ignored"}
+
+    phone_number = payload.get("from") or payload.get("chatId") or ""
+    if not phone_number:
+        logger.info("[WAHA EXTRACT] Sin 'from'/'chatId'. Ignorando.")
+        return {"status": "ignored"}
+
+    whatsapp_msg_id = payload.get("id")
+    msg_type = payload.get("type", "chat")
+    push_name = (payload.get("sender") or {}).get("pushName", "Usuario WhatsApp")
+    user_message_text = payload.get("body", "")
+
+    # Deduplicar
+    from models.conversation import Message as DBMessage
+
+    exists = (
+        db.query(DBMessage)
+        .filter(DBMessage.whatsapp_message_id == whatsapp_msg_id)
+        .first()
+    )
+    if exists:
+        logger.info(f"Mensaje WAHA {whatsapp_msg_id} ya procesado. Ignorando.")
+        return {"status": "ignored"}
+
+    # Obtener/crear conversación (phone_number conserva el chatId p.ej. 57..@c.us)
+    conversation = (
+        db.query(Conversation)
+        .filter(
+            Conversation.agent_id == agent.id,
+            Conversation.contact_phone == phone_number,
+            Conversation.channel == "whatsapp",
+        )
+        .first()
+    )
+
+    if not conversation:
+        conversation = Conversation(
+            agent_id=agent.id,
+            contact_phone=phone_number,
+            contact_name=push_name,
+            channel="whatsapp",
+            status="active",
+        )
+        db.add(conversation)
+        db.flush()
+
+    if conversation.status == "handoff":
+        should_reactivate = False
+        if conversation.last_message_at:
+            now_tz = datetime.now(timezone.utc)
+            last_msg_at = conversation.last_message_at
+            if last_msg_at.tzinfo is None:
+                last_msg_at = last_msg_at.replace(tzinfo=timezone.utc)
+            if now_tz - last_msg_at > timedelta(minutes=2):
+                should_reactivate = True
+        if user_message_text and user_message_text.strip().lower() in [
+            "hola", "reiniciar", "reinicia", "iniciar",
+        ]:
+            should_reactivate = True
+        if should_reactivate:
+            conversation.status = "active"
+            db.commit()
+        else:
+            logger.info(f"Conversación WAHA {conversation.id} en handoff. Ignorando IA.")
+            return {"status": "ignored"}
+
+    # Nota de voz (ptt) o imagen con caption
+    if msg_type == "ptt":
+        if waha_is_mock_mode():
+            user_message_text = "[Nota de Voz Simulada] Hola agente, ¿cómo te va?"
+        else:
+            try:
+                media_url = payload.get("media") or (payload.get("body") or "")
+                # WAHA puede incluir 'media' (url) o 'base64'
+                audio_bytes = None
+                mime_type = "audio/ogg; codecs=opus"
+                if payload.get("base64"):
+                    import base64
+                    audio_bytes = base64.b64decode(payload["base64"])
+                elif media_url:
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        dl = await client.get(media_url)
+                        if dl.status_code == 200:
+                            audio_bytes = dl.content
+                if audio_bytes:
+                    from services.ai_service import transcribe_audio
+                    user_message_text = await transcribe_audio(
+                        audio_bytes=audio_bytes,
+                        mime_type=mime_type,
+                        filename="voice.ogg",
+                        stt_provider=agent.stt_provider or "groq_whisper",
+                    )
+                    logger.info(f"[WAHA AUDIO] Transcripción: {user_message_text[:80]}")
+                else:
+                    user_message_text = "[Nota de Voz - sin transcripción]"
+            except Exception as e:
+                logger.error(f"Error transcribiendo nota de voz WAHA: {str(e)}", exc_info=True)
+                user_message_text = "[Nota de Voz - sin transcripción]"
+
+    if not user_message_text or not user_message_text.strip():
+        return {"status": "ignored"}
+
+    # Responder con IA
+    from services.conversation_service import process_conversation_message
+
+    reply = await process_conversation_message(
+        db=db,
+        agent=agent,
+        conversation=conversation,
+        user_message_text=user_message_text,
+        source_channel="whatsapp",
+        whatsapp_message_id=whatsapp_msg_id,
+    )
+
+    if not reply or not reply.strip():
+        logger.warning("[WAHA WEBHOOK] IA devolvió respuesta vacía. Enviando fallback.")
+        reply = "Hola, gracias por tu mensaje. ¿En qué puedo ayudarte?"
+
+    send_success = await send_waha_text(
+        session_name=agent.whatsapp_qr_instance_name,
+        to_phone=phone_number,
+        text=reply,
+    )
+
+    if not send_success:
+        logger.error(
+            "[WAHA SEND ERROR] No se pudo enviar respuesta a %s para agente %s.",
+            phone_number,
+            agent.id,
+        )
+
+    return {"status": "accepted"}
+
+
 @router.post("/webhook/qr/{agent_id}")
 async def receive_qr_webhook(
     agent_id: str,
@@ -1042,84 +1697,16 @@ async def receive_qr_webhook(
             detail="Payload JSON no válido.",
         )
 
-    # #region debug-point B:webhook-entry
-    _report_debug_event(
-        hypothesis_id="B",
-        location="backend/routers/whatsapp.py:receive_qr_webhook",
-        msg="QR webhook recibido",
-        data={
-            "agent_id": agent_id,
-            "event": data.get("event") if isinstance(data, dict) else None,
-            "top_keys": list(data.keys())[:10] if isinstance(data, dict) else [],
-        },
+    logger.info(
+        f"[QR WEBHOOK] Recibido para agent_id={agent_id}, event={data.get('event')}"
     )
-    # #endregion
-
-    # ── PAYLOAD DEBUG LOGGING TO DB ──
-    try:
-        from models.conversation import Conversation as DBConv, Message as DBMessage
-        import json as _json
-        from datetime import datetime, timezone
-        import uuid
-
-        # Search for debug conversation
-        debug_conv = (
-            db.query(DBConv).filter(DBConv.contact_phone == "PAYLOAD_DEBUG").first()
-        )
-        if not debug_conv:
-            debug_conv = DBConv(
-                id=uuid.uuid4().hex,
-                agent_id=agent_id,
-                contact_phone="PAYLOAD_DEBUG",
-                contact_name="Payload Debugger",
-                channel="whatsapp",
-                status="active",
-                started_at=datetime.now(timezone.utc),
-                last_message_at=datetime.now(timezone.utc),
-            )
-            db.add(debug_conv)
-            db.commit()
-            db.refresh(debug_conv)
-
-        # Log payload as a message
-        payload_str = _json.dumps(data)
-        debug_msg = DBMessage(
-            id=uuid.uuid4().hex,
-            conversation_id=debug_conv.id,
-            role="user",
-            content=f"Agent: {agent_id} | Payload: {payload_str}"[
-                :3000
-            ],  # cap to avoid column limits
-            sent_at=datetime.now(timezone.utc),
-        )
-        db.add(debug_msg)
-        db.commit()
-    except Exception as db_err:
-        print("[DEBUG LOG ERROR]", str(db_err))
 
     try:
         return await _receive_qr_webhook_impl(agent_id, request, db, data)
     except Exception as e:
         import traceback
-
         err_msg = traceback.format_exc()
         logger.error(f"[QR WEBHOOK ERROR] Agent {agent_id}: {err_msg}")
-        try:
-            debug_conv = (
-                db.query(DBConv).filter(DBConv.contact_phone == "PAYLOAD_DEBUG").first()
-            )
-            if debug_conv:
-                debug_msg = DBMessage(
-                    id=uuid.uuid4().hex,
-                    conversation_id=debug_conv.id,
-                    role="assistant",
-                    content=f"ERROR TRACEBACK: {err_msg}"[:3000],
-                    sent_at=datetime.now(timezone.utc),
-                )
-                db.add(debug_msg)
-                db.commit()
-        except Exception:
-            pass
         return {
             "status": "accepted",
             "warning": f"Error interno procesado: {str(e)[:200]}",
@@ -1132,69 +1719,25 @@ async def _receive_qr_webhook_impl(
     db: Session,
     data: dict,
 ):
-    # Log completo del payload para depuración
-    import json as _json
-
     logger.info(
-        f"[QR WEBHOOK] Payload recibido: event={data.get('event')}, keys={list(data.keys()) if isinstance(data, dict) else type(data).__name__}"
-    )
-    logger.info(
-        f"[QR WEBHOOK] data type={type(data.get('data')).__name__ if isinstance(data, dict) else 'N/A'}, raw_data_preview={str(data)[:500]}"
+        f"[QR WEBHOOK IMPL] Iniciado: event={data.get('event')}, keys={list(data.keys()) if isinstance(data, dict) else type(data).__name__}"
     )
 
     agent = (
         db.query(Agent).filter(Agent.id == agent_id, Agent.status == "active").first()
     )
     if not agent:
-        # #region debug-point E:agent-not-found
-        _report_debug_event(
-            hypothesis_id="E",
-            location="backend/routers/whatsapp.py:_receive_qr_webhook_impl",
-            msg="Webhook QR ignorado por agente inexistente o inactivo",
-            data={"agent_id": agent_id},
-        )
-        # #endregion
         logger.warning(
             f"Webhook QR recibido para agente inexistente o inactivo: {agent_id}"
         )
         return {"status": "ignored"}
 
-    # #region debug-point E:agent-state
-    _report_debug_event(
-        hypothesis_id="E",
-        location="backend/routers/whatsapp.py:_receive_qr_webhook_impl",
-        msg="Estado base del agente QR cargado",
-        data={
-            "agent_id": agent.id,
-            "agent_name": agent.name,
-            "status": agent.status,
-            "provider": agent.whatsapp_provider,
-            "qr_connected": agent.whatsapp_qr_connected,
-            "instance_name": agent.whatsapp_qr_instance_name,
-        },
-    )
-    # #endregion
-
     # Extraer detalles
     details = _extract_qr_message_details(data, agent)
     if not details:
-        # #region debug-point A:details-empty
-        _report_debug_event(
-            hypothesis_id="A",
-            location="backend/routers/whatsapp.py:_receive_qr_webhook_impl",
-            msg="No se pudieron extraer detalles del mensaje QR",
-            data={
-                "agent_id": agent.id,
-                "event": data.get("event") if isinstance(data, dict) else None,
-                "data_type": type(data.get("data")).__name__
-                if isinstance(data, dict)
-                else None,
-            },
-        )
-        # #endregion
-        # Evento administrativo
-        event_type = data.get("event")
-        if event_type == "connection.update":
+        # Evento administrativo o no-mensaje
+        event_type = str(data.get("event", "")).lower()
+        if event_type in ("connection.update", "connection_update"):
             state = data.get("data", {}).get("state")
             if state == "open":
                 agent.whatsapp_qr_connected = True
@@ -1208,6 +1751,8 @@ async def _receive_qr_webhook_impl(
                 logger.info(
                     f"Línea QR de agente '{agent.name}' marcada como DESCONECTADA."
                 )
+        elif event_type in ("qrcode.updated", "qrcode_updated"):
+            logger.info(f"Código QR actualizado para el agente '{agent.name}'.")
         return {"status": "accepted"}
 
     phone_number = details["phone_number"]
@@ -1215,22 +1760,6 @@ async def _receive_qr_webhook_impl(
     user_message_text = details["text"]
     msg_type = details["type"]
     push_name = details["push_name"]
-
-    # #region debug-point C:details-extracted
-    _report_debug_event(
-        hypothesis_id="C",
-        location="backend/routers/whatsapp.py:_receive_qr_webhook_impl",
-        msg="Detalles del mensaje QR extraídos",
-        data={
-            "agent_id": agent.id,
-            "phone_number": phone_number,
-            "whatsapp_msg_id": whatsapp_msg_id,
-            "msg_type": msg_type,
-            "text_preview": user_message_text[:80],
-            "push_name": push_name,
-        },
-    )
-    # #endregion
 
     # Deduplicar
     from models.conversation import Message as DBMessage
@@ -1241,6 +1770,7 @@ async def _receive_qr_webhook_impl(
         .first()
     )
     if exists:
+        logger.info(f"Mensaje {whatsapp_msg_id} ya procesado. Ignorando.")
         return {"status": "ignored"}
 
     # Obtener/crear conversación
@@ -1316,11 +1846,10 @@ async def _receive_qr_webhook_impl(
                         json=media_payload,
                     )
                     logger.info(
-                        f"[QR AUDIO] Evolution media response: {media_res.status_code} - {media_res.text[:200]}"
+                        f"[QR AUDIO] Evolution media response: {media_res.status_code}"
                     )
                     if media_res.status_code in [200, 201]:
                         media_data = media_res.json()
-                        # La respuesta puede tener 'base64' o 'data' según la versión
                         b64_data = media_data.get("base64") or media_data.get(
                             "data", ""
                         )
@@ -1349,7 +1878,7 @@ async def _receive_qr_webhook_impl(
                             user_message_text = "[Nota de Voz - sin transcripción]"
                     else:
                         logger.error(
-                            f"[QR AUDIO] Error al obtener media: {media_res.status_code} - {media_res.text}"
+                            f"[QR AUDIO] Error al obtener media: {media_res.status_code} - {media_res.text[:200]}"
                         )
                         user_message_text = "[Nota de Voz - sin transcripción]"
             except Exception as e:
@@ -1393,20 +1922,6 @@ async def _receive_qr_webhook_impl(
         )
         reply = "Hola, gracias por tu mensaje. ¿En qué puedo ayudarte?"
 
-    # #region debug report D:reply-generated
-    _report_debug_event(
-        hypothesis_id="D",
-        location="backend/routers/whatsapp.py:_receive_qr_webhook_impl",
-        msg="La IA generó respuesta para el mensaje QR",
-        data={
-            "agent_id": agent.id,
-            "conversation_id": conversation.id,
-            "reply_length": len(reply or ""),
-            "reply_preview": (reply or "")[:120],
-        },
-    )
-    # #endregion
-
     # Despachar mensaje
     token_decrypted = (
         decrypt(agent.whatsapp_qr_instance_token)
@@ -1419,53 +1934,13 @@ async def _receive_qr_webhook_impl(
         text=reply,
         token=token_decrypted,
     )
-    # #region debug-point D:send-result
-    _report_debug_event(
-        hypothesis_id="D",
-        location="backend/routers/whatsapp.py:_receive_qr_webhook_impl",
-        msg="Resultado del envío de respuesta QR",
-        data={
-            "agent_id": agent.id,
-            "conversation_id": conversation.id,
-            "send_success": send_success,
-            "instance_name": agent.whatsapp_qr_instance_name,
-            "to_phone": phone_number,
-        },
-    )
-    # #endregion
+
     if not send_success:
         logger.error(
             "[QR SEND ERROR] No se pudo enviar respuesta al teléfono %s para agente %s.",
             phone_number,
             agent.id,
         )
-        try:
-            import uuid
-
-            debug_conv = (
-                db.query(Conversation)
-                .filter(Conversation.contact_phone == "PAYLOAD_DEBUG")
-                .first()
-            )
-            if debug_conv:
-                debug_msg = DBMessage(
-                    id=uuid.uuid4().hex,
-                    conversation_id=debug_conv.id,
-                    role="assistant",
-                    content=(
-                        "ERROR QR SEND FAILED: "
-                        f"agent={agent.id} phone={phone_number} "
-                        f"instance={agent.whatsapp_qr_instance_name}"
-                    )[:3000],
-                    sent_at=datetime.now(timezone.utc),
-                )
-                db.add(debug_msg)
-                db.commit()
-        except Exception as log_err:
-            logger.error(
-                "[QR SEND ERROR] No se pudo registrar el fallo de envío: %s",
-                str(log_err),
-            )
 
     return {"status": "accepted"}
 
@@ -1475,117 +1950,70 @@ def _extract_qr_message_details(data: dict, agent: Agent) -> dict | None:
     event = data.get("event")
     # Evolution API envía events del tipo 'messages.upsert' o 'MESSAGES_UPSERT'
     if not event or event.lower() not in ("messages.upsert", "messages_upsert"):
-        # #region debug-point A:unexpected-event
-        _report_debug_event(
-            hypothesis_id="A",
-            location="backend/routers/whatsapp.py:_extract_qr_message_details",
-            msg="Evento QR descartado por nombre no reconocido",
-            data={"event": event},
-        )
-        # #endregion
         return None
 
-    # Evolution API puede enviar 'data' como lista o como dict
+    # Evolution API v2 puede anidar el mensaje de varias formas.
+    # Normalizamos para obtener siempre el objeto mensaje (con 'key'/'message').
     raw_data = data.get("data", {})
+
+    # Caso 1: data es una lista de mensajes
     if isinstance(raw_data, list):
-        # Tomar el primer mensaje de la lista que no sea del propio bot
         message_data = None
         for item in raw_data:
-            if not item.get("key", {}).get("fromMe", False):
+            if isinstance(item, dict) and not item.get("key", {}).get("fromMe", False):
                 message_data = item
                 break
         if message_data is None:
             return None
+    # Caso 2: data es un dict que envuelve otro 'data' con el mensaje (v2)
+    elif isinstance(raw_data, dict):
+        inner = raw_data.get("data")
+        if isinstance(inner, dict) and ("key" in inner or "message" in inner):
+            message_data = inner
+        elif isinstance(inner, list) and inner:
+            message_data = next(
+                (i for i in inner if isinstance(i, dict) and not i.get("key", {}).get("fromMe", False)),
+                inner[0],
+            )
+        else:
+            message_data = raw_data
     else:
-        message_data = raw_data
+        return None
+
+    if not isinstance(message_data, dict):
+        return None
 
     key = message_data.get("key", {})
     from_me = key.get("fromMe", False)
     if from_me:
-        # #region debug-point C:from-me
-        _report_debug_event(
-            hypothesis_id="C",
-            location="backend/routers/whatsapp.py:_extract_qr_message_details",
-            msg="Mensaje QR descartado porque viene marcado como fromMe",
-            data={"event": event, "key_id": key.get("id")},
+        return None
+
+    # Filtrar recibos de entrega/lectura: no son mensajes nuevos del usuario
+    msg_status = key.get("status", "")
+    if msg_status in ("DELIVERY_ACK", "READ", "READ_SELF", "PLAYED"):
+        logger.info(
+            f"[QR EXTRACT] Descartando receipt status={msg_status} para msg_id={key.get('id')}"
         )
-        # #endregion
         return None
 
     remote_jid = key.get("remoteJid", "")
-    addressing_mode = key.get("addressingMode")
-
-    # Si estamos en modo LID y el JID recibido en el webhook es de tipo tradicional,
-    # intentamos resolver el JID correcto del remitente (@lid) desde la base de datos de Evolution API.
-    if addressing_mode == "lid" and remote_jid.endswith("@s.whatsapp.net"):
-        try:
-            whatsapp_msg_id = key.get("id")
-            evo_url = settings.evolution_api_url
-            evo_token = decrypt(agent.whatsapp_qr_instance_token) if agent.whatsapp_qr_instance_token else settings.evolution_api_token
-            instance_name = agent.whatsapp_qr_instance_name
-            
-            if evo_url and evo_token and instance_name:
-                find_msg_url = f"{evo_url}/chat/findMessages/{instance_name}"
-                headers = {
-                    "apikey": evo_token,
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "where": {
-                        "key": {
-                            "id": whatsapp_msg_id
-                        }
-                    }
-                }
-                with httpx.Client(timeout=5.0) as client:
-                    res = client.post(find_msg_url, headers=headers, json=payload)
-                    if res.status_code in [200, 201]:
-                        records = res.json().get("messages", {}).get("records", [])
-                        if records:
-                            db_jid = records[0].get("key", {}).get("remoteJid", "")
-                            if db_jid.endswith("@lid"):
-                                logger.info(f"[LID RESOLVER] Se resolvió JID tradicional {remote_jid} a LID {db_jid}")
-                                remote_jid = db_jid
-        except Exception as ex:
-            logger.error(f"[LID RESOLVER] Error resolviendo LID para mensaje {key.get('id')}: {str(ex)}")
-
-    if not remote_jid or not (remote_jid.endswith("@s.whatsapp.net") or remote_jid.endswith("@lid")):
-        # #region debug-point C:remote-jid-discarded
-        _report_debug_event(
-            hypothesis_id="C",
-            location="backend/routers/whatsapp.py:_extract_qr_message_details",
-            msg="Mensaje QR descartado por remoteJid no soportado",
-            data={"remote_jid": remote_jid, "key_id": key.get("id")},
-        )
-        # #endregion
+    if not remote_jid or not (
+        remote_jid.endswith("@s.whatsapp.net") or remote_jid.endswith("@lid")
+    ):
         logger.info(f"[QR EXTRACT] remoteJid descartado: {remote_jid}")
         return None
 
-    # Si es un JID de tipo LID, conservamos el JID completo con sufijo para que Evolution API
-    # pueda rutearlo de vuelta adecuadamente sin asumir que es un telefono normal.
-    if remote_jid.endswith("@lid"):
-        phone_number = remote_jid
-    else:
-        phone_number = remote_jid.split("@")[0]
-    
+    # Normalizar: extraer solo la parte numérica (sin @lid ni @s.whatsapp.net)
+    # para que el lookup de conversaciones funcione siempre con el mismo formato.
+    phone_number = remote_jid.split("@")[0]
+
     whatsapp_msg_id = key.get("id")
     push_name = message_data.get("pushName", "Usuario WhatsApp")
 
-    message_content = message_data.get("message", {})
+    message_content = message_data.get("message", {}) or {}
     if not message_content:
-        # #region debug-point C:no-message-content
-        _report_debug_event(
-            hypothesis_id="C",
-            location="backend/routers/whatsapp.py:_extract_qr_message_details",
-            msg="Mensaje QR sin message_content",
-            data={
-                "message_keys": list(message_data.keys())[:15],
-                "key_id": key.get("id"),
-            },
-        )
-        # #endregion
         logger.info(
-            f"[QR EXTRACT] Sin message_content en message_data: {list(message_data.keys())}"
+            f"[QR EXTRACT] Sin message_content o vacío en message_data: {list(message_data.keys())}"
         )
         return None
 
@@ -1602,23 +2030,12 @@ def _extract_qr_message_details(data: dict, agent: Agent) -> dict | None:
         msg_type = "audio"
         user_message_text = "[Nota de Voz]"
     else:
-        # #region debug-point C:unsupported-message-type
-        _report_debug_event(
-            hypothesis_id="C",
-            location="backend/routers/whatsapp.py:_extract_qr_message_details",
-            msg="Mensaje QR con tipo no reconocido",
-            data={
-                "message_content_keys": list(message_content.keys())[:15],
-                "key_id": key.get("id"),
-            },
-        )
-        # #endregion
         logger.info(
             f"[QR EXTRACT] Tipo de mensaje no reconocido. Claves: {list(message_content.keys())}"
         )
 
     logger.info(
-        f"[QR EXTRACT] Mensaje extraído: phone={phone_number}, type={msg_type}, text_preview={user_message_text[:80]}"
+        f"[QR EXTRACT] Mensaje extraído: phone={phone_number}, type={msg_type}, text_preview=({len(user_message_text or '')} chars)"
     )
     return {
         "phone_number": phone_number,
