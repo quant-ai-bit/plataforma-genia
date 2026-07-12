@@ -1469,17 +1469,6 @@ async def health_whatsapp_waha():
     return await check_waha_health()
 
 
-@router.get("/webhook/waha/diag")
-async def waha_webhook_diag():
-    """Retorna el último webhook diagnosticado (para debug)."""
-    import json as _json
-    try:
-        with open("/tmp/waha_last_diag.json") as _f:
-            return _json.loads(_f.read())
-    except Exception as e:
-        return {"error": str(e)}
-
-
 @router.post("/{agent_id}/waha/sync")
 async def sync_whatsapp_waha(
     agent_id: str,
@@ -1579,6 +1568,17 @@ async def simulate_scan_waha(
         "status": "connected",
         "message": f"Línea WAHA simulada y conectada para el agente '{agent.name}'.",
     }
+
+
+@router.get("/webhook/waha/diag")
+async def waha_webhook_diag():
+    """Retorna el último webhook diagnosticado (para debug). Debe ir ANTES de /webhook/waha/{agent_id."""
+    import json as _json
+    try:
+        with open("/tmp/waha_last_diag.json") as _f:
+            return _json.loads(_f.read())
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @router.post("/webhook/waha/{agent_id}")
