@@ -1320,6 +1320,23 @@ async def connect_whatsapp_waha(
 
     qr_code = init_res.get("qr")
 
+    # Si WAHA no devolvió el QR en la respuesta (CORE solo entrega vía webhook),
+    # esperar hasta 10s a que llegue el evento 'qr' por webhook
+    if not qr_code:
+        import asyncio
+        for attempt in range(10):
+            await asyncio.sleep(1)
+            cached = get_cached_waha_qr(session_name)
+            if cached:
+                qr_code = cached
+                logger.info(f"QR recibido vía webhook WAHA tras {attempt + 1}s.")
+                break
+            # También probar REST directo
+            rest_qr = await get_waha_qr(session_name)
+            if rest_qr:
+                qr_code = rest_qr
+                break
+
     # Persistir QR en BD para que el status endpoint lo encuentre
     if qr_code:
         agent.whatsapp_qr_code = qr_code

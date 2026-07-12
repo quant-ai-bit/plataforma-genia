@@ -173,10 +173,14 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     }
   }, [id, isBackendOnline]);
 
-  // Polling para WhatsApp QR
+  // Polling para WhatsApp QR (WAHA y QR Code)
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (waStatus?.whatsapp_provider === "qr_code" && !waStatus.connected && waStatus.whatsapp_qr_instance_name) {
+    if (
+      (waStatus?.whatsapp_provider === "waha" || waStatus?.whatsapp_provider === "qr_code") &&
+      !waStatus.connected &&
+      waStatus.whatsapp_qr_instance_name
+    ) {
       interval = setInterval(() => {
         fetchWhatsAppStatus();
       }, 5000);
@@ -1874,6 +1878,23 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                                 )}
                               </div>
                             </div>
+                          ) : waStatus?.whatsapp_qr_instance_name && !waStatus.qr_code ? (
+                            <div className="flex flex-col items-center p-6 bg-[#070b16]/60 border border-gray-850 rounded-xl space-y-4 text-center">
+                              <div className="flex items-center gap-2 p-3 bg-blue-500/10 rounded-xl">
+                                <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
+                              </div>
+                              <span className="text-xs font-bold text-white">Esperando código QR...</span>
+                              <p className="text-[10px] text-gray-400 max-w-sm leading-relaxed">
+                                La sesión WAHA se está iniciando. El código QR aparecerá automáticamente cuando esté listo.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={handleDisconnectWhatsAppWaha}
+                                className="px-4 py-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/25 rounded-xl transition text-xs font-semibold cursor-pointer"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
                           ) : (
                             <div className="flex flex-col items-center p-6 bg-[#070b16]/60 border border-gray-850 rounded-xl space-y-4 text-center">
                               <span className="text-xs font-bold text-white">Vincular mediante Código QR (WAHA)</span>
@@ -2011,6 +2032,23 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                                   </button>
                                 )}
                               </div>
+                            </div>
+                          ) : waStatus?.whatsapp_qr_instance_name && !waStatus.qr_code ? (
+                            <div className="flex flex-col items-center p-6 bg-[#070b16]/60 border border-gray-850 rounded-xl space-y-4 text-center">
+                              <div className="flex items-center gap-2 p-3 bg-blue-500/10 rounded-xl">
+                                <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
+                              </div>
+                              <span className="text-xs font-bold text-white">Esperando código QR...</span>
+                              <p className="text-[10px] text-gray-400 max-w-sm leading-relaxed">
+                                La instancia se está iniciando. El código QR aparecerá automáticamente cuando esté listo.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={handleDisconnectWhatsAppQR}
+                                className="px-4 py-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/25 rounded-xl transition text-xs font-semibold cursor-pointer"
+                              >
+                                Cancelar
+                              </button>
                             </div>
                           ) : (
                             <div className="flex flex-col items-center p-6 bg-[#070b16]/60 border border-gray-850 rounded-xl space-y-4 text-center">
