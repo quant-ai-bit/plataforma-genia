@@ -176,7 +176,7 @@ async def verify_waha_connection(session_name: str) -> dict:
             if response.status_code == 200:
                 data = response.json()
                 state = (data.get("status") or "").upper()
-                connected = state == "CONNECTED" or data.get("connected") is True
+                connected = state in ("CONNECTED", "WORKING") or data.get("connected") is True
                 me = data.get("me") or {}
                 return {
                     "connected": connected,
