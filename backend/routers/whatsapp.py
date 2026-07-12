@@ -56,7 +56,9 @@ from services.whatsapp_waha_service import (
     simulate_waha_scan,
     waha_is_mock_mode,
     store_waha_qr,
+    _headers,
 )
+from urllib.parse import urlparse
 from services.encryption_service import encrypt, decrypt
 from services.ai_service import chat_with_agent
 from services.knowledge_service import retrieve_context
@@ -1723,22 +1725,26 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
             logger.info(f"Conversación WAHA {conversation.id} en handoff. Ignorando IA.")
             return {"status": "ignored"}
 
-    # Nota de voz (ptt) o imagen con caption
-    if msg_type == "ptt":
+    # Nota de voz (ptt/audio)
+    if msg_type in ("ptt", "audio"):
         if waha_is_mock_mode():
             user_message_text = "[Nota de Voz Simulada] Hola agente, ¿cómo te va?"
         else:
             try:
-                media_url = payload.get("media") or (payload.get("body") or "")
-                # WAHA puede incluir 'media' (url) o 'base64'
+                media_url = payload.get("media") or payload.get("body", "")
                 audio_bytes = None
-                mime_type = "audio/ogg; codecs=opus"
+                mime_type = payload.get("mimetype") or "audio/ogg; codecs=opus"
                 if payload.get("base64"):
                     import base64
                     audio_bytes = base64.b64decode(payload["base64"])
                 elif media_url:
+                    parsed = urlparse(media_url)
+                    if parsed.hostname in ("localhost", "127.0.0.1"):
+                        download_url = settings.waha_api_url.rstrip("/") + parsed.path
+                    else:
+                        download_url = media_url
                     async with httpx.AsyncClient(timeout=30.0) as client:
-                        dl = await client.get(media_url)
+                        dl = await client.get(download_url, headers=_headers())
                         if dl.status_code == 200:
                             audio_bytes = dl.content
                 if audio_bytes:
