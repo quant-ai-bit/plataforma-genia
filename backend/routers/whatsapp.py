@@ -1469,6 +1469,17 @@ async def health_whatsapp_waha():
     return await check_waha_health()
 
 
+@router.get("/webhook/waha/diag")
+async def waha_webhook_diag():
+    """Retorna el último webhook diagnosticado (para debug)."""
+    import json as _json
+    try:
+        with open("/tmp/waha_last_diag.json") as _f:
+            return _json.loads(_f.read())
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.post("/{agent_id}/waha/sync")
 async def sync_whatsapp_waha(
     agent_id: str,
@@ -1604,6 +1615,25 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
     logger.info(
         f"[WAHA WEBHOOK IMPL] event={data.get('event')}, type={data.get('payload', {}).get('type')}, keys={list(data.keys()) if isinstance(data, dict) else type(data).__name__}"
     )
+
+    # DIAG: log every webhook payload excerpt to /tmp for debugging
+    import json as _json
+    try:
+        _payload = data.get("payload", {})
+        _diag = {
+            "event": data.get("event"),
+            "type": _payload.get("type") if isinstance(_payload, dict) else None,
+            "fromMe": _payload.get("fromMe") if isinstance(_payload, dict) else None,
+            "has_media": bool(_payload.get("media")) if isinstance(_payload, dict) else None,
+            "has_base64": bool(_payload.get("base64")) if isinstance(_payload, dict) else None,
+            "body_len": len(str(_payload.get("body", ""))) if isinstance(_payload, dict) else None,
+            "body_preview": str(_payload.get("body", ""))[:50] if isinstance(_payload, dict) else None,
+            "agent_id": agent_id,
+        }
+        with open("/tmp/waha_last_diag.json", "w") as _f:
+            _f.write(_json.dumps(_diag))
+    except Exception:
+        pass
 
     agent = (
         db.query(Agent).filter(Agent.id == agent_id, Agent.status == "active").first()
