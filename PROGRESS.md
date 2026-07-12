@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-07-12 07:30 (COT) — Deploy fixes + Oracle Cloud plan
+**Plataforma:** opencode
+**Tipo:** 🚀 Despliegue
+
+- Fixes `81f8b5f` + `a3b3b2c` desplegados manualmente a producción (Vercel auto-deploy no funciona desde GitHub).
+- Confirmado: `_deploy:v20260712_voice_fix` en health endpoint.
+- **Próximo paso:** Crear VM en Oracle Cloud Free Tier para migrar WAHA del túnel Cloudflare local a un VPS permanente.
+
+**Estado:** ✅ Completado
+**Pendiente:** Probar notas de voz y texto en WhatsApp. Si funcionan, migrar WAHA a Oracle Cloud.
+
+---
+
 ## 2026-07-12 01:55 (COT) — Fix: 4 bugs críticos en WAHA webhook (respuestas silenciadas + diag spam)
 **Plataforma:** Antigravity
 **Tipo:** 🐛 Corrección
