@@ -1418,6 +1418,7 @@ async def disconnect_whatsapp_waha(
 @router.post("/{agent_id}/waha/restart")
 async def restart_whatsapp_waha(
     agent_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -1439,7 +1440,9 @@ async def restart_whatsapp_waha(
             detail="El agente no tiene una sesión WAHA activa.",
         )
 
-    qr_code = await restart_waha_session(agent.whatsapp_qr_instance_name)
+    base_url = _get_webhook_base_url(request)
+    webhook_url = f"{base_url}/api/whatsapp/webhook/waha/{agent.id}"
+    qr_code = await restart_waha_session(agent.whatsapp_qr_instance_name, webhook_url)
     if not qr_code:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

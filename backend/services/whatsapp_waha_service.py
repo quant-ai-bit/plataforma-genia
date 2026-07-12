@@ -99,7 +99,12 @@ async def create_waha_session(session_name: str, webhook_url: str) -> dict:
     url = f"{settings.waha_api_url}/api/sessions/start"
     payload = {
         "name": session_name,
-        "webhooks": [{"url": webhook_url}],
+        "config": {
+            "webhooks": [{
+                "url": webhook_url,
+                "events": ["message", "session.status", "qr"],
+            }],
+        },
         "waitForScan": True,
     }
     try:
@@ -267,7 +272,7 @@ async def send_waha_image(session_name: str, to_phone: str, image_url: str, capt
         return False
 
 
-async def restart_waha_session(session_name: str) -> str | None:
+async def restart_waha_session(session_name: str, webhook_url: str = "") -> str | None:
     """Reinicia la sesión para regenerar un QR limpio."""
     if waha_is_mock_mode():
         return MOCK_QR_BASE64
@@ -281,7 +286,16 @@ async def restart_waha_session(session_name: str) -> str | None:
                 await client.post(logout_url, headers=_headers())
             except Exception:
                 pass
-            payload = {"name": session_name, "webhooks": [], "waitForScan": True}
+            payload = {"name": session_name, "waitForScan": True}
+            if webhook_url:
+                payload["config"] = {
+                    "webhooks": [{
+                        "url": webhook_url,
+                        "events": ["message", "session.status"],
+                    }],
+                }
+            else:
+                payload["webhooks"] = []
             res = await client.post(start_url, headers=_headers(), json=payload)
             if res.status_code in [200, 201]:
                 data = res.json()
