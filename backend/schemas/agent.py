@@ -7,7 +7,7 @@ de IA dentro de la plataforma GENIA.
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +149,26 @@ class AgentResponse(BaseModel):
     timezone: str = "America/Bogota"
     created_at: datetime
     updated_at: datetime | None
+
+    @field_validator("whatsapp_connected", "whatsapp_qr_connected", "google_calendar_connected", mode="before")
+    @classmethod
+    def default_bool(cls, v):
+        return v if v is not None else False
+
+    @field_validator("whatsapp_provider", mode="before")
+    @classmethod
+    def default_whatsapp_provider(cls, v):
+        return v if v is not None else "meta_cloud"
+
+    @field_validator("stt_provider", mode="before")
+    @classmethod
+    def default_stt_provider(cls, v):
+        return v if v is not None else "groq_whisper"
+
+    @field_validator("timezone", mode="before")
+    @classmethod
+    def default_timezone(cls, v):
+        return v if v is not None else "America/Bogota"
 
 
 class AgentListItem(BaseModel):

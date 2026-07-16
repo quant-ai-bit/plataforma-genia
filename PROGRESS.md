@@ -6,6 +6,101 @@
 
 ---
 
+## 2026-07-16 18:52 (COT) — Fix: Corrección de error de validación de esquemas (500) y restauración de agentes en la plataforma
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección
+
+- **Problema:** Los agentes de IA (como Mia) no aparecían en el dashboard de la plataforma web, mostrando la interfaz vacía al cargar.
+- **Causa raíz:** En la base de datos de producción (PostgreSQL en Supabase), los agentes antiguos tenían valores `None` (NULL) en las columnas agregadas recientemente (`whatsapp_connected`, `whatsapp_provider`, `whatsapp_qr_connected`, `google_calendar_connected`, `stt_provider`, `timezone`). Sin embargo, el esquema Pydantic de salida (`AgentResponse` en backend/schemas/agent.py) requería estrictamente tipos no nulos (ej: `bool`, `str`), lo que causaba un error de validación `ResponseValidationError (500 Internal Server Error)` en el endpoint `GET /api/agents` y bloqueaba la carga de todos los agentes en el frontend.
+- **Solución:**
+  - Se actualizaron todas las filas NULL en la base de datos de producción Supabase a sus valores predeterminados correspondientes (`FALSE`, `'meta_cloud'`, `'groq_whisper'`, `'America/Bogota'`).
+  - Se modificó `backend/schemas/agent.py` añadiendo `@field_validator` de Pydantic v2 a `AgentResponse` para forzar la conversión de cualquier valor `None` que devuelva la base de datos hacia su valor por defecto de manera robusta y resiliente.
+- **Archivos modificados:**
+  - `backend/schemas/agent.py`
+- **Verificación:** Despliegue en producción completado con éxito en Vercel. Validación local del cliente API simulando conexión a producción comprobó que `GET /api/agents` responde exitosamente `200 OK` con todos los agentes en formato correcto.
+
+---
+
+## 2026-07-16 16:50 (COT) — Fix: Corrección de interbloqueo (deadlock) de base de datos al generar código QR de WAHA
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección
+
+- **Problema:** Al hacer clic en "Generar Código QR" en el panel, el sistema se quedaba cargando indefinidamente ("Esperando código QR...") y no lograba generar el QR, registrando timeouts de 60 segundos en Vercel.
+- **Causa raíz:** En `connect_whatsapp_waha` (routers/whatsapp.py), se guardaba `agent.whatsapp_qr_instance_name = session_name` y de inmediato se hacía la llamada HTTP externa a WAHA sin haber hecho `db.commit()` primero. Esto mantenía un bloqueo de fila (Row Lock) activo en la base de datos PostgreSQL. Cuando WAHA intentaba notificar el QR a través del webhook, este se bloqueaba intentando actualizar la misma fila y entraba en interbloqueo (deadlock) mutuo hasta que Vercel finalizaba el hilo por timeout (504).
+- **Solución:**
+  - Se añadió `db.commit()` inmediatamente después de definir y asignar `agent.whatsapp_qr_instance_name` en `connect_whatsapp_waha`, liberando el bloqueo de fila antes de invocar la API de WAHA y el consecuente flujo del webhook.
+- **Archivos modificados:**
+  - `backend/routers/whatsapp.py`
+- **Verificación:** Despliegue en producción completado en Vercel.
+
+---
+
+## 2026-07-16 16:40 (COT) — Infra: Adición de volumen persistente a servicio de WAHA en Railway
+**Plataforma:** Antigravity
+**Tipo:** ⚙️ Infraestructura y Estabilidad
+
+- **Problema:** El agente de WhatsApp se desconectó porque el contenedor de WAHA en Railway se reinició, borrando las sesiones de `/app/.sessions` al no tener un volumen persistente configurado.
+- **Causa raíz:** Falta de volumen persistente asociado a la ruta `/app/.sessions` en el servicio de WAHA en Railway, haciendo que las sesiones fueran efímeras.
+- **Solución:**
+  1. Se utilizó la CLI de Railway para crear e integrar un volumen de datos (`waha-volume`) de 500 MB asociado al servicio `waha` en el entorno de producción.
+  2. Se configuró el punto de montaje en la ruta `/app/.sessions`.
+  3. Se reinició y redesplegó exitosamente el servicio `waha` de Railway, comprobando su estado online y la retención del volumen.
+- **Archivos modificados:** Ninguno (cambio de infraestructura en Railway).
+- **Verificación:** Monitoreo en vivo del despliegue en Railway y ping exitoso al endpoint de salud. Las sesiones creadas a partir de ahora serán persistentes.
+
+---
+
+## 2026-07-16 15:10 (COT) — Fix: Corrección de error de excepción que impedía la auto-rotación de modelos (429/402/404)
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección
+
+- **Problema:** El agente Socio dejó de responder debido a que el modelo configurado (`meta-llama/llama-3.3-70b-instruct:free` en OpenRouter) estaba devolviendo errores 429 de Rate Limit. El sistema de rotación automática no se activaba y arrojaba un error genérico ("Hubo un error procesando tu solicitud...").
+- **Causa raíz:** `post_openrouter_with_retries` lanzaba una excepción genérica `"Límite de reintentos alcanzado para OpenRouter sin una respuesta exitosa."` que no contenía palabras clave del código de error (como 429). Por lo tanto, `is_quota_error` en `chat_with_agent` no lo detectaba como un error de cuota/límites y no iniciaba la auto-rotación.
+- **Solución:**
+  1. Se actualizó `post_openrouter_with_retries` en `ai_service.py` para incluir el status code del último intento en el mensaje de error de la excepción.
+  2. Se expandió la lista de palabras clave en `is_quota_error` en `ai_service.py` para incluir códigos y términos de error comunes (`404`, `403`, `401`, `500`, `reintentos`, etc.), asegurando que cualquier fallo del API dispare la rotación.
+  3. Se ajustaron los crons en `vercel.json` a un intervalo diario (`0 0 * * *` y `0 12 * * *`) debido a que las cuentas Vercel Hobby no permiten crons recurrentes de minutos, logrando hacer el deploy con éxito.
+- **Archivos modificados:**
+  - `backend/services/ai_service.py`
+  - `vercel.json`
+- **Verificación:** Pruebas unitarias de rotación ejecutadas en el entorno virtual (`test_model_rotation.py`) pasando 100% con éxito. Despliegue en producción completado exitosamente a través de Vercel CLI.
+
+---
+
+## 2026-07-16 12:00 (COT) — Fix + Prevención: Sesiones WAHA perdidas tras reinicio de Railway (auto-recuperación + monitor)
+**Plataforma:** opencode
+**Tipo:** 🐛 Corrección + 🚀 Prevención
+
+- **Problema:** El agente Socio dejó de responder en WhatsApp. El servidor WAHA en Railway (`waha-production-379a.up.railway.app`) estaba vivo (v2026.7.1, engine NOWEB) pero con **0 sesiones activas**. La sesión anterior `genia_547c07f7_1783832222` se perdió (404), probablemente por reinicio del contenedor Railway + volumen efímero sin persistencia.
+- **Causa raíz:** Railway reinició el contenedor WAHA y el volumen efímero perdió los datos de sesión de WhatsApp. El backend aún apuntaba a un session_name inexistente en la BD.
+- **Soluciones aplicadas (4 capas de defensa):**
+
+  1. **Auto-recuperación en `GET /{agent_id}/status`** (`routers/whatsapp.py`): Cuando se detecta que la sesión WAHA no existe (404/Session not found), automáticamente recrea la sesión y genera un nuevo QR, actualizando la BD. No requiere intervención manual.
+  
+  2. **Nuevo endpoint `POST /waha/monitor`** (`routers/whatsapp.py`): Monitorea **todos** los agentes con proveedor WAHA, sincroniza session_names, limpia referencias huérfanas. Ideal para ejecutar como cron job.
+  
+  3. **Nuevo endpoint `POST /waha/recover/{agent_id}`** (`routers/whatsapp.py`): Recuperación forzada para un agente específico desde el dashboard.
+  
+  4. **Funciones en `whatsapp_waha_service.py`**: `auto_recover_waha_session()` (crea/reemplaza sesión perdida automáticamente) y `monitor_and_recover_all_agents()` (escanea y repara todos los agentes WAHA).
+  
+  5. **Webhook resiliente** (`routers/whatsapp.py`):
+     - `receive_waha_webhook_auto`: 3 niveles de búsqueda (exacta → prefijo → escaneo completo de agentes)
+     - `_receive_waha_webhook_impl`: Sincroniza `session_name` del payload automáticamente
+     - Todas las llamadas a send/presence usan `effective_session_name` en vez del valor fijo de BD
+  
+  6. **Cron job automático** (`vercel.json`): Se agregó cron `*/10 * * * *` para `POST /api/whatsapp/waha/monitor`, ejecutando health check cada 10 minutos sin intervención.
+
+- **Archivos modificados:**
+  - `backend/services/whatsapp_waha_service.py`: +`auto_recover_waha_session()`, +`monitor_and_recover_all_agents()`
+  - `backend/routers/whatsapp.py`: Auto-recuperación en status, nuevos endpoints monitor/recover, webhook resiliente
+  - `vercel.json`: Cron job cada 10 min para monitor
+- **Verificación:** Código parsea correctamente (AST check pasó).
+
+**Estado:** ✅ Completado
+**Siguiente paso:** Hacer deploy a Vercel producción para que los cambios surtan efecto. Luego verificar que el agente Socio muestre QR en el dashboard y reconectar WhatsApp escaneándolo.
+
+---
+
 ## 2026-07-15 23:02 (COT) — Checkpoint: Agente socio conectado a WhatsApp y mejoras de mensajería/modelos
 **Plataforma:** Antigravity
 **Tipo:** 🚀 Checkpoint / Release
