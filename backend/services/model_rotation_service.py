@@ -12,11 +12,18 @@ logger = logging.getLogger(__name__)
 
 # Catálogo prioritario de modelos gratuitos y de alta disponibilidad
 FREE_MODELS = [
-    {"provider": "gemini", "model": "gemini-2.0-flash", "priority": 1},
-    {"provider": "groq", "model": "llama-3.3-70b-versatile", "priority": 2},
-    {"provider": "groq", "model": "llama-3.1-8b-instant", "priority": 3},
-    {"provider": "openrouter", "model": "deepseek/deepseek-chat", "priority": 4},
-    {"provider": "openrouter", "model": "openai/gpt-4o-mini", "priority": 5},
+    # Ordenados por costo de tokens (más baratos primero) y confiabilidad
+    {"provider": "gemini", "model": "gemini-2.0-flash", "priority": 1},          # 1M TPM, gratis
+    {"provider": "gemini", "model": "gemini-2.5-flash", "priority": 2},          # 1M TPM, gratis (nueva versión)
+    {"provider": "gemini", "model": "gemini-1.5-flash", "priority": 3},          # 1M TPM, gratis
+    {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free", "priority": 4},  # Gratis, OpenRouter
+    {"provider": "openrouter", "model": "meta-llama/llama-3.1-8b-instruct:free", "priority": 5},   # Gratis, OpenRouter
+    {"provider": "openrouter", "model": "google/gemma-2-9b-it:free", "priority": 6},               # Gratis, OpenRouter
+    {"provider": "openrouter", "model": "qwen/qwen-2.5-72b-instruct:free", "priority": 7},          # Gratis, OpenRouter
+    {"provider": "openrouter", "model": "deepseek/deepseek-chat", "priority": 8},  # $0.14/1M input, muy barato
+    {"provider": "openrouter", "model": "openai/gpt-4o-mini", "priority": 9},   # $0.15/1M input, barato
+    {"provider": "groq", "model": "llama-3.1-8b-instant", "priority": 10},       # 30K TPM, gratis
+    {"provider": "groq", "model": "llama-3.3-70b-versatile", "priority": 11},    # 6K TPM, gratis pero limitado
 ]
 
 # Cuotas teóricas oficiales y estimadas de los modelos gratuitos
@@ -29,6 +36,13 @@ FREE_MODELS_QUOTAS = {
         "reset_time_description": "RPM y TPM se recargan cada minuto. RPD se recarga diariamente a las 08:00 UTC.",
     },
     "gemini-2.5-flash": {
+        "rpm": 15,
+        "tpm": 1000000,
+        "rpd": 1500,
+        "tpd": None,
+        "reset_time_description": "RPM y TPM se recargan cada minuto. RPD se recarga diariamente a las 08:00 UTC.",
+    },
+    "gemini-1.5-flash": {
         "rpm": 15,
         "tpm": 1000000,
         "rpd": 1500,
@@ -65,6 +79,34 @@ FREE_MODELS_QUOTAS = {
     },
     "openai/gpt-4o-mini": {
         "rpm": 10,
+        "tpm": 100000,
+        "rpd": 2000,
+        "tpd": None,
+        "reset_time_description": "Límites diarios se recargan a las 00:00 UTC.",
+    },
+    "meta-llama/llama-3.3-70b-instruct:free": {
+        "rpm": 20,
+        "tpm": 100000,
+        "rpd": 2000,
+        "tpd": None,
+        "reset_time_description": "Límites diarios se recargan a las 00:00 UTC.",
+    },
+    "meta-llama/llama-3.1-8b-instruct:free": {
+        "rpm": 20,
+        "tpm": 100000,
+        "rpd": 2000,
+        "tpd": None,
+        "reset_time_description": "Límites diarios se recargan a las 00:00 UTC.",
+    },
+    "google/gemma-2-9b-it:free": {
+        "rpm": 20,
+        "tpm": 100000,
+        "rpd": 2000,
+        "tpd": None,
+        "reset_time_description": "Límites diarios se recargan a las 00:00 UTC.",
+    },
+    "qwen/qwen-2.5-72b-instruct:free": {
+        "rpm": 20,
         "tpm": 100000,
         "rpd": 2000,
         "tpd": None,

@@ -26,6 +26,20 @@ services:
       retries: 3
       start_period: 20s
 
+  audio-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    restart: unless-stopped
+    expose:
+      - "4000"
+    environment:
+      - GENIA_BACKEND_URL=${GENIA_BACKEND_URL}
+      - WAHA_API_KEY=${WAHA_API_KEY}
+      - WAHA_LOCAL_URL=http://waha:3000
+    depends_on:
+      - waha
+
   caddy:
     image: caddy:2
     restart: unless-stopped
@@ -38,6 +52,7 @@ services:
       - caddy-config:/config
     depends_on:
       - waha
+      - audio-proxy
 
 volumes:
   waha-data:

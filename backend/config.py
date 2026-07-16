@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     # WAHA (WhatsApp HTTP API, open-source, Baileys-based)
     waha_api_url: str = ""
     waha_api_key: str = ""
+    waha_webhook_url: str = ""
 
     # Supabase (JWT Secret para autenticación y almacenamiento)
     supabase_jwt_secret: str = ""
@@ -69,6 +70,8 @@ class Settings(BaseSettings):
         return [
             "llama-3.3-70b-versatile",
             "llama-3.1-8b-instant",
+            "llama3-8b-8192",
+            "gemma2-9b-it",
         ]
 
     @property
@@ -77,6 +80,7 @@ class Settings(BaseSettings):
         return [
             "gemini-2.5-flash",
             "gemini-2.0-flash",
+            "gemini-1.5-flash",
         ]
 
     @property
@@ -86,6 +90,10 @@ class Settings(BaseSettings):
             "deepseek/deepseek-chat",
             "google/gemini-2.5-flash",
             "openai/gpt-4o-mini",
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "meta-llama/llama-3.1-8b-instruct:free",
+            "google/gemma-2-9b-it:free",
+            "qwen/qwen-2.5-72b-instruct:free",
             "openai/gpt-4o",
             "anthropic/claude-3.5-sonnet",
         ]

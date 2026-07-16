@@ -4,5 +4,9 @@
 #       reverse_proxy waha:3000
 #   }
 waha.example.com {
-    reverse_proxy waha:3000
+    # Redirigir webhooks de WhatsApp al Proxy de Audio
+    reverse_proxy /webhook/waha/* audio-proxy:4000
+
+    # Redirigir el resto del tráfico REST directamente a WAHA
+    reverse_proxy * waha:3000
 }

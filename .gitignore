@@ -57,6 +57,7 @@ coverage.xml
 # Logs
 *.log
 *.json.log
+backend/proxy_log.txt
 
 # Debug files
 .dbg/

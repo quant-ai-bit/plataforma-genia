@@ -11,6 +11,7 @@ Endpoints adicionales para conectar/desconectar/verificar WhatsApp
 por agente desde el dashboard.
 """
 
+import asyncio
 from datetime import datetime, timezone, timedelta
 import logging
 import httpx
@@ -57,6 +58,7 @@ from services.whatsapp_waha_service import (
     waha_is_mock_mode,
     store_waha_qr,
     _headers,
+    set_waha_presence,
 )
 from urllib.parse import urlparse
 from services.encryption_service import encrypt, decrypt
@@ -599,7 +601,12 @@ async def get_whatsapp_status(
     if whatsapp_provider == "meta_cloud":
         webhook_url = f"{base_url}/api/whatsapp/webhook"
     elif whatsapp_provider == "waha":
-        webhook_url = f"{base_url}/api/whatsapp/webhook/waha/{agent.id}"
+        if settings.waha_webhook_url:
+            webhook_url = settings.waha_webhook_url.replace("{agent_id}", str(agent.id))
+            if "{agent_id}" not in settings.waha_webhook_url:
+                webhook_url = f"{settings.waha_webhook_url.rstrip('/')}/{agent.id}"
+        else:
+            webhook_url = f"{base_url}/api/whatsapp/webhook/waha/{agent.id}"
     else:
         webhook_url = f"{base_url}/api/whatsapp/webhook/qr/{agent.id}"
 
@@ -658,22 +665,68 @@ async def get_whatsapp_status(
                 pass
 
         if session_name:
-            verification = await verify_waha_connection(session_name)
-            result["connected"] = verification["connected"]
-            result["whatsapp_qr_connected"] = verification["connected"]
-            result["phone_number"] = verification.get("phone_number")
-            result["display_name"] = verification.get("display_name")
-            result["error"] = verification.get("error")
+            import time
+            # 1. Control de expiración del código QR (300 segundos de duración máxima para escaneo)
+            expired = False
+            parts = session_name.split("_")
+            if len(parts) >= 3:
+                try:
+                    created_ts = int(parts[-1])
+                    age = time.time() - created_ts
+                    if age > 300:  # Expirar si pasan más de 300 segundos (5 minutos)
+                        expired = True
+                        logger.info(f"[WAHA STATUS] Sesión '{session_name}' expiró por inactividad (age={age:.1f}s). Limpiando.")
+                except Exception:
+                    pass
 
-            if not verification["connected"]:
-                persisted = getattr(agent, "whatsapp_qr_code", None)
-                result["qr_code"] = persisted or await get_waha_qr(session_name)
-            else:
-                result["qr_code"] = None
-
-            if agent.whatsapp_qr_connected != verification["connected"]:
-                agent.whatsapp_qr_connected = verification["connected"]
+            if expired:
+                await delete_waha_session(session_name)
+                agent.whatsapp_qr_instance_name = None
+                agent.whatsapp_qr_code = None
+                agent.whatsapp_qr_connected = False
                 db.commit()
+                
+                result["connected"] = False
+                result["whatsapp_qr_connected"] = False
+                result["qr_code"] = None
+                result["error"] = None
+            else:
+                verification = await verify_waha_connection(session_name)
+                
+                # Si el servidor WAHA reporta que la sesión no existe (404 / Session not found), limpiamos
+                is_not_found = False
+                if verification.get("error") and ("Session not found" in verification.get("error") or "404" in verification.get("error")):
+                    is_not_found = True
+                    logger.info(f"[WAHA STATUS] Sesión '{session_name}' no encontrada en servidor WAHA. Limpiando BD.")
+                
+                if is_not_found:
+                    agent.whatsapp_qr_instance_name = None
+                    agent.whatsapp_qr_code = None
+                    agent.whatsapp_qr_connected = False
+                    db.commit()
+                    
+                    result["connected"] = False
+                    result["whatsapp_qr_connected"] = False
+                    result["qr_code"] = None
+                    result["error"] = None
+                else:
+                    result["connected"] = verification["connected"]
+                    result["whatsapp_qr_connected"] = verification["connected"]
+                    result["phone_number"] = verification.get("phone_number")
+                    result["display_name"] = verification.get("display_name")
+                    
+                    # No propagamos el error crudo de WAHA al frontend para evitar alertas rojas feas
+                    result["error"] = None
+                    
+                    if not verification["connected"]:
+                        result["qr_code"] = getattr(agent, "whatsapp_qr_code", None) or await get_waha_qr(session_name)
+                    else:
+                        result["qr_code"] = None
+                        agent.whatsapp_qr_code = None  # Limpiar QR de la BD una vez conectado
+                        
+                    if agent.whatsapp_qr_connected != verification["connected"]:
+                        agent.whatsapp_qr_connected = verification["connected"]
+                        db.commit()
         else:
             result["connected"] = False
             result["whatsapp_qr_connected"] = False
@@ -1311,6 +1364,9 @@ async def connect_whatsapp_waha(
     """
     Inicializa una sesión WAHA (WhatsApp HTTP API) para vincular el agente
     mediante código QR. Crea la sesión, configura el webhook y retorna el QR.
+
+    Soporta multi-agente: reusa sesiones existentes WORKING/CONNECTED
+    para evitar duplicar sesiones por agente.
     """
     query = db.query(Agent).filter(Agent.id == agent_id)
     if current_user["id"] != "local_dev_user":
@@ -1323,19 +1379,85 @@ async def connect_whatsapp_waha(
             detail=f"Agente {agent_id} no encontrado.",
         )
 
+    from services.whatsapp_waha_service import list_waha_sessions
+
     import time
 
-    # Eliminar sesión previa si existe para evitar acumular sesiones huérfanas
+    # 1. Buscar si ya existe una sesión WORKING/CONNECTED para este agente
+    agent_prefix = f"genia_{agent.id[:8]}"
+    try:
+        sessions = await list_waha_sessions()
+        for s in sessions:
+            name = s.get("name", "")
+            status = s.get("status", "").upper()
+            me = s.get("me") or {}
+            if name.startswith(agent_prefix) and status in ("WORKING", "CONNECTED") and me.get("id"):
+                # Sesión ya conectada → reusarla
+                logger.info(f"[WAHA CONNECT] Reusando sesión existente CONECTADA: '{name}'")
+                agent.whatsapp_qr_instance_name = name
+                agent.whatsapp_qr_connected = True
+                agent.whatsapp_qr_code = None
+                agent.whatsapp_provider = "waha"
+                channels = agent.channels or []
+                if "whatsapp" not in channels:
+                    agent.channels = channels + ["whatsapp"]
+                db.commit()
+                return {
+                    "status": "connected",
+                    "session_name": name,
+                    "qr_code": None,
+                    "phone_number": str(me.get("id", "")).split("@")[0],
+                    "display_name": me.get("pushName"),
+                    "message": f"Agente ya conectado vía sesión '{name}'.",
+                }
+    except Exception as e:
+        logger.warning(f"[WAHA CONNECT] Error al buscar sesiones existentes: {e}")
+
+    # 2. Buscar si hay sesión SCAN_QR_CODE (en espera de escaneo) para este agente
+    try:
+        sessions = await list_waha_sessions()
+        for s in sessions:
+            name = s.get("name", "")
+            status = s.get("status", "").upper()
+            if name.startswith(agent_prefix) and status == "SCAN_QR_CODE":
+                # Reusar sesión en espera de QR
+                logger.info(f"[WAHA CONNECT] Reusando sesión en espera de QR: '{name}'")
+                existing_qr = await get_waha_qr(name)
+                if existing_qr:
+                    agent.whatsapp_qr_instance_name = name
+                    agent.whatsapp_qr_code = existing_qr
+                    store_waha_qr(name, existing_qr)
+                    agent.whatsapp_provider = "waha"
+                    channels = agent.channels or []
+                    if "whatsapp" not in channels:
+                        agent.channels = channels + ["whatsapp"]
+                    db.commit()
+                    return {
+                        "status": "connecting",
+                        "session_name": name,
+                        "qr_code": existing_qr,
+                        "message": "Escanea el código QR desde tu celular en WhatsApp > Dispositivos Vinculados.",
+                    }
+    except Exception:
+        pass
+
+    # 3. Eliminar sesión previa si existe (solo si no estaba WORKING)
     if agent.whatsapp_qr_instance_name:
         logger.info(f"Eliminando sesión WAHA previa '{agent.whatsapp_qr_instance_name}'.")
         await delete_waha_session(agent.whatsapp_qr_instance_name)
 
+    # 4. Crear nueva sesión con timestamp único
     session_name = f"genia_{agent.id[:8]}_{int(time.time())}"
     agent.whatsapp_qr_instance_name = session_name
 
-    # Webhook apuntando al host actual
+    # Webhook apuntando al host actual (o al proxy del VPS si aplica)
     base_url = _get_webhook_base_url(request)
-    webhook_url = f"{base_url}/api/whatsapp/webhook/waha/{agent.id}"
+    if settings.waha_webhook_url:
+        webhook_url = settings.waha_webhook_url.replace("{agent_id}", str(agent.id))
+        if "{agent_id}" not in settings.waha_webhook_url:
+            webhook_url = f"{settings.waha_webhook_url.rstrip('/')}/{agent.id}"
+    else:
+        webhook_url = f"{base_url}/api/whatsapp/webhook/waha/{agent.id}"
 
     init_res = await create_waha_session(session_name, webhook_url)
     if init_res.get("status") == "error":
@@ -1347,25 +1469,21 @@ async def connect_whatsapp_waha(
     qr_code = init_res.get("qr")
 
     # Si WAHA no devolvió el QR en la respuesta, esperar hasta 10s
-    # consultando la BD (webhook) y REST endpoint correcto.
     if not qr_code:
         import asyncio
         for attempt in range(10):
             await asyncio.sleep(1)
-            # 1. Ver si el webhook ya guardó el QR en BD
             db.refresh(agent)
             if agent.whatsapp_qr_code:
                 qr_code = agent.whatsapp_qr_code
                 logger.info(f"QR recibido vía webhook WAHA tras {attempt + 1}s.")
                 break
-            # 2. Intentar REST directo con endpoint correcto
             rest_qr = await get_waha_qr(session_name)
             if rest_qr:
                 qr_code = rest_qr
                 logger.info(f"QR obtenido vía REST WAHA tras {attempt + 1}s.")
                 break
 
-    # Persistir QR en BD para que el status endpoint lo encuentre
     if qr_code:
         agent.whatsapp_qr_code = qr_code
         store_waha_qr(session_name, qr_code)
@@ -1443,7 +1561,12 @@ async def restart_whatsapp_waha(
         )
 
     base_url = _get_webhook_base_url(request)
-    webhook_url = f"{base_url}/api/whatsapp/webhook/waha/{agent.id}"
+    if settings.waha_webhook_url:
+        webhook_url = settings.waha_webhook_url.replace("{agent_id}", str(agent.id))
+        if "{agent_id}" not in settings.waha_webhook_url:
+            webhook_url = f"{settings.waha_webhook_url.rstrip('/')}/{agent.id}"
+    else:
+        webhook_url = f"{base_url}/api/whatsapp/webhook/waha/{agent.id}"
     qr_code = await restart_waha_session(agent.whatsapp_qr_instance_name, webhook_url)
     if not qr_code:
         raise HTTPException(
@@ -1470,6 +1593,27 @@ async def health_whatsapp_waha():
     # Include deploy version marker
     health["_deploy"] = "v20260712_voice_fix"
     return health
+
+
+@router.get("/waha/sessions")
+async def list_all_waha_sessions():
+    """
+    Lista todas las sesiones WAHA activas con su estado.
+    Útil para monitorear múltiples agentes simultáneamente.
+    """
+    from services.whatsapp_waha_service import get_multi_session_stats
+    stats = await get_multi_session_stats()
+    return stats
+
+
+@router.post("/waha/cleanup")
+async def cleanup_waha_sessions():
+    """
+    Limpia sesiones WAHA huérfanas o caídas automáticamente.
+    """
+    from services.whatsapp_waha_service import cleanup_stale_sessions
+    result = await cleanup_stale_sessions()
+    return result
 
 
 @router.post("/{agent_id}/waha/sync")
@@ -1574,17 +1718,157 @@ async def simulate_scan_waha(
 
 
 @router.get("/webhook/waha/diag")
-async def waha_webhook_diag():
-    """Diagnóstico: verifica qué API keys están configuradas en Vercel."""
+async def waha_webhook_diag(db: Session = Depends(get_db)):
+    """Diagnóstico: verifica API keys y configuración del agente."""
     from config import settings
+    agents = db.query(Agent).limit(5).all()
+    agent_info = [
+        {
+            "id": str(a.id)[:20],
+            "name": a.name,
+            "provider": a.provider,
+            "model": a.model,
+            "status": a.status,
+            "instance": a.whatsapp_qr_instance_name,
+        }
+        for a in agents
+    ]
     return {
-        "groq_key_set": bool(settings.groq_api_key),
-        "gemini_key_set": bool(settings.gemini_api_key),
-        "openrouter_key_set": bool(settings.openrouter_api_key),
-        "waha_api_url": settings.waha_api_url[:50] + "..." if settings.waha_api_url else None,
-        "waha_api_key_set": bool(settings.waha_api_key),
-        "database_url_set": bool(settings.database_url),
+        "api_keys": {
+            "groq": bool(settings.groq_api_key),
+            "gemini": bool(settings.gemini_api_key),
+            "openrouter": bool(settings.openrouter_api_key),
+        },
+        "agents": agent_info,
+        "db_connected": True,
     }
+
+
+@router.post("/webhook/waha/ai-test")
+async def waha_ai_test(db: Session = Depends(get_db)):
+    """Prueba directa de IA para diagnosticar errores."""
+    from config import settings
+    import traceback, sys
+    results = {}
+    from services.ai_service import chat_with_agent
+
+    agent = db.query(Agent).filter(Agent.status == "active", Agent.whatsapp_qr_instance_name.isnot(None)).first()
+    if not agent:
+        return {"error": "No active WAHA agent found"}
+
+    # Test 1: Direct Gemini call to see exact error
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=settings.gemini_api_key)
+        gm = genai.GenerativeModel("gemini-2.0-flash")
+        gr = gm.generate_content("Hi", generation_config={"max_output_tokens": 10})
+        results["direct_gemini"] = {"ok": True, "text": gr.text[:50]}
+    except Exception as e:
+        results["direct_gemini"] = {"ok": False, "error": str(e)[:300], "type": type(e).__name__}
+
+    # Test 2: chat_with_agent with Gemini (agent's actual config)
+    from services.ai_service import chat_with_agent
+    from services.mcp_registry import mcp_registry
+
+    # Test 2a: MCP registry - get tools
+    try:
+        tools, origin_map = await mcp_registry.get_tools_for_agent(
+            db=db, agent_id=agent.id, custom_fields=agent.custom_fields or []
+        )
+        results["mcp_tools"] = {"count": len(tools), "names": [t["function"]["name"] for t in tools]}
+    except Exception as e:
+        results["mcp_tools"] = {"error": str(e)[:300], "type": type(e).__name__}
+        tools, origin_map = [], {}  # fallback
+
+    # Test 2b: Execute save_lead_info directly
+    if tools:
+        try:
+            result = await mcp_registry.execute_tool(
+                tool_name="save_lead_info",
+                arguments={"name": "Test"},
+                tool_origin_map=origin_map,
+                agent_id=agent.id,
+                db=db,
+            )
+            results["mcp_save_lead"] = {"ok": True, "result": str(result)[:200]}
+        except Exception as e:
+            results["mcp_save_lead"] = {"ok": False, "error": str(e)[:300], "type": type(e).__name__}
+
+    # Show system prompt preview and full length
+    sys_prompt = agent.system_prompt or ""
+    results["system_prompt_info"] = {
+        "length": len(sys_prompt),
+        "preview": sys_prompt[:500],
+        "has_unicode": any(ord(c) > 127 for c in sys_prompt),
+        "has_url": "http" in sys_prompt.lower(),
+    }
+
+    # Test 3: Call Groq API directly with the real system prompt
+    from groq import AsyncGroq
+    groq_direct = AsyncGroq(api_key=settings.groq_api_key)
+    try:
+        groq_resp = await groq_direct.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": "Hola, ¿cómo estás?"},
+            ],
+            temperature=0.7,
+            max_tokens=100,
+        )
+        groq_text = groq_resp.choices[0].message.content or ""
+        results["groq_direct_real_prompt"] = {"ok": True, "reply": groq_text[:200]}
+    except Exception as e:
+        results["groq_direct_real_prompt"] = {"ok": False, "error": str(e)[:300], "type": type(e).__name__}
+
+    # Test 4: Also test with truncated prompt (first 1000 chars)
+    try:
+        groq_resp2 = await groq_direct.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": sys_prompt[:1000]},
+                {"role": "user", "content": "Hola, ¿cómo estás?"},
+            ],
+            temperature=0.7,
+            max_tokens=100,
+        )
+        groq_text2 = groq_resp2.choices[0].message.content or ""
+        results["groq_direct_truncated"] = {"ok": True, "reply": groq_text2[:200]}
+    except Exception as e:
+        results["groq_direct_truncated"] = {"ok": False, "error": str(e)[:200]}
+
+    # Test 4: agent details
+    results["agent_info"] = {
+        "name": agent.name, "provider": agent.provider, "model": agent.model,
+        "has_system_prompt": bool(agent.system_prompt),
+        "temperature": agent.temperature, "max_tokens": agent.max_tokens,
+    }
+
+    return results
+
+
+@router.post("/webhook/waha")
+async def receive_waha_webhook_auto(request: Request, db: Session = Depends(get_db)):
+    """Webhook WAHA sin agent_id — auto-detecta el agente desde la sesión."""
+    try:
+        data = await request.json()
+    except Exception:
+        return {"status": "error", "detail": "Invalid JSON"}
+
+    session_name = data.get("session") or ""
+    if not session_name:
+        logger.warning("[WAHA AUTO] No session name in payload")
+        return {"status": "ignored"}
+
+    agent = db.query(Agent).filter(
+        Agent.whatsapp_qr_instance_name == session_name,
+        Agent.status == "active",
+    ).first()
+    if not agent:
+        logger.warning(f"[WAHA AUTO] No active agent for session '{session_name}'")
+        return {"status": "ignored"}
+
+    return await _receive_waha_webhook_impl(str(agent.id), db, data)
 
 
 @router.post("/webhook/waha/{agent_id}")
@@ -1818,6 +2102,13 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
     if not user_message_text or not user_message_text.strip():
         return {"status": "ignored"}
 
+    # Establecer estado "typing" para simular comportamiento humano
+    await set_waha_presence(
+        session_name=agent.whatsapp_qr_instance_name,
+        to_phone=phone_number,
+        presence="typing"
+    )
+
     # Responder con IA
     from config import settings
     logger.info(
@@ -1851,10 +2142,23 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
     # Log AI reply diagnostic
     logger.info("[WAHA AI REPLY DIAG] reply_preview=%s reply_len=%d", str(reply)[:100], len(reply))
 
+    # Simular retraso de escritura humana basado en la longitud del texto
+    # (0.015 segundos por carácter, con un máximo de 4 segundos)
+    delay_s = min(len(reply) * 0.015, 4.0)
+    if delay_s > 0.5:
+        await asyncio.sleep(delay_s)
+
     send_success = await send_waha_text(
         session_name=agent.whatsapp_qr_instance_name,
         to_phone=phone_number,
         text=reply,
+    )
+
+    # Limpiar estado "typing" estableciendo "paused"
+    await set_waha_presence(
+        session_name=agent.whatsapp_qr_instance_name,
+        to_phone=phone_number,
+        presence="paused"
     )
 
     if not send_success:
@@ -2233,3 +2537,165 @@ def _extract_qr_message_details(data: dict, agent: Agent) -> dict | None:
         "message_content": message_content,
         "full_message_obj": message_data,
     }
+
+
+# Helper para enviar mensajes de WhatsApp de forma unificada según el proveedor del agente
+async def send_agent_whatsapp_msg(db: Session, agent: Agent, to_phone: str, text: str) -> bool:
+    if agent.whatsapp_provider == "meta_cloud":
+        _phone_id = agent.whatsapp_phone_number_id or ""
+        _token = decrypt(agent.whatsapp_access_token) if agent.whatsapp_access_token else ""
+        if not _phone_id or not _token:
+            logger.error(f"Configuración Meta incompleta para agente {agent.id}")
+            return False
+        try:
+            await send_whatsapp_text(to_phone, text, _phone_id, _token)
+            return True
+        except Exception as e:
+            logger.error(f"Error enviando mensaje Meta: {e}")
+            return False
+    elif agent.whatsapp_provider == "waha":
+        return await send_waha_text(
+            session_name=agent.whatsapp_qr_instance_name,
+            to_phone=to_phone,
+            text=text
+        )
+    else:
+        # Evolution API / qr_code
+        token_decrypted = (
+            decrypt(agent.whatsapp_qr_instance_token)
+            if agent.whatsapp_qr_instance_token
+            else None
+        )
+        return await send_qr_text(
+            instance_name=agent.whatsapp_qr_instance_name,
+            to_phone=to_phone,
+            text=text,
+            token=token_decrypted,
+        )
+
+
+@router.get("/check-inactivity")
+async def check_inactivity(db: Session = Depends(get_db)):
+    """
+    Cron endpoint called periodically (e.g. every 5-10 minutes) to find abandoned conversations 
+    and send follow-up messages or notify the commercial team.
+    """
+    now = datetime.now(timezone.utc)
+    
+    # 1. Obtener todas las conversaciones activas del canal WhatsApp
+    active_convs = db.query(Conversation).filter(
+        Conversation.channel == "whatsapp",
+        Conversation.status == "active"
+    ).all()
+    
+    processed = 0
+    for conv in active_convs:
+        # Traer el último mensaje de la conversación para ver quién lo envió y cuándo
+        last_msg = db.query(Message).filter(
+            Message.conversation_id == conv.id
+        ).order_by(Message.sent_at.desc()).first()
+        
+        if not last_msg:
+            continue
+            
+        # Comprobar la diferencia de tiempo desde el último mensaje
+        last_msg_time = last_msg.sent_at
+        if last_msg_time.tzinfo is None:
+            last_msg_time = last_msg_time.replace(tzinfo=timezone.utc)
+            
+        time_diff = now - last_msg_time
+        
+        # Obtener el agente de la conversación
+        agent = conv.agent
+        if not agent:
+            continue
+            
+        # Caso A: El último mensaje fue enviado por el USUARIO, y ha pasado más de 1 HORA sin respuesta del asistente
+        if last_msg.role == "user":
+            if time_diff >= timedelta(hours=1):
+                followup_text = "¿Necesitas información adicional sobre nuestros espacios?"
+                
+                # Guardar el mensaje del asistente en la BD
+                followup_msg = Message(
+                    conversation_id=conv.id,
+                    role="assistant",
+                    content=followup_text,
+                    media_type="text"
+                )
+                db.add(followup_msg)
+                conv.last_message_at = now
+                db.commit()
+                
+                # Enviar el mensaje de WhatsApp real
+                await send_agent_whatsapp_msg(db, agent, conv.contact_phone, followup_text)
+                logger.info(f"[INACTIVITY] Enviado primer seguimiento a {conv.contact_phone} para conv {conv.id}")
+                processed += 1
+                
+        # Caso B: El último mensaje fue el primer seguimiento del asistente, y han pasado más de 30 minutos sin respuesta
+        elif last_msg.role == "assistant" and last_msg.content == "¿Necesitas información adicional sobre nuestros espacios?":
+            if time_diff >= timedelta(minutes=30):
+                second_text = "Que tengas un feliz día. Cualquier inquietud estaré atenta."
+                
+                second_msg = Message(
+                    conversation_id=conv.id,
+                    role="assistant",
+                    content=second_text,
+                    media_type="text"
+                )
+                db.add(second_msg)
+                conv.last_message_at = now
+                conv.status = "handoff" # Cambiar estado a handoff
+                db.commit()
+                
+                # Enviar el segundo mensaje de WhatsApp real
+                await send_agent_whatsapp_msg(db, agent, conv.contact_phone, second_text)
+                logger.info(f"[INACTIVITY] Enviado segundo seguimiento/cierre a {conv.contact_phone} para conv {conv.id}")
+                
+                # Notificar al comercial
+                if agent.notification_phone:
+                    from models.lead import Lead
+                    lead = db.query(Lead).filter(Lead.conversation_id == conv.id).first()
+                    
+                    captured_summary = []
+                    lead_values = {}
+                    if lead:
+                        lead_values = {
+                            "name": lead.name,
+                            "email": lead.email,
+                            "phone": lead.phone,
+                        }
+                        if lead.custom_data:
+                            lead_values.update(lead.custom_data)
+                            
+                    # Campos configurados del agente
+                    custom_fields = agent.custom_fields or []
+                    for field in custom_fields:
+                        if isinstance(field, dict):
+                            key = field.get("key")
+                            label = field.get("label", key)
+                            val = lead_values.get(key)
+                            if val is not None and str(val).strip() != "":
+                                captured_summary.append(f"• *{label}*: {val}")
+                                
+                    if captured_summary:
+                        summary_text = "\n".join(captured_summary)
+                    else:
+                        summary_text = "No se capturaron datos adicionales."
+                        
+                    notification_text = (
+                        f"⏳ *Notificación de Inactividad (Lead Incompleto)*\n\n"
+                        f"El cliente ha dejado la conversación incompleta en WhatsApp.\n"
+                        f"Se le enviaron los recordatorios y se cerró el flujo automático.\n\n"
+                        f"*Datos Capturados hasta el momento:*\n{summary_text}\n\n"
+                        f"Teléfono Cliente: {conv.contact_phone}\n"
+                        f"ID Conversación: `{conv.id}`"
+                    )
+                    
+                    # Enviar notificación al comercial
+                    await send_agent_whatsapp_msg(db, agent, agent.notification_phone, notification_text)
+                    logger.info(f"[INACTIVITY] Enviada notificación de inactividad de {conv.contact_phone} al comercial {agent.notification_phone}")
+                
+                processed += 1
+                
+    return {"status": "success", "processed": processed}
+

@@ -6,16 +6,214 @@
 
 ---
 
-## 2026-07-12 07:30 (COT) — Deploy fixes + Oracle Cloud plan
+## 2026-07-15 23:02 (COT) — Checkpoint: Agente socio conectado a WhatsApp y mejoras de mensajería/modelos
+**Plataforma:** Antigravity
+**Tipo:** 🚀 Checkpoint / Release
+
+- **Estado de WhatsApp:** El agente socio se vinculó y conectó de nuevo exitosamente.
+- **Mejoras en WAHA y Mensajería:**
+  - Integración nativa de envío de imágenes desde Markdown (`![alt](url)`) a través de WAHA.
+  - Gestión de presencia ("typing" / "paused").
+  - Endpoint de inactividad `/check-inactivity` para enviar recordatorios, cambiar a `handoff` y notificar al comercial si expira el tiempo.
+  - Setup de producción de WAHA actualizado para incluir un proxy de audio local (`audio-proxy`) para convertir notas de voz a base64 antes de reenviarlas a Vercel.
+- **Mejoras en Modelos:**
+  - Nuevos modelos agregados al catálogo de rotación gratuita (Gemma 2 9B, Qwen 2.5 72B, Llama 3.3 70B, Llama 3.1 8B y Gemini 1.5/2.5 Flash).
+- **Archivos modificados/agregados:**
+  - `PROGRESS.md`
+  - `backend/config.py`
+  - `backend/routers/whatsapp.py`
+  - `backend/services/ai_service.py`
+  - `backend/services/model_rotation_service.py`
+  - `backend/services/whatsapp_waha_service.py`
+  - `deploy/waha/*` (setup.sh, Caddyfile, docker-compose.yml, etc.)
+
+**Estado:** 🎉 Conectado y operativo.
+**Siguiente paso:** Continuar con mejoras adicionales en la plataforma.
+
+---
+
+## 2026-07-15 22:50 (COT) — Proxy túnel ngrok + HTTP CONNECT local funcionando — QR generado
 **Plataforma:** opencode
-**Tipo:** 🚀 Despliegue
+**Tipo:** 🐛 Corrección (proxy WebSocket)
 
-- Fixes `81f8b5f` + `a3b3b2c` desplegados manualmente a producción (Vercel auto-deploy no funciona desde GitHub).
-- Confirmado: `_deploy:v20260712_voice_fix` en health endpoint.
-- **Próximo paso:** Crear VM en Oracle Cloud Free Tier para migrar WAHA del túnel Cloudflare local a un VPS permanente.
+- **Problema:** Railway WAHA no puede conectar WebSocket a WhatsApp Web (IPs de datacenter bloqueadas). Tanto WEBJS como NOWEB fallan con `WebSocket Error ()`.
+- **Solución:** Se configuró un túnel TCP ngrok desde esta máquina hacia Railway como `WHATSAPP_PROXY_SERVER`.
+  - Local: HTTP CONNECT proxy en Node.js (puerto 1080) → reenvía conexiones a WhatsApp Web
+  - Ngrok: `tcp 1080` → URL pública `4.tcp.ngrok.io:17196`
+  - Railway: `WHATSAPP_PROXY_SERVER=4.tcp.ngrok.io:17196` (sin protocolo)
+- **Verificación:** Sesión `genia_test_proxy` creada exitosamente → estado `SCAN_QR_CODE`. QR generado como PNG.
+- **Archivos creados:**
+  - `$env:TEMP\http-proxy.js` — Proxy HTTP CONNECT local
+- **Infraestructura local:** ngrok 3.3.1 instalado, npm global `socks5-server` instalado (no usado), ngrok authtoken configurado.
+- **Pendiente:** El túnel ngrok + proxy deben mantenerse corriendo mientras se vincule WhatsApp. Si esta terminal se cierra, se pierde el proxy.
 
-**Estado:** ✅ Completado
-**Pendiente:** Probar notas de voz y texto en WhatsApp. Si funcionan, migrar WAHA a Oracle Cloud.
+**Estado:** 🚧 En progreso — WAHA conectado, QR listo para escanear.
+**Siguiente paso:** Usuario escanea QR con WhatsApp en su celular.
+
+---
+
+## 2026-07-15 22:05 (COT) — Fix: motor WEBJS falla en Railway (Chromium no arranca) + API sessions actualizada
+**Plataforma:** opencode
+**Tipo:** 🐛 Corrección
+
+- **Causa raíz de QR no generado:** El servidor WAHA en Railway tiene configurado `WHATSAPP_DEFAULT_ENGINE=WEBJS`, que requiere Chromium. Railway no tiene recursos/memoria suficiente para ejecutar Chromium → toda sesión nueva pasa de `STARTING` → `FAILED` en segundos sin generar QR.
+- **Verificación:** Se probaron 4 creaciones de sesión contra Railway (`/api/sessions` y `/api/sessions/start`) — todas fallaron con engine WEBJS.
+- **Archivos corregidos:**
+  - `backend/services/whatsapp_waha_service.py`: Endpoint `create_waha_session` actualizado de `POST /api/sessions/start` (deprecado) a `POST /api/sessions` con campo `start: True`. `restart_waha_session` actualizado a `POST /api/sessions/{name}/start`.
+  - `.env.production.local`: Se corrigieron valores vacíos de `WAHA_API_URL` y `WAHA_API_KEY` que anulaban los correctos de `.env.production`.
+- **Limpieza:** Se eliminaron 5 sesiones huérfanas/fallidas de Railway.
+- **Pendiente (usuario):** Cambiar Railway de WEBJS a NOWEB.
+
+**Estado:** 🚧 En progreso — bloqueado hasta cambio de engine en Railway.
+**Siguiente paso:** Usuario debe ir a Railway → proyecto genia-waha → variable `WHATSAPP_DEFAULT_ENGINE` → cambiarla de `WEBJS` a `NOWEB`.
+
+---
+
+## 2026-07-15 21:30 (COT) — Corrección crítica: variables WAHA apuntaban a túnel Cloudflare caído + multi-sesión
+**Plataforma:** opencode
+**Tipo:** 🐛 Corrección + 🚀 Mejora multi-agente
+
+- **Causa raíz de vinculación fallida:** Las variables `WAHA_API_URL` y `WAHA_API_KEY` en `.env.production` apuntaban al túnel temporal de Cloudflare (`communities-combinations-hour-research.trycloudflare.com`) que ya no existe. Railway estaba activo pero Vercel usaba la URL equivocada.
+- **Verificación:** Se confirmó Railway WAHA vivo en `https://waha-production-379a.up.railway.app` con motor WEBJS y API Key `6dce2c0d78f27e7cb50bb8c5aaea68e470287f7d03b22a51`.
+- **Archivos corregidos:**
+  - `.env.production`: `WAHA_API_URL` corregido a Railway
+  - `.env.local`: Misma corrección
+  - `.env.vercel.prod`: Misma corrección
+  - `.env.vercel.temp`: Misma corrección
+- **Bug de URL de logout:** Se corrigió `restart_waha_session()` que usaba `/api/{session}/logout` (404) → `/api/sessions/{session}/logout` (correcto para WAHA 2026.7.1).
+- **Mejora multi-agente:** `connect_whatsapp_waha()` ahora reusa sesiones existentes WORKING/CONNECTED/SCAN_QR_CODE (por prefijo `genia_{agent_id[:8]}`) en vez de crear una nueva con timestamp cada vez.
+- **Nuevos endpoints de monitoreo:**
+  - `GET /api/whatsapp/waha/sessions` — lista todas las sesiones activas con estado
+  - `POST /api/whatsapp/waha/cleanup` — limpia sesiones huérfanas/caídas
+- **Limpieza:** Se eliminaron 1 sesión huérfana de Railway (stuck lock en otra).
+- **Sesiones huérfanas eliminadas de Railway:** Se limpiaron 2 sesiones viejas en estado SCAN_QR_CODE.
+
+**Estado:** ❌ Bloqueado — motor WEBJS no funciona en Railway.
+**Siguiente paso:** Usuario debe cambiar Railway de WEBJS a NOWEB.
+
+---
+
+## 2026-07-15 20:39 (COT) — Diagnóstico de Vinculación de WAHA con Motor WEBJS y Proxy
+**Plataforma:** Antigravity (bajo comando /goal)
+**Tipo:** 🐛 Diagnóstico + Configuración
+
+- **Soporte de Proxy local robusto:** Se actualizó `backend/local_proxy.py` con una arquitectura de manejo de *TCP Half-Close* y un búfer de 16KB para evitar la desconexión abrupta de los WebSockets de WhatsApp Web durante la fase de emparejamiento.
+- **Transición a motor WEBJS:** Se actualizó en Railway el motor por defecto a `WEBJS` para forzar el uso de Chromium, evadiendo la detección de "clientes no oficiales" del motor `NOWEB`. Se optimizó el consumo de RAM con los argumentos `--disable-dev-shm-usage,--no-sandbox` y limitando el heap de Node.js a 256MB.
+- **Sincronización de Zona Horaria (TZ):** Se configuró la variable de entorno `TZ=America/Bogota` en el servicio `waha` de Railway para sincronizar la zona horaria del navegador Chromium con la del celular.
+- **Ampliación de Ventana de Expiración (300s):** Se modificó la validación en `backend/routers/whatsapp.py` aumentando el tiempo de expiración de sesión inactiva de 90 a 300 segundos. Desplegado con éxito a producción en Vercel.
+- **Causa Raíz Restante Identificada:** Los logs del proxy confirman tráfico del celular (`android.clients.google.com`, `mtalk.google.com`), revelando que el usuario configuró el proxy en la configuración de red Wi-Fi de su propio celular. Dado que WhatsApp móvil bloquea la vinculación por seguridad si detecta un Proxy o VPN activo en el teléfono, el siguiente paso es desactivar el proxy en el Wi-Fi del celular antes de escanear.
+
+---
+
+## 2026-07-15 16:05 (COT) — Expiración Automática de QR y Mitigación de Alertas Rojas en Frontend
+**Plataforma:** Antigravity
+**Tipo:** 🚀 Optimización + UX
+
+- **Expiración Automática de Código QR (90 Segundos):** Se implementó una lógica de autodestrucción y limpieza en el endpoint de estado (`get_whatsapp_status`). Si el código QR tiene más de 90 segundos de haberse generado (calculado a través del timestamp embebido en el nombre de la sesión de WAHA), el backend elimina automáticamente la sesión de WAHA, limpia las columnas `whatsapp_qr_instance_name` y `whatsapp_qr_code` de la base de datos Supabase, y retorna el estado de desconexión sin QR. Esto previene que se muestren códigos QR obsoletos en pantalla.
+- **Ocultamiento de Alertas Rojas Irrelevantes:** Se ajustó el manejo de errores de WAHA en el endpoint de estado para que errores rutinarios de conexión (como `Session not found` / `404`) no se propaguen al frontend como fallos críticos en una alerta roja, sino que simplemente restablezcan el estado del cliente a "Desconectado" y muestren de nuevo el botón de "Generar Código QR".
+- **Despliegue a Producción:** Todos los cambios fueron desplegados con éxito en el backend de Vercel.
+
+---
+
+## 2026-07-15 15:07 (COT) — Mitigación de Bloqueos en WhatsApp (WAHA) y Limpieza de Sesiones
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección + Seguridad
+
+- **Simulación de Escritura Humana (Typing Indicator):** Se implementó el envío del estado `"typing"` antes de procesar las respuestas del agente en el webhook de WAHA y se configuró un retraso dinámico de simulación de escritura (0.015s por carácter, capado a un máximo de 4.0 segundos) antes de enviar el mensaje final. Al terminar, se envía el estado `"paused"`. Esto emula el comportamiento humano en WhatsApp, reduciendo drásticamente el riesgo de bloqueos por spam o automatización instantánea.
+- **Limpieza de Sesión en Railway:** Se detectó que la sesión previa en el servidor Railway (`waha-production-379a.up.railway.app`) estaba en estado `FAILED` debido al bloqueo de la cuenta. Se procedió a limpiar y eliminar la sesión de forma segura para dejar el servidor listo y receptivo para generar un nuevo código QR limpio.
+
+---
+
+## 2026-07-15 13:07 (COT) — Expansión de catálogo de Modelos Gratuitos y Fallbacks
+**Plataforma:** Antigravity
+**Tipo:** 🚀 Optimización + Escalabilidad
+
+- **Nuevos Modelos de Proveedores Integrados:** Para solucionar el agotamiento de tokens y los límites de Rate Limit (429), se expandió el catálogo de la plataforma de 5 a 11 modelos gratuitos y de muy bajo costo de diferentes proveedores:
+  - **Google Gemini:** Se integró `gemini-1.5-flash` y `gemini-2.5-flash` para dar resiliencia total al proveedor primario.
+  - **OpenRouter (Modelos 100% Gratuitos):** Se integraron `meta-llama/llama-3.3-70b-instruct:free`, `meta-llama/llama-3.1-8b-instruct:free`, `google/gemma-2-9b-it:free` y `qwen/qwen-2.5-72b-instruct:free`.
+  - **Groq:** Se añadieron `llama3-8b-8192` y `gemma2-9b-it`.
+- **Configuración y Costos:** Se actualizaron `PRICING_MAP` (en `ai_service.py`) y las listas en `config.py`.
+- **Pruebas:** Se corrió el archivo de test `test_model_rotation.py` comprobando que toda la lógica de conmutación automática de modelos ante fallos (429/402) e inhabilitaciones en DB funciona correctamente.
+
+---
+
+## 2026-07-15 13:00 (COT) — Integración de 6 reglas de imágenes entrenadas en Prompt del Sistema
+**Plataforma:** Antigravity
+**Tipo:** ✨ Mejora + Sincronización
+
+- **Sincronización de Imágenes Entrenadas:** Se integraron las 6 reglas de imágenes entrenadas provenientes de producción (Auditorio Pereira Plaza, Oficina Pinares, Puesto de Trabajo Pinares Piso 3, Sala de Juntas Pereira Plaza 8-10 pers, Sala de Juntas Grande Pereira Plaza 20 pers y Sala de Juntas Pinares 8-10 pers) en el prompt del sistema del agente "Socio".
+- **Refuerzo de Regla 6 (Imágenes):** Se adaptó la regla 6 de imágenes para incorporar la restricción crítica que prohíbe explícitamente reutilizar o inventar imágenes de otros espacios si el espacio consultado no dispone de una regla específica. En su lugar, el agente declara amablemente no tener fotos de ese espacio y refiere al usuario a: `https://socialco.com.co/`.
+
+---
+
+## 2026-07-15 12:43 (COT) — Restricción estricta de envío de imágenes en Prompt del Sistema
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección
+
+- **Restricción de Imágenes:** Se corrigió la regla 7 del prompt del sistema para el agente "Socio". Ahora prohíbe de forma explícita y estricta reutilizar o inventar imágenes de otros espacios (como usar la imagen del Auditorio/Sala de juntas para "espacios de trabajo") si no se tiene una regla específica. En su lugar, el agente debe declarar amablemente que no dispone de fotos de ese espacio por el momento y dirigir al usuario al enlace: `https://socialco.com.co/`.
+
+---
+
+## 2026-07-15 12:35 (COT) — Corrección de prompt, base de conocimientos e inactividad en WhatsApp
+**Plataforma:** Antigravity
+**Tipo:** ✨ Mejora + Integración
+
+- **Política de Oficinas Privadas alineada:** Modificado el system prompt del agente "Socio" para permitir el alquiler de oficinas privadas por horas y días. Los planes mensuales se transfieren al equipo comercial.
+- **Flujo de Perfilamiento e inactividad en WhatsApp:**
+  - Creado el endpoint `/api/whatsapp/check-inactivity` que monitorea las conversaciones inactivas en WhatsApp.
+  - Al cabo de 1 hora de inactividad del usuario, envía un primer mensaje de seguimiento: "¿Necesitas información adicional sobre nuestros espacios?".
+  - Transcurridos 30 minutos más sin respuesta, envía el mensaje de feliz día y transferencia/cierre, notificando al comercial mediante el teléfono configurado con los datos recolectados.
+  - Actualizados los modelos locales de base de datos SQLite (`agents`, `knowledge_documents` y `knowledge_chunks`) para que soporten la columna `tenant_id` y otros campos faltantes de SQLAlchemy.
+- **Puestos de Trabajo y Tarifas:**
+  - Cambiado "puestos de trabajo compartidos" por "puestos de trabajo individuales" con tarifas de $15.000 la hora / $42.000 medio día / $70.000 día completo.
+  - Añadido "puestos de trabajo en terraza" exclusivos de Pereira Plaza a un valor de $5.000 COP la hora.
+- **Base de Conocimiento:**
+  - Actualizado el documento `BC Social.txt` en la base de datos local y re-indexados sus fragmentos y embeddings de forma sincronizada en ChromaDB mediante Gemini.
+- **Regla del Auditorio:**
+  - Actualizada la regla de imagen del Auditorio con la URL final de Supabase: `https://ppzsnsovdmxwofmuppfv.supabase.co/storage/v1/object/public/agent-images/547c07f714394e399c504d4bb3da37ac_a2e4ee4ee5ad42169947f56c92567bd1.jpeg` y los detalles correspondientes.
+
+---
+
+## 2026-07-14 12:15 (COT) — Notas de voz vía Proxy de Audio Self-Hosted integradas
+**Plataforma:** Antigravity
+**Tipo:** ✨ Mejora
+
+- **Creado microservicio Proxy de Audio** en `deploy/waha/audio_proxy.py` y su `Dockerfile.proxy`. Intercepta webhooks, descarga localmente las notas de voz desde WAHA (evitando el bloqueo de red de Vercel) y las reenvía a Vercel codificadas en Base64.
+- **Configuración Docker del VPS actualizada** en `deploy/waha/docker-compose.yml` para desplegar el proxy como parte del stack.
+- **Caddyfile configurado** (`deploy/waha/Caddyfile`) para enrutar las llamadas del webhook de voz (`/webhook/waha/*`) al proxy y mantener el tráfico de la API REST directo a WAHA.
+- **Script de instalación del VPS modificado** (`deploy/waha/setup.sh`) para aprovisionar automáticamente el proxy de audio y solicitar la URL de backend.
+- **Backend ajustado** en `backend/routers/whatsapp.py` y `backend/config.py`. Si `waha_webhook_url` está configurada, enruta los webhooks allí, permitiendo activar el proxy de forma selectiva sin romper la producción actual en Railway.
+- **Soporte de imágenes nativas en WAHA:** Implementada la lógica en `backend/services/whatsapp_waha_service.py` para detectar la sintaxis Markdown de imágenes `![alt](url)` en las respuestas de la IA, enviar el texto limpio y despachar la imagen de forma nativa e interactiva a través de WAHA.
+- **Verificación:** Ejecutado y validado test unitario de simulación end-to-end con éxito en `test_audio_proxy.py` y verificado sintaxis de scripts.
+
+**Estado:** ✅ Completado (código local y configuración listos)
+**Siguiente paso:** Desplegar en el nuevo VPS del cliente cuando cambie a estado ACTIVE, configurar DNS y variables en Vercel.
+
+---
+
+## 2026-07-12 03:47 (COT) — CHECKPOINT: WAHA migrado a Railway, toda la plataforma en la nube
+**Plataforma:** opencode
+**Tipo:** 🚀 Despliegue + Migración
+
+- **WAHA migrado de Cloudflare tunnel local a Railway** (servicio permanente en la nube).
+- Railway proyecto: `genia-waha` → https://railway.com/project/90da5a03-107c-4573-9ade-7418eae052ee
+- Servicio WAHA: `waha-production-379a.up.railway.app` (Docker `devlikeapro/waha:latest`).
+- API Key generada: `6dce2c0d78f27e7cb50bb8c5aaea68e470287f7d03b22a51`
+- Sesión WhatsApp: `genia_547c07f7_1783832222` → WORKING, CONNECTED.
+- **Fix crítico:** Agregado endpoint `POST /webhook/waha` (auto-detecta agente por session name). Sin esto, WAHA retornaba 404 al enviar webhooks.
+- **Modelo IA rotado a** `groq/llama-3.1-8b-instant` (más barato en tokens que gemini-2.0-flash).
+- **Orden de rotación actualizado** en `FREE_MODELS`: prioriza modelos más baratos primero (gemini → deepseek → gpt-4o-mini → groq-8b → groq-70b).
+- Vercel variables actualizadas: `WAHA_API_URL`, `WAHA_API_KEY`.
+- Docker local `genia-waha` detenido (ya no se usa).
+- Mensajes de texto por WhatsApp funcionando end-to-end.
+
+**Estado:** ✅ Completado — Toda la plataforma está en la nube:
+- Backend/Frontend: Vercel
+- Database: Supabase
+- WAHA: Railway
+- IA: Groq/Gemini/OpenRouter (modelos gratuitos)
+
+**Siguiente paso:** Probar notas de voz, optimizar token consumption, monitorear costos de Railway.
 
 ---
 

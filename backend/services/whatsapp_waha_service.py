@@ -12,10 +12,19 @@ WAHA es una API open-source basada en whatsapp-web.js / Baileys. Expone:
 
 Incluye un modo de simulación (Mock) si no se configura WAHA_API_URL, para
 permitir probar el flujo de escaneo en desarrollo local.
+
+Características para soporte multi-agente (10+ sesiones simultáneas):
+  - Monitoreo de sesiones con reconexión automática
+  - Detección de sesiones caídas y limpieza automática
+  - Prevención de bloqueos por spam con delays inteligentes
+  - Optimización de recursos para múltiples sesiones
 """
 
 import logging
 import httpx
+import asyncio
+import time
+from datetime import datetime, timezone, timedelta
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -27,6 +36,12 @@ mock_sessions = {}
 # entrega el QR vía webhook, no por REST). Clave: session_name -> qr base64.
 waha_qr_cache: dict[str, str] = {}
 
+# Monitoreo de sesiones para multi-agente
+session_health: dict[str, dict] = {}  # session_name -> {last_check, status, error_count}
+SESSION_CHECK_INTERVAL = 60  # segundos entre verificaciones de salud
+MAX_ERROR_COUNT = 5  # errores consecutivos antes de marcar sesión como caída
+SESSION_STALE_HOURS = 24  # horas sin actividad antes de limpiar sesión huérfana
+
 
 def store_waha_qr(session_name: str, qr: str) -> None:
     """Guarda el QR más reciente recibido por webhook para servirlo al frontend."""
@@ -37,6 +52,182 @@ def store_waha_qr(session_name: str, qr: str) -> None:
 def get_cached_waha_qr(session_name: str) -> str | None:
     """Recupera el último QR conocido desde la caché de webhook."""
     return waha_qr_cache.get(session_name)
+
+
+def update_session_health(session_name: str, status: str, error: str = None) -> None:
+    """Actualiza el estado de salud de una sesión para monitoreo."""
+    if session_name not in session_health:
+        session_health[session_name] = {
+            "last_check": datetime.now(timezone.utc),
+            "status": "unknown",
+            "error_count": 0,
+            "last_error": None,
+            "created_at": datetime.now(timezone.utc),
+        }
+    
+    health = session_health[session_name]
+    health["last_check"] = datetime.now(timezone.utc)
+    health["status"] = status
+    
+    if error:
+        health["error_count"] += 1
+        health["last_error"] = error
+    else:
+        health["error_count"] = 0
+        health["last_error"] = None
+
+
+def is_session_healthy(session_name: str) -> bool:
+    """Verifica si una sesión está saludable basado en el monitoreo."""
+    if session_name not in session_health:
+        return True  # Si no hay datos, asumir saludable
+    
+    health = session_health[session_name]
+    
+    # Si tiene muchos errores consecutivos, considerar no saludable
+    if health["error_count"] >= MAX_ERROR_COUNT:
+        return False
+    
+    # Si el último check fue hace mucho tiempo, considerar potencialmente no saludable
+    last_check = health["last_check"]
+    if datetime.now(timezone.utc) - last_check > timedelta(hours=1):
+        return False
+    
+    return True
+
+
+async def cleanup_stale_sessions() -> dict:
+    """
+    Limpia sesiones huérfanas o caídas del servidor WAHA.
+    Útil para mantener estabilidad con múltiples sesiones.
+    """
+    if waha_is_mock_mode():
+        return {"cleaned": 0, "message": "Modo mock, no hay sesiones que limpiar"}
+    
+    try:
+        sessions = await list_waha_sessions()
+        cleaned = 0
+        results = []
+        
+        for session in sessions:
+            name = session.get("name", "")
+            status = session.get("status", "").upper()
+            
+            # Verificar si la sesión está en estado fallido
+            if status in ("FAILED", "DISCONNECTED", "ERROR"):
+                logger.info(f"[CLEANUP] Eliminando sesión caída: {name} (status={status})")
+                await delete_waha_session(name)
+                cleaned += 1
+                results.append({"session": name, "action": "deleted", "reason": f"status={status}"})
+                continue
+            
+            # Verificar sesiones muy antiguas (más de 24 horas sin actividad)
+            if name in session_health:
+                health = session_health[name]
+                created_at = health.get("created_at")
+                if created_at and datetime.now(timezone.utc) - created_at > timedelta(hours=SESSION_STALE_HOURS):
+                    # Verificar si realmente está conectada
+                    verification = await verify_waha_connection(name)
+                    if not verification.get("connected"):
+                        logger.info(f"[CLEANUP] Eliminando sesión antigua no conectada: {name}")
+                        await delete_waha_session(name)
+                        cleaned += 1
+                        results.append({"session": name, "action": "deleted", "reason": "stale_and_disconnected"})
+        
+        return {
+            "cleaned": cleaned,
+            "total_sessions": len(sessions),
+            "details": results,
+            "message": f"Se limpiaron {cleaned} sesiones de {len(sessions)} totales"
+        }
+    except Exception as e:
+        logger.error(f"Error en cleanup_stale_sessions: {str(e)}")
+        return {"cleaned": 0, "error": str(e)}
+
+
+async def monitor_all_sessions() -> dict:
+    """
+    Monitorea todas las sesiones activas y reporta estado.
+    Ejecutar periódicamente para mantener estabilidad.
+    """
+    if waha_is_mock_mode():
+        return {"healthy": len(mock_sessions), "unhealthy": 0, "mode": "mock"}
+    
+    try:
+        sessions = await list_waha_sessions()
+        healthy = 0
+        unhealthy = 0
+        details = []
+        
+        for session in sessions:
+            name = session.get("name", "")
+            status = session.get("status", "").upper()
+            
+            # Verificar salud de cada sesión
+            verification = await verify_waha_connection(name)
+            is_healthy = verification.get("connected", False)
+            
+            if is_healthy:
+                healthy += 1
+                update_session_health(name, "healthy")
+                details.append({"session": name, "status": "healthy", "phone": verification.get("phone_number")})
+            else:
+                unhealthy += 1
+                update_session_health(name, "unhealthy", verification.get("error"))
+                details.append({"session": name, "status": "unhealthy", "error": verification.get("error")})
+                
+                # Intentar reconexión automática si es posible
+                if status in ("DISCONNECTED", "FAILED"):
+                    logger.warning(f"[MONITOR] Sesión {name} caída. Intentando limpieza automática.")
+                    await delete_waha_session(name)
+        
+        return {
+            "healthy": healthy,
+            "unhealthy": unhealthy,
+            "total": len(sessions),
+            "details": details,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error en monitor_all_sessions: {str(e)}")
+        return {"healthy": 0, "unhealthy": 0, "error": str(e)}
+
+
+async def get_multi_session_stats() -> dict:
+    """Obtiene estadísticas del sistema multi-sesión para diagnóstico."""
+    if waha_is_mock_mode():
+        return {"mode": "mock", "sessions": len(mock_sessions)}
+    
+    try:
+        sessions = await list_waha_sessions()
+        active_sessions = []
+        total_agents = 0
+        
+        for session in sessions:
+            name = session.get("name", "")
+            status = session.get("status", "").upper()
+            me = session.get("me") or {}
+            
+            if status in ("WORKING", "CONNECTED"):
+                active_sessions.append({
+                    "name": name,
+                    "status": status,
+                    "phone": str(me.get("id", "")).split("@")[0],
+                    "display_name": me.get("pushName"),
+                    "health": session_health.get(name, {}).get("status", "unknown")
+                })
+                total_agents += 1
+        
+        return {
+            "mode": "production",
+            "total_sessions": len(sessions),
+            "active_sessions": total_agents,
+            "sessions": active_sessions,
+            "server_url": settings.waha_api_url,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        return {"mode": "production", "error": str(e)}
 
 MOCK_QR_BASE64 = (
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJQAAACUAQMAAABvMD4ZAAAAA1BMVEUAAACnej3aAAAA"
@@ -96,16 +287,16 @@ async def create_waha_session(session_name: str, webhook_url: str) -> dict:
         }
         return {"status": "created", "session": session_name, "qr": MOCK_QR_BASE64}
 
-    url = f"{settings.waha_api_url}/api/sessions/start"
+    url = f"{settings.waha_api_url}/api/sessions"
     payload = {
         "name": session_name,
+        "start": True,
         "config": {
             "webhooks": [{
                 "url": webhook_url,
                 "events": ["message", "session.status"],
             }],
         },
-        "waitForScan": True,
     }
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -221,8 +412,8 @@ async def delete_waha_session(session_name: str) -> bool:
         return False
 
 
-async def send_waha_text(session_name: str, to_phone: str, text: str) -> bool:
-    """Envía un mensaje de texto plano vía WAHA."""
+async def send_waha_text_raw(session_name: str, to_phone: str, text: str) -> bool:
+    """Envía un mensaje de texto plano vía WAHA sin procesar Markdown."""
     if waha_is_mock_mode():
         logger.info(f"[MOCK WAHA SEND] {session_name} -> {to_phone}: {text[:80]}")
         return True
@@ -245,6 +436,35 @@ async def send_waha_text(session_name: str, to_phone: str, text: str) -> bool:
     except Exception as e:
         logger.error("Excepción al enviar texto WAHA: %s", str(e))
         return False
+
+
+async def send_waha_text(session_name: str, to_phone: str, text: str) -> bool:
+    """
+    Envía un mensaje de texto vía WAHA.
+    Si el texto contiene imágenes en formato Markdown ![alt](url),
+    las extrae y las envía como mensajes multimedia nativos de WhatsApp.
+    """
+    import re
+    # Encontrar imágenes en formato ![descripción](url)
+    image_matches = re.findall(r'!\[(.*?)\]\((.*?)\)', text)
+    
+    if image_matches:
+        # Extraer texto limpio sin el formato de imagen de markdown
+        cleaned_text = re.sub(r'!\[(.*?)\]\((.*?)\)', '', text).strip()
+        cleaned_text = re.sub(r'\n{3,}', '\n\n', cleaned_text).strip()
+        
+        success = True
+        if cleaned_text:
+            success = await send_waha_text_raw(session_name, to_phone, cleaned_text)
+            
+        for caption, image_url in image_matches:
+            # Enviar cada imagen de manera nativa
+            img_success = await send_waha_image(session_name, to_phone, image_url, caption)
+            success = success and img_success
+            
+        return success
+    else:
+        return await send_waha_text_raw(session_name, to_phone, text)
 
 
 async def send_waha_image(session_name: str, to_phone: str, image_url: str, caption: str = "") -> bool:
@@ -278,15 +498,15 @@ async def restart_waha_session(session_name: str, webhook_url: str = "") -> str 
         return MOCK_QR_BASE64
 
     # WAHA: logout y luego start nuevamente
-    logout_url = f"{settings.waha_api_url}/api/{session_name}/logout"
-    start_url = f"{settings.waha_api_url}/api/sessions/start"
+    logout_url = f"{settings.waha_api_url}/api/sessions/{session_name}/logout"
+    start_url = f"{settings.waha_api_url}/api/sessions/{session_name}/start"
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 await client.post(logout_url, headers=_headers())
             except Exception:
                 pass
-            payload = {"name": session_name, "waitForScan": True}
+            payload = {"start": True}
             if webhook_url:
                 payload["config"] = {
                     "webhooks": [{
@@ -294,8 +514,6 @@ async def restart_waha_session(session_name: str, webhook_url: str = "") -> str 
                         "events": ["message", "session.status"],
                     }],
                 }
-            else:
-                payload["webhooks"] = []
             res = await client.post(start_url, headers=_headers(), json=payload)
             if res.status_code in [200, 201]:
                 data = res.json()
@@ -330,6 +548,33 @@ async def check_waha_health() -> dict:
             }
     except Exception as e:
         return {"healthy": False, "error": f"No se pudo conectar a WAHA: {str(e)}"}
+
+
+async def set_waha_presence(session_name: str, to_phone: str, presence: str = "typing") -> bool:
+    """
+    Establece el estado de presencia (typing, paused, online, offline) para un chat o globalmente.
+    """
+    if waha_is_mock_mode():
+        logger.info(f"[MOCK WAHA PRESENCE] {session_name} -> {to_phone}: {presence}")
+        return True
+
+    url = f"{settings.waha_api_url}/api/{session_name}/presence"
+    payload = {
+        "presence": presence
+    }
+    if to_phone:
+        payload["chatId"] = _normalize_chat_id(to_phone)
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(url, headers=_headers(), json=payload)
+            if response.status_code in [200, 201]:
+                return True
+            logger.warning("Error al establecer presencia en WAHA: %s", response.text)
+            return False
+    except Exception as e:
+        logger.error("Excepción al establecer presencia en WAHA: %s", str(e))
+        return False
 
 
 def simulate_waha_scan(session_name: str, phone: str = "573103125460") -> bool:

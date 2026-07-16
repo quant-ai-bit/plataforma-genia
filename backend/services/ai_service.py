@@ -59,6 +59,10 @@ PRICING_MAP = {
     "google/gemini-2.5-flash": {"input": 0.075, "output": 0.30},
     "openai/gpt-4o-mini": {"input": 0.150, "output": 0.60},
     "openai/gpt-4o": {"input": 2.50, "output": 10.00},
+    "meta-llama/llama-3.3-70b-instruct:free": {"input": 0.0, "output": 0.0},
+    "meta-llama/llama-3.1-8b-instruct:free": {"input": 0.0, "output": 0.0},
+    "google/gemma-2-9b-it:free": {"input": 0.0, "output": 0.0},
+    "qwen/qwen-2.5-72b-instruct:free": {"input": 0.0, "output": 0.0},
 }
 
 
