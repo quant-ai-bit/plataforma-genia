@@ -241,6 +241,46 @@ def waha_is_mock_mode() -> bool:
     return not settings.waha_api_url
 
 
+async def verify_session_exists(session_name: str) -> bool:
+    """Verifica si una sesión existe en WAHA (sin importar su estado)."""
+    if waha_is_mock_mode():
+        return session_name in mock_sessions
+
+    url = f"{settings.waha_api_url}/api/sessions/{session_name}"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(url, headers=_headers())
+            return r.status_code == 200
+    except Exception as e:
+        logger.warning(f"[VERIFY SESSION] Excepción al verificar sesión '{session_name}': {e}")
+        return False
+
+
+async def ensure_session_active(agent, webhook_url: str, db_session=None) -> tuple[bool, str | None]:
+    """
+    Verifica que la sesión WAHA del agente exista en el servidor.
+    Si no existe, intenta auto-recuperarla (genera nuevo QR).
+    Retorna (success, session_name_actualizado)
+    """
+    session_name = getattr(agent, "whatsapp_qr_instance_name", None)
+
+    if session_name:
+        exists = await verify_session_exists(session_name)
+        if exists:
+            return True, session_name
+
+        logger.warning(f"[ENSURE SESSION] Sesión '{session_name}' no existe en WAHA. Intentando auto-recuperación...")
+
+    result = await auto_recover_waha_session(agent, webhook_url, db_session=db_session)
+    if result.get("recovered"):
+        new_name = result.get("session_name")
+        logger.info(f"[ENSURE SESSION] Sesión recuperada: '{new_name}' (action={result.get('action')})")
+        return True, new_name
+
+    logger.error(f"[ENSURE SESSION] No se pudo recuperar sesión para agente {agent.id}: {result.get('error')}")
+    return False, getattr(agent, "whatsapp_qr_instance_name", None)
+
+
 def _headers() -> dict:
     headers = {"Content-Type": "application/json"}
     if settings.waha_api_key:
@@ -327,27 +367,34 @@ async def get_waha_qr(session_name: str) -> str | None:
         session = mock_sessions.get(session_name)
         return session.get("qr") if session else MOCK_QR_BASE64
 
-    url = f"{settings.waha_api_url}/api/{session_name}/auth/qr?format=image"
     headers = _headers()
     headers["Accept"] = "application/json"
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
+            # Intentar primero sin ?format=image (devuelve JSON con base64)
+            url = f"{settings.waha_api_url}/api/{session_name}/auth/qr"
             response = await client.get(url, headers=headers)
             if response.status_code == 200:
                 try:
                     data = response.json()
-                    # WAHA devuelve {"mimetype": "image/png", "data": "base64..."}
                     b64 = data.get("data") or data.get("base64") or ""
                     if b64:
                         return f"data:{data.get('mimetype', 'image/png')};base64,{b64}"
                 except Exception:
-                    text = response.text.strip()
-                    if text.startswith("data:image"):
-                        return text
-                    return text or None
-            else:
-                logger.error(f"Error al obtener QR de WAHA: {response.text[:200]}")
-                return get_cached_waha_qr(session_name)
+                    pass
+
+            # Fallback: con ?format=image (WAHA devuelve raw PNG)
+            url2 = f"{settings.waha_api_url}/api/{session_name}/auth/qr?format=image"
+            response2 = await client.get(url2, headers=headers)
+            if response2.status_code == 200:
+                raw_bytes = response2.content
+                if raw_bytes:
+                    import base64
+                    b64_str = base64.b64encode(raw_bytes).decode("ascii")
+                    return f"data:image/png;base64,{b64_str}"
+
+            logger.error(f"Error al obtener QR de WAHA (status {response.status_code}): {response.text[:200]}")
+            return get_cached_waha_qr(session_name)
     except Exception as e:
         logger.error(f"Excepción al obtener QR de WAHA: {str(e)}")
         return get_cached_waha_qr(session_name)
@@ -477,7 +524,11 @@ async def send_waha_image(session_name: str, to_phone: str, image_url: str, capt
     payload = {
         "session": session_name,
         "chatId": _normalize_chat_id(to_phone),
-        "media": {"url": image_url},
+        "file": {
+            "mimetype": "image/jpeg",
+            "url": image_url,
+            "filename": "image.jpeg"
+        },
         "caption": caption,
     }
     try:
@@ -526,6 +577,157 @@ async def restart_waha_session(session_name: str, webhook_url: str = "") -> str 
     except Exception as e:
         logger.error(f"Excepción al reiniciar sesión WAHA: {str(e)}")
         return None
+
+
+async def auto_recover_waha_session(agent, webhook_url: str, db_session=None) -> dict:
+    """
+    Detecta si la sesión WAHA de un agente está perdida y la recrea automáticamente.
+    Retorna el nuevo QR si se creó, o el estado actual si ya está conectada.
+    """
+    session_name = agent.whatsapp_qr_instance_name if hasattr(agent, "whatsapp_qr_instance_name") else None
+
+    if session_name:
+        verification = await verify_waha_connection(session_name)
+        if verification.get("connected"):
+            logger.info(f"[AUTO-RECOVER] Sesión '{session_name}' ya conectada. No requiere recuperación.")
+            return {"recovered": True, "session_name": session_name, "qr": None, "action": "already_connected"}
+
+        error_str = verification.get("error") or ""
+        session_exists = not ("Session not found" in error_str or "404" in error_str)
+
+        if session_exists and verification.get("connected") is False:
+            logger.info(f"[AUTO-RECOVER] Sesión '{session_name}' existe pero desconectada. Reiniciando...")
+            qr = await restart_waha_session(session_name, webhook_url)
+            if qr:
+                return {"recovered": True, "session_name": session_name, "qr": qr, "action": "restarted"}
+            logger.warning(f"[AUTO-RECOVER] No se pudo reiniciar sesión '{session_name}', se creará una nueva.")
+
+    import time
+    new_name = f"genia_{str(agent.id)[:8]}_{int(time.time())}"
+    logger.info(f"[AUTO-RECOVER] Creando nueva sesión WAHA '{new_name}' para agente '{agent.name}'.")
+
+    result = await create_waha_session(new_name, webhook_url)
+    if result.get("status") == "error":
+        logger.error(f"[AUTO-RECOVER] Error creando sesión: {result.get('error')}")
+        return {"recovered": False, "error": result.get("error")}
+
+    qr = result.get("qr")
+    if qr:
+        store_waha_qr(new_name, qr)
+
+    # Actualizar BD si hay sesión de DB disponible
+    if db_session is not None:
+        try:
+            agent.whatsapp_qr_instance_name = new_name
+            agent.whatsapp_qr_code = qr or agent.whatsapp_qr_code
+            agent.whatsapp_qr_connected = False
+            agent.whatsapp_provider = "waha"
+            db_session.commit()
+            logger.info(f"[AUTO-RECOVER] BD actualizada con nueva sesión '{new_name}'.")
+        except Exception as e:
+            db_session.rollback()
+            logger.error(f"[AUTO-RECOVER] Error actualizando BD: {e}")
+
+    return {
+        "recovered": True,
+        "session_name": new_name,
+        "qr": qr,
+        "action": "created",
+    }
+
+
+async def monitor_and_recover_all_agents(db_session=None) -> dict:
+    """
+    Monitorea todos los agentes con proveedor WAHA y recupera sesiones perdidas.
+    Debe ejecutarse periódicamente (cada 5-10 minutos) para mantener estabilidad.
+    """
+    if waha_is_mock_mode():
+        return {"mode": "mock", "message": "Modo mock, sin monitoreo de sesiones"}
+
+    try:
+        from sqlalchemy.orm import Session
+        from models.agent import Agent
+
+        if db_session is None:
+            return {"error": "Se requiere db_session para monitorear agentes"}
+
+        agents = db_session.query(Agent).filter(
+            Agent.whatsapp_provider == "waha",
+            Agent.status == "active",
+        ).all()
+
+        waha_sessions = await list_waha_sessions()
+        waha_session_names = {s.get("name", "") for s in waha_sessions}
+        waha_working_names = {
+            s.get("name", "")
+            for s in waha_sessions
+            if s.get("status", "").upper() in ("WORKING", "CONNECTED")
+        }
+
+        results = []
+        for agent in agents:
+            agent_record = {}
+            db_name = agent.whatsapp_qr_instance_name
+            agent_prefix = f"genia_{str(agent.id)[:8]}"
+
+            # Buscar sesión activa por prefijo
+            found_working = [n for n in waha_working_names if n.startswith(agent_prefix)]
+            found_any = [n for n in waha_session_names if n.startswith(agent_prefix)]
+
+            if found_working:
+                working_name = found_working[0]
+                if db_name != working_name:
+                    logger.info(f"[MONITOR] Actualizando BD: {db_name} -> {working_name}")
+                    agent.whatsapp_qr_instance_name = working_name
+                    agent.whatsapp_qr_connected = True
+                    agent.whatsapp_qr_code = None
+                    agent.whatsapp_provider = "waha"
+                    db_session.commit()
+                    results.append({"agent": str(agent.id), "action": "sync_working", "session": working_name})
+                else:
+                    results.append({"agent": str(agent.id), "action": "already_working", "session": working_name})
+            elif found_any:
+                any_name = found_any[0]
+                logger.info(f"[MONITOR] Sesión '{any_name}' existe pero no está WORKING. Verificando...")
+                verification = await verify_waha_connection(any_name)
+                if verification.get("connected"):
+                    agent.whatsapp_qr_instance_name = any_name
+                    agent.whatsapp_qr_connected = True
+                    agent.whatsapp_qr_code = None
+                    db_session.commit()
+                    results.append({"agent": str(agent.id), "action": "recovered", "session": any_name})
+                else:
+                    if agent.whatsapp_qr_instance_name == any_name:
+                        agent.whatsapp_qr_instance_name = None
+                        agent.whatsapp_qr_connected = False
+                        db_session.commit()
+                    results.append({"agent": str(agent.id), "action": "stale_cleaned", "session": any_name})
+            else:
+                if db_name and db_name in waha_session_names:
+                    verification = await verify_waha_connection(db_name)
+                    if verification.get("connected"):
+                        agent.whatsapp_qr_connected = True
+                        db_session.commit()
+                        results.append({"agent": str(agent.id), "action": "verified_connected", "session": db_name})
+                        continue
+                if db_name:
+                    logger.info(f"[MONITOR] Sesión '{db_name}' perdida para agente '{agent.name}'. Limpiando BD.")
+                    agent.whatsapp_qr_instance_name = None
+                    agent.whatsapp_qr_connected = False
+                    db_session.commit()
+                    results.append({"agent": str(agent.id), "action": "lost_cleaned", "session": db_name})
+                else:
+                    results.append({"agent": str(agent.id), "action": "no_session", "session": None})
+
+        return {
+            "mode": "production",
+            "total_agents": len(agents),
+            "results": results,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Error en monitor_and_recover_all_agents: {str(e)}", exc_info=True)
+        return {"error": str(e)}
 
 
 async def check_waha_health() -> dict:

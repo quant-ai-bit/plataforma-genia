@@ -11,6 +11,16 @@
       "maxDuration": 60
     }
   },
+  "crons": [
+    {
+      "path": "/api/whatsapp/waha/monitor",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/whatsapp/check-inactivity",
+      "schedule": "0 12 * * *"
+    }
+  ],
   "env": {
     "ENVIRONMENT": "production"
   },

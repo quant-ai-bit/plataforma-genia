@@ -1,0 +1,30 @@
+name: WhatsApp Health Check
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping WAHA health endpoint
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            "https://plataforma-genia.vercel.app/api/whatsapp/health")
+          echo "Health endpoint returned HTTP $response"
+          if [ "$response" != "200" ]; then
+            echo "Health check failed!"
+            exit 1
+          fi
+
+      - name: Ping monitor endpoint
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 -X POST \
+            "https://plataforma-genia.vercel.app/api/whatsapp/waha/monitor")
+          echo "Monitor endpoint returned HTTP $response"
+          if [ "$response" != "200" ]; then
+            echo "Monitor check failed!"
+            exit 1
+          fi

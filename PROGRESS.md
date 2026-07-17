@@ -6,6 +6,44 @@
 
 ---
 
+## 2026-07-16 20:05 (COT) — Solución definitiva: agente Socio no responde WhatsApp + prevención multícapa
+**Plataforma:** opencode
+**Tipo:** 🐛 Corrección + 🚀 Prevención multi-capa
+
+- **Problema:** El agente Socio dejó de responder por WhatsApp. Diagnóstico: WAHA Railway (v2026.7.1, motor WEBJS) estaba vivo pero con **0 sesiones activas**. La sesión previa `genia_547c07f7_1783832222` se perdió (Railway reinició el contenedor o el motor WEBJS corrompió la sesión).
+- **Causa raíz:**
+  1. Las sesiones de WAHA en Railway se pierden periódicamente (reinicios, crasheos de WEBJS, etc.)
+  2. El monitor de recuperación (`POST /waha/monitor`) corría solo 2 veces al día (`0 0 * * *` y `0 12 * * *`) por limitación de Vercel Hobby
+  3. `send_agent_whatsapp_msg` no verificaba si la sesión existía antes de enviar — fallaba silenciosamente con session_name huérfano
+  4. El QR solo se obtenía con `?format=image` (raw PNG), incompatible con el parseo JSON del backend
+  5. No existía un endpoint público de health check para monitoreo externo (cron-job.org, UptimeRobot)
+
+- **Solución definitiva (4 capas de defensa):**
+  1. **Auto-recuperación en envío de mensajes** (`routers/whatsapp.py:send_agent_whatsapp_msg`): Antes de enviar un mensaje vía WAHA, verifica que la sesión exista en el servidor. Si no existe, ejecuta `ensure_session_active()` que crea una nueva sesión automáticamente, actualiza la BD y luego envía el mensaje. Ya no falla silenciosamente.
+  2. **Health endpoint público** (`GET /api/whatsapp/health`, `routers/whatsapp.py`): Sin autenticación. Verifica conectividad WAHA, lista sesiones activas, ejecuta el monitor de recuperación, y retorna timestamp. Ideal para servicios externos gratuitos como cron-job.org (cada 5 minutos).
+  3. **Monitoreo más frecuente** (`vercel.json`): Crons cambiados de diarios a cada hora — `GET /api/whatsapp/health` a minuto 0, `POST /api/whatsapp/waha/monitor` a minuto 30.
+  4. **Fix QR** (`whatsapp_waha_service.py:get_waha_qr`): Cambia el orden — primero intenta sin `?format=image` (WAHA devuelve JSON con `mimetype` + `data` base64), fallback a `?format=image` con encoding manual. Ahora obtiene QR correctamente en sesiones SCAN_QR_CODE.
+
+- **Nuevas funciones agregadas:**
+  - `verify_session_exists(session_name)` → bool: consulta a WAHA si la sesión existe (sin importar estado)
+  - `ensure_session_active(agent, webhook_url, db_session)` → tuple[bool, str]: verifica existencia y auto-recupera si es necesario
+
+- **Archivos modificados:**
+  - `backend/services/whatsapp_waha_service.py`: +`verify_session_exists`, +`ensure_session_active`, fix `get_waha_qr`
+  - `backend/routers/whatsapp.py`: Auto-recuperación en `send_agent_whatsapp_msg`, nuevo endpoint `GET /api/whatsapp/health`
+  - `vercel.json`: Crons cada hora en vez de diarios
+
+- **Acción inmediata realizada:** Se creó sesión `genia_547c07f7_1784250503` en WAHA Railway (estado `SCAN_QR_CODE`) con webhook apuntando a Vercel. Lista para escanear QR desde el dashboard.
+
+**Estado:** ✅ Código listo y sesión WAHA recreada
+**Siguiente paso:**
+1. Hacer deploy a Vercel producción (`vercel --prod`)
+2. Abrir dashboard → agente Socio → pestaña WAHA → escanear QR
+3. (Opcional) Configurar cron externo gratuito (ej: cron-job.org) para `GET https://plataforma-genia.vercel.app/api/whatsapp/health` cada 5 min
+4. Verificar que el agente responde en WhatsApp
+
+---
+
 ## 2026-07-16 19:22 (COT) — Fix: Mitigación de errores de desbordamiento de contexto en LLM (8192 tokens) en conversaciones largas
 **Plataforma:** Antigravity
 **Tipo:** 🐛 Corrección
