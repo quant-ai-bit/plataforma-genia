@@ -360,6 +360,7 @@ async def post_openrouter_with_retries(
     }
 
     last_exc = None
+    last_status = None
     for attempt in range(max_retries):
         try:
             logger.info(
@@ -372,6 +373,7 @@ async def post_openrouter_with_retries(
             )
             # Si el código es 429 (rate limit) o 5xx (servidor saturado), reintentamos
             if response.status_code == 429 or response.status_code >= 500:
+                last_status = response.status_code
                 logger.warning(
                     "OpenRouter retornó código %s en intento %s. Reintentando...",
                     response.status_code,
@@ -392,8 +394,25 @@ async def post_openrouter_with_retries(
     if last_exc:
         raise last_exc
     raise Exception(
-        "Límite de reintentos alcanzado para OpenRouter sin una respuesta exitosa."
+        f"Límite de reintentos alcanzado para OpenRouter sin una respuesta exitosa. (Status: {last_status})"
     )
+
+
+def _get_model_context_limit(model_name: str) -> int:
+    name_lower = model_name.lower()
+    if "8b" in name_lower or "8192" in name_lower or "instant" in name_lower:
+        return 8192
+    if "9b" in name_lower or "gemma-2" in name_lower or "gemma2" in name_lower:
+        return 8192
+    if "gemini" in name_lower:
+        return 1000000
+    if "gpt-4o" in name_lower:
+        return 128000
+    if "claude" in name_lower:
+        return 200000
+    if "deepseek" in name_lower:
+        return 64000
+    return 64000
 
 
 async def chat_with_agent(
@@ -489,11 +508,23 @@ async def chat_with_agent(
         while current_attempt < max_rotation_attempts:
             current_attempt += 1
             try:
+                # ── Truncar mensajes para el modelo actual si supera su capacidad ──
+                current_max_context = _get_model_context_limit(model_name)
+                # Estimamos tokens: 1 token ≈ 4 caracteres
+                # Dejamos margen para la respuesta (max_tokens) y herramientas
+                max_allowed_tokens = current_max_context - max_tokens - 1000
+                max_allowed_chars = max(4000, max_allowed_tokens * 4)
+
+                run_messages = [dict(m) for m in messages]
+                while len(run_messages) > 2 and sum(len(m.get("content") or "") for m in run_messages) > max_allowed_chars:
+                    # Remover el primer mensaje del historial (índice 1)
+                    run_messages.pop(1)
+
                 # ── Determinar cliente según proveedor y realizar llamada ──
                 if provider == "groq":
                     response = await groq_client.chat.completions.create(
                         model=model_name,
-                        messages=messages,
+                        messages=run_messages,
                         tools=tools,
                         tool_choice="auto",
                         temperature=temperature,
@@ -512,7 +543,7 @@ async def chat_with_agent(
 
                     gp = GeminiProvider(model=model_name)
                     req = GenerationRequest(
-                        messages=messages,
+                        messages=run_messages,
                         system_prompt=full_system_prompt,
                         max_tokens=max_tokens,
                         temperature=temperature,
@@ -524,7 +555,7 @@ async def chat_with_agent(
                     completion_tokens += result.output_tokens
 
                 elif provider == "openrouter":
-                    clean_messages = [message_to_dict(m) for m in messages]
+                    clean_messages = [message_to_dict(m) for m in run_messages]
                     payload = {
                         "model": model_name,
                         "messages": clean_messages,
@@ -566,7 +597,7 @@ async def chat_with_agent(
 
                 if tool_calls:
                     # Agregar la respuesta del asistente con la tool-call al historial
-                    messages.append(message_to_dict(response_message))
+                    run_messages.append(message_to_dict(response_message))
 
                     for tool_call in tool_calls:
                         func_name = tool_call.function.name
@@ -601,7 +632,7 @@ async def chat_with_agent(
                             )
 
                         # Agregar resultado de la herramienta al historial
-                        messages.append(
+                        run_messages.append(
                             {
                                 "role": "tool",
                                 "tool_call_id": tool_call.id,
@@ -614,7 +645,7 @@ async def chat_with_agent(
                     if provider == "groq":
                         second_response = await groq_client.chat.completions.create(
                             model=model_name,
-                            messages=messages,
+                            messages=run_messages,
                             temperature=temperature,
                             max_tokens=max_tokens,
                         )
@@ -625,7 +656,7 @@ async def chat_with_agent(
                     elif provider == "gemini":
                         final_text = response_message.get("content") or ""
                     elif provider == "openrouter":
-                        clean_messages = [message_to_dict(m) for m in messages]
+                        clean_messages = [message_to_dict(m) for m in run_messages]
                         payload = {
                             "model": model_name,
                             "messages": clean_messages,
@@ -718,9 +749,15 @@ async def chat_with_agent(
                         "invalid_request_error",
                         "bad request",
                         "400",
-                        "503",
+                        "401",
+                        "403",
+                        "404",
                         "500",
+                        "502",
+                        "503",
                         "service_unavailable",
+                        "insufficient",
+                        "reintentos",
                     )
                 )
 

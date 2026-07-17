@@ -6,6 +6,24 @@
 
 ---
 
+## 2026-07-16 19:22 (COT) — Fix: Mitigación de errores de desbordamiento de contexto en LLM (8192 tokens) en conversaciones largas
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección
+
+- **Problema:** En conversaciones largas de WhatsApp (después de 5-6 mensajes), la IA fallaba respondiendo con un error al usuario (`Hubo un error procesando tu solicitud...`).
+- **Causa raíz:**
+  1. La API Key de Gemini configurada en Vercel retornaba `401 Request had invalid authentication credentials` (clave inválida o expirada).
+  2. Al fallar Gemini, el sistema de auto-rotación caía en OpenRouter, pero el saldo de la cuenta de OpenRouter del usuario estaba agotado (`402 Payment Required`) y los modelos gratuitos retornaban `429 Too Many Requests`.
+  3. Finalmente, la rotación caía en los modelos gratuitos directos de Groq (como `llama-3.1-8b-instant`), pero como el System Prompt del agente "Socio/Sara" es extremadamente largo (14500 caracteres, ~3600 tokens) y la conversación acumulada (con 15 mensajes en historial) superaba los 8192 tokens permitidos, se disparaba un error `400 context_length_exceeded`.
+- **Solución:**
+  - Se redujo el límite de mensajes del historial cargados desde la base de datos de 15 a 8 en `backend/services/conversation_service.py` (lo cual es más que suficiente para conservar el contexto y reduce significativamente el consumo de tokens).
+  - Se implementó un algoritmo de ventana deslizante dinámica (`_get_model_context_limit` y truncamiento en `backend/services/ai_service.py`) que ajusta y recorta dinámicamente los mensajes más antiguos del historial antes de enviarlos a la API, garantizando que el prompt completo nunca exceda la ventana de contexto específica del modelo actual (ej: 8192 tokens para Llama-3.1-8b).
+- **Archivos modificados:**
+  - [backend/services/conversation_service.py](file:///c:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA%20GENIA/backend/services/conversation_service.py)
+  - [backend/services/ai_service.py](file:///c:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA%20GENIA/backend/services/ai_service.py)
+
+---
+
 ## 2026-07-16 19:01 (COT) — Fix: Corrección de generación de código QR de WhatsApp y resolución de conexión en WAHA
 **Plataforma:** Antigravity
 **Tipo:** 🐛 Corrección
