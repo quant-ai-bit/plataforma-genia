@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-07-16 19:01 (COT) — Fix: Corrección de generación de código QR de WhatsApp y resolución de conexión en WAHA
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección
+
+- **Problema:** Al intentar vincular el agente con WhatsApp, el panel web se quedaba en "Esperando código QR..." indefinidamente sin generar la imagen.
+- **Causa raíz:**
+  1. Había un proxy expirado/apagado (`4.tcp.ngrok.io:17196`) configurado en la variable de entorno `WHATSAPP_PROXY_SERVER` del servicio de WAHA en Railway. Todas las conexiones de la sesión fallaban de inmediato intentando salir por ese puerto cerrado.
+  2. El motor por defecto estaba configurado como `NOWEB` (Baileys), el cual realiza conexiones WebSocket directas que suelen ser bloqueadas y rechazadas con `WebSocket Error ()` por los servidores de WhatsApp al provenir de rangos de IP de data centers como Railway.
+- **Solución:**
+  - Se eliminó la variable `WHATSAPP_PROXY_SERVER` obsoleta del servicio WAHA en Railway.
+  - Se cambió `WHATSAPP_DEFAULT_ENGINE` a `WEBJS` en Railway, el cual utiliza Chromium en modo headless y es mucho más resiliente frente a los bloqueos de IP de WhatsApp Web.
+- **Archivos modificados:** (Cambio realizado a nivel de variables de entorno en el servicio `waha` de Railway).
+- **Verificación:** Se crearon y monitorearon sesiones de prueba en el servidor WAHA de Railway; ahora inician exitosamente en 4 segundos y entran en estado `SCAN_QR_CODE` listas para escanear, sirviendo el código QR correctamente.
+
+---
+
 ## 2026-07-16 18:52 (COT) — Fix: Corrección de error de validación de esquemas (500) y restauración de agentes en la plataforma
 **Plataforma:** Antigravity
 **Tipo:** 🐛 Corrección
