@@ -5,7 +5,7 @@
 services:
   waha:
     image: devlikeapro/waha:latest
-    restart: unless-stopped
+    restart: always
     # Solo Caddy accede a WAHA (no se expone el 3000 directo a internet)
     expose:
       - "3000"
@@ -14,16 +14,22 @@ services:
       - WAHA_API_KEY=${WAHA_API_KEY:-}
       - WAHA_SWAGGER_ENABLED=true
       - WAHA_FILES_LIMIT=100mb
-      # Conserva la sesión entre reinicios
-      - WHATSAPP_RESTART_ON_AUTH_FAIL=false
-      - WAHA_SESSION_PHONE_NOT_FOUND=keep
+      # ===== RESILIENCIA Y AUTO-RECONEXIÓN =====
+      # Reconectar automáticamente si WhatsApp Web desconecta la sesión
+      - WHATSAPP_RESTART_ON_AUTH_FAIL=true
+      # Intentar reconectar en vez de mantener sesión muerta
+      - WAHA_SESSION_PHONE_NOT_FOUND=reconnect
+      # Arrancar las sesiones guardadas automáticamente al iniciar WAHA
+      - WAHA_START_SESSION_ON_BOOT=true
+      # Zona horaria Colombia
+      - TZ=America/Bogota
     volumes:
       - waha-data:/app/.sessions
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/version"]
-      interval: 30s
+      interval: 15s
       timeout: 5s
-      retries: 3
+      retries: 5
       start_period: 20s
 
   audio-proxy:

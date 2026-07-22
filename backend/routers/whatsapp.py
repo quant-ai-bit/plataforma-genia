@@ -1384,12 +1384,16 @@ async def simulate_scan_qr(
 async def connect_whatsapp_waha(
     agent_id: str,
     request: Request,
+    history_sync: bool = Query(False, description="Habilitar sincronización de historial de 3 meses al conectar"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     """
     Inicializa una sesión WAHA (WhatsApp HTTP API) para vincular el agente
     mediante código QR. Crea la sesión, configura el webhook y retorna el QR.
+
+    Si history_sync=True, habilita el store de NOWEB para sincronizar
+    el historial de los últimos 3 meses después de la conexión.
 
     Soporta multi-agente: reusa sesiones existentes WORKING/CONNECTED
     para evitar duplicar sesiones por agente.
@@ -1486,7 +1490,12 @@ async def connect_whatsapp_waha(
     else:
         webhook_url = f"{base_url}/api/whatsapp/webhook/waha/{agent.id}"
 
-    init_res = await create_waha_session(session_name, webhook_url)
+    if history_sync:
+        agent.whatsapp_history_sync_enabled = True
+        agent.whatsapp_sync_status = "pending"
+        db.commit()
+
+    init_res = await create_waha_session(session_name, webhook_url, history_sync=history_sync)
     if init_res.get("status") == "error":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1702,6 +1711,7 @@ async def health_check(db: Session = Depends(get_db)):
             "list": sessions,
         },
         "monitor": monitor_result,
+        "agents_needing_qr": monitor_result.get("agents_needing_qr", []),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -2051,6 +2061,7 @@ async def receive_waha_webhook(
             detail="Payload JSON no válido.",
         )
 
+    print(f"[WAHA WEBHOOK PRINT] Recibido para agent_id={agent_id}, event={data.get('event')}, payload={data}")
     logger.info(
         f"[WAHA WEBHOOK] Recibido para agent_id={agent_id}, event={data.get('event')}"
     )
@@ -2074,6 +2085,7 @@ async def receive_waha_webhook(
 
 
 async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
+    print(f"[WAHA WEBHOOK IMPL PRINT] agent_id={agent_id}, event={data.get('event')}, data={data}")
     logger.info(
         f"[WAHA WEBHOOK IMPL] event={data.get('event')}, type={data.get('payload', {}).get('type')}, keys={list(data.keys()) if isinstance(data, dict) else type(data).__name__}"
     )
@@ -2084,12 +2096,16 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
         db.query(Agent).filter(Agent.id == agent_id, Agent.status == "active").first()
     )
     if not agent:
+        print(f"[WAHA WEBHOOK IMPL] Agente inactivo o no encontrado: {agent_id}")
         logger.warning(f"Webhook WAHA para agente inexistente/inactivo: {agent_id}")
         return {"status": "ignored"}
+
+    print(f"[WAHA WEBHOOK IMPL] Agente encontrado: {agent.name}, sync_session={agent.whatsapp_qr_instance_name}")
 
     # Sincronizar session_name desde el payload del webhook
     waha_session_from_webhook = str(data.get("session", "") or "")
     if waha_session_from_webhook and agent.whatsapp_qr_instance_name != waha_session_from_webhook:
+        print(f"[WAHA WEBHOOK IMPL] Sincronizando session: '{agent.whatsapp_qr_instance_name}' -> '{waha_session_from_webhook}'")
         logger.info(f"[WAHA IMPL] Sincronizando session: '{agent.whatsapp_qr_instance_name}' -> '{waha_session_from_webhook}'")
         agent.whatsapp_qr_instance_name = waha_session_from_webhook
         db.commit()
@@ -2099,22 +2115,72 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
 
     event = str(data.get("event", "")).lower()
     payload = data.get("payload", {}) or {}
+    print(f"[WAHA WEBHOOK IMPL] Evento procesado: '{event}'")
+
     # Eventos administrativos
     if event in ("session.status", "session_status"):
         state = (payload.get("state") or "").upper()
+        print(f"[WAHA WEBHOOK IMPL] session.status state={state}")
         if state == "CONNECTED":
             agent.whatsapp_qr_connected = True
             db.commit()
             logger.info(f"Línea WAHA de '{agent.name}' marcada CONECTADA.")
-        elif state in ("DISCONNECTED", "SCAN_QR", "STARTING", "QRISREADY"):
-            if state != "SCAN_QR":
+            # Disparar sync de historial si está habilitado y no se ha completado
+            if agent.whatsapp_history_sync_enabled and not agent.whatsapp_history_synced:
+                agent.whatsapp_sync_status = "in_progress"
+                db.commit()
+                logger.info(f"[WAHA SYNC] Iniciando sync de historial para '{agent.name}'...")
+                try:
+                    from services.whatsapp_waha_service import sync_waha_chat_history
+                    sync_result = await sync_waha_chat_history(
+                        effective_session_name, agent.id, db
+                    )
+                    if sync_result.get("status") == "completed":
+                        agent.whatsapp_history_synced = True
+                        agent.whatsapp_sync_status = "completed"
+                        logger.info(f"[WAHA SYNC] Historial sincronizado: {sync_result.get('messages', 0)} mensajes en {sync_result.get('chats', 0)} chats.")
+                    else:
+                        agent.whatsapp_sync_status = "failed"
+                        logger.warning(f"[WAHA SYNC] Falló la sincronización: {sync_result.get('error')}")
+                except Exception as sync_e:
+                    agent.whatsapp_sync_status = "failed"
+                    logger.error(f"[WAHA SYNC] Error al sincronizar: {str(sync_e)}")
+                db.commit()
+        elif state in ("DISCONNECTED", "STARTING", "QRISREADY"):
+            if state != "QRISREADY":
                 agent.whatsapp_qr_connected = False
                 db.commit()
             logger.info(f"Línea WAHA de '{agent.name}' estado={state}.")
+            # Intentar auto-reconexión para DISCONNECTED
+            if state == "DISCONNECTED" and effective_session_name:
+                logger.info(f"[WAHA SESSION] Intentando auto-restart tras DISCONNECTED para '{agent.name}'...")
+                from services.whatsapp_waha_service import restart_waha_session_by_name
+                restart_ok = await restart_waha_session_by_name(effective_session_name)
+                if restart_ok:
+                    agent.whatsapp_qr_connected = True
+                    db.commit()
+                    logger.info(f"[WAHA SESSION] ✅ Sesión de '{agent.name}' reconectada tras DISCONNECTED.")
+                else:
+                    logger.warning(f"[WAHA SESSION] No se pudo reconectar '{agent.name}' tras DISCONNECTED. Se requiere QR nuevo.")
+        elif state == "SCAN_QR":
+            logger.info(f"Línea WAHA de '{agent.name}' estado=SCAN_QR.")
         elif state == "FAILED":
             agent.whatsapp_qr_connected = False
             db.commit()
             logger.warning(f"Línea WAHA de '{agent.name}' FALLÓ: {payload.get('reason')}")
+            # ===== AUTO-RESTART: Intentar reconectar con cookies persistidas =====
+            if effective_session_name:
+                logger.info(f"[WAHA SESSION] Intentando auto-restart tras FAILED para '{agent.name}'...")
+                from services.whatsapp_waha_service import restart_waha_session_by_name, send_disconnect_notification
+                restart_ok = await restart_waha_session_by_name(effective_session_name)
+                if restart_ok:
+                    agent.whatsapp_qr_connected = True
+                    db.commit()
+                    logger.info(f"[WAHA SESSION] ✅ Sesión de '{agent.name}' reconectada exitosamente tras FAILED.")
+                else:
+                    logger.error(f"[WAHA SESSION] ❌ No se pudo reconectar '{agent.name}' tras FAILED. Se requiere QR nuevo.")
+                    # Notificar al propietario
+                    await send_disconnect_notification(agent, db, reason=f"Sesión FAILED: {payload.get('reason', 'sin detalle')}")
         return {"status": "accepted"}
 
     if event == "qr":
@@ -2122,6 +2188,7 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
         qr_data = payload.get("qr") if isinstance(payload, dict) else None
         if not qr_data and isinstance(payload, str):
             qr_data = payload
+        print(f"[WAHA WEBHOOK IMPL] Evento QR recibido. qr_len={len(qr_data) if qr_data else 0}")
         if qr_data:
             store_waha_qr(effective_session_name, qr_data)
             # Persistir en BD (si la migración está aplicada) para sobrevivir
@@ -2138,15 +2205,18 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
         return {"status": "accepted"}
 
     if event != "message":
+        print(f"[WAHA WEBHOOK IMPL] Evento no manejado: {event}")
         logger.info(f"[WAHA] Evento no manejado: {event}")
         return {"status": "accepted"}
 
     # Mensaje entrante
     if payload.get("fromMe"):
+        print("[WAHA WEBHOOK IMPL] Mensaje enviado por mí (fromMe=True). Ignorando.")
         return {"status": "ignored"}
 
     phone_number = payload.get("from") or payload.get("chatId") or ""
     if not phone_number:
+        print("[WAHA WEBHOOK IMPL] Sin phone_number. Ignorando.")
         logger.info("[WAHA EXTRACT] Sin 'from'/'chatId'. Ignorando.")
         return {"status": "ignored"}
 
@@ -2156,7 +2226,8 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
     push_name = (payload.get("sender") or {}).get("pushName", "Usuario WhatsApp")
     user_message_text = payload.get("body", "")
 
-    # Deduplicar
+    print(f"[WAHA WEBHOOK IMPL] Mensaje entrante de {phone_number} ({push_name}): id={whatsapp_msg_id}, type={msg_type}, text='{user_message_text}'")
+
     from models.conversation import Message as DBMessage
 
     exists = (
@@ -2306,6 +2377,7 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
 
     # Responder con IA
     from config import settings
+    print(f"[WAHA WEBHOOK IMPL] Iniciando llamada a IA. Provider={agent.provider}, model={agent.model}")
     logger.info(
         "[WAHA AI DIAG] Agent provider=%s model=%s groq_key_set=%s gemini_key_set=%s openrouter_key_set=%s",
         agent.provider, agent.model,
@@ -2325,12 +2397,14 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
             whatsapp_message_id=whatsapp_msg_id,
         )
 
+        print(f"[WAHA WEBHOOK IMPL] IA respondió: '{reply[:150]}...'")
         if not reply or not reply.strip():
             logger.warning("[WAHA WEBHOOK] IA devolvió respuesta vacía. Enviando fallback.")
             reply = "Hola, gracias por tu mensaje. ¿En qué puedo ayudarte?"
     except Exception as e:
         err_type = type(e).__name__
         err_msg = str(e)[:200]
+        print(f"[WAHA WEBHOOK IMPL] ERROR en process_conversation_message: [{err_type}] {err_msg}")
         logger.error(f"[WAHA WEBHOOK] Error en process_conversation_message: [{err_type}] {err_msg}", exc_info=True)
         reply = "Ocurrió un error al procesar tu mensaje. Por favor, inténtalo de nuevo."
 
@@ -2343,11 +2417,13 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
     if delay_s > 0.5:
         await asyncio.sleep(delay_s)
 
+    print(f"[WAHA WEBHOOK IMPL] Enviando respuesta a WhatsApp. session={effective_session_name}, to={phone_number}")
     send_success = await send_waha_text(
         session_name=effective_session_name,
         to_phone=phone_number,
         text=reply,
     )
+    print(f"[WAHA WEBHOOK IMPL] Envío de WhatsApp finalizado. success={send_success}")
 
     # Limpiar estado "typing" estableciendo "paused"
     await set_waha_presence(
