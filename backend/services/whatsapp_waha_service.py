@@ -1022,7 +1022,7 @@ async def send_disconnect_notification(agent, db_session, reason: str = ""):
             f"Motivo: {reason}\n\n"
             f"*Acción requerida:* Ingresa al panel de GENIA y reconecta "
             f"el agente escaneando un nuevo código QR.\n\n"
-            f"🔗 https://app.genia.com.co/agents\n"
+            f"🔗 https://genia.com.co/app\n"
             f"📅 {now_str}"
         )
 

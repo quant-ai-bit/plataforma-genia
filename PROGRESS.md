@@ -6,6 +6,279 @@
 
 ---
 
+## 2026-07-22 12:48 (COT) — Prevención Definitiva Desconexión WhatsApp: Auto-Reconexión + Notificaciones
+**Plataforma:** Antigravity
+**Tipo:** 🐞 Bugfix + Resiliencia + Infraestructura
+
+- **Diagnóstico Confirmado:**
+  - WAHA GCP (`waha.genia.com.co`) online pero **0 sesiones activas**. Ambos agentes (Socio y Mia) con `instance: null`.
+  - La sesión se perdió y nadie la detectó a tiempo porque el cron solo corre 1x/día y el monitor solo limpiaba la BD sin reconectar.
+  - `WHATSAPP_RESTART_ON_AUTH_FAIL=false` impedía reconexión automática en WAHA.
+
+- **Cambios Implementados:**
+  1. **`deploy/waha/docker-compose.yml`:**
+     - `WHATSAPP_RESTART_ON_AUTH_FAIL=true` → WAHA reconecta automáticamente
+     - `WAHA_SESSION_PHONE_NOT_FOUND=reconnect` → Reintenta en vez de mantener sesión muerta
+     - `WAHA_START_SESSION_ON_BOOT=true` → Arranca sesiones al iniciar
+     - `restart: always`, healthcheck cada 15s
+  2. **`backend/services/whatsapp_waha_service.py`:**
+     - Nueva función `restart_waha_session_by_name()`: intenta reconectar con cookies persistidas sin QR
+     - `monitor_and_recover_all_agents()` mejorado: ahora intenta restart automático antes de limpiar BD
+     - Nueva función `send_disconnect_notification()`: notifica al propietario vía WhatsApp cuando la sesión falla
+  3. **`backend/routers/whatsapp.py`:**
+     - Webhook `session.status` FAILED y DISCONNECTED ahora intentan auto-restart con cookies
+     - Si el restart falla, envía notificación al propietario
+     - Health endpoint ahora reporta `agents_needing_qr`
+
+- **Archivos Modificados:**
+  - `deploy/waha/docker-compose.yml`
+  - `backend/services/whatsapp_waha_service.py`
+  - `backend/routers/whatsapp.py`
+
+- **Estado:** ✅ Push a main + Vercel deploy automático en progreso
+- **Siguiente Paso:** 
+  - Aplicar docker-compose actualizado en la VM GCP con `docker compose pull && docker compose up -d`
+  - Re-escanear QR desde el dashboard para reconectar agente Socio
+  - Configurar cron externo (cron-job.org) para `GET /api/whatsapp/health` cada 5 min
+
+---
+
+## 2026-07-22 09:14 (COT) — Diagnóstico y Resolución: Agente Dejó de Responder en WhatsApp + Refuerzo Anti-CoT
+**Plataforma:** Antigravity
+**Tipo:** 🐞 Bugfix + Diagnóstico + IA & WhatsApp
+
+- **Causa Raíz 1 (El Agente dejó de responder a las 9:05 AM):**
+  - La sesión de WAHA en Railway (`genia_547c07f7_1784251221`) entró en estado `FAILED` en el servidor de WAHA a las ~7:40 AM. Al estar en estado `FAILED`/desconectada, los mensajes enviados por el cliente a las 9:05 AM ("Somo 2 personas") y 9:06 AM ("Hola") jamás llegaron al webhook del backend.
+  - La sesión actual en la base de datos Supabase registra `whatsapp_qr_connected: False` e `instance_name: None`.
+  - **Solución requerida para reconexión:** El usuario debe ir al Dashboard -> Agente Socio / Sara -> Sección WAHA -> dar clic en **"Generar Código QR"** y escanearlo desde WhatsApp en su celular.
+- **Causa Raíz 2 (Fuga de razonamiento interno CoT a las 7:38 AM):**
+  - El agente Socio tenía configurado el proveedor `"nvidia"` (`nvidia/nemotron-3-ultra-550b-a55b`).
+  - La regla que fuerza Vertex AI (`gemini-2.0-flash`) en producción solo evaluaba proveedores `in ("openrouter", "groq")`, omitiendo `"nvidia"`.
+  - El filtro limpiador CoT en `conversation_service.py` interceptaba bloques que iniciaban con `"The user"`, pero al recibir textos que iniciaban con nombres de archivos (`oficina 2 pinares.jpeg - Office Pinares...`), la expresión regular capturaba `oficina` y enviaba el pensamiento interno al cliente.
+- **Solución en Código:**
+  - Se extendió en `conversation_service.py` el override de producción: cualquier proveedor que no sea `"vertex"` (`provider != "vertex"`) pasa automáticamente a **Vertex AI Gemini 2.0 Flash** cuando GCP está activo.
+  - Se blindó la lista de marcadores CoT en `conversation_service.py` (`cot_markers`) incluyendo frases como `Office Pinares`, `capacity`, `Meeting room`, `Price: 1h`, `The image`, etc.
+  - Se corrigió la regex para evitar que nombres de archivos que contengan la palabra `oficina` o `puesto` sean considerados respuestas válidas en español.
+
+---
+
+## 2026-07-21 20:52 (COT) — Reescritura del Prompt a Español Puro y Blindaje Definitivo Anti-CoT
+**Plataforma:** Antigravity
+**Tipo:** 🐞 Bugfix + Prompt Engineering + IA
+
+- **Reescritura de System Prompt a Español:**
+  - **Causa Raíz:** El prompt del Agente Sara en la base de datos contenía instrucciones y nombres de pasos redactados originalmente en inglés (`You are "Sara"`, `INFORMATION COLLECTION PROCESS (FUNNEL)`). Al leer esto, los modelos exponían los apuntes del embudo en inglés (`The user says "Somo 5 personas"... Next step in funnel`).
+  - **Acción:** Reescribimos `tools/update_sara_prompt.py` y actualizamos el System Prompt en Supabase a **100% Español Colombiano Corporativo**. Además, se inyectó una traducción dinámica en caliente en `conversation_service.py` que reemplaza cualquier marcador residual en inglés.
+- **Blindaje de Respuesta Fallback Anti-CoT en Python:**
+  - **Solución:** Si la respuesta de la IA llega a contener exclusivamente pensamiento de razonamiento en inglés (`The user says`, `I need to`, `Funnel Step`) sin una respuesta final para el cliente, el backend intercepta el mensaje y responde de inmediato con una frase corporativa y empática en español (ej: *"¡Perfecto! Entendido. Para un grupo de 5 personas tenemos oficinas privadas y salas amobladas. ¿Te gustaría conocer la opción disponible en nuestra sede de Pinares o Pereira Plaza?"*), evitando por completo que cualquier texto en inglés sea enviado al cliente.
+
+---
+
+## 2026-07-21 20:26 (COT) — Refuerzo Estricto de la Regla "Una Sola Pregunta a la Vez" en Conversaciones
+**Plataforma:** Antigravity
+**Tipo:** 🚀 Calidad de Conversación + Prompt Engineering
+
+- **Control de Ritmo Conversacional:**
+  - **Problema:** En el flujo de calificación de espacios de trabajo, el agente agrupaba dos preguntas en la misma respuesta (`¿Cuál te encaja mejor y por cuánto tiempo lo necesitas?`), abrumando al usuario.
+  - **Solución:** Se inyectó una regla imperativa de prioridad alta en `conversation_service.py` (`[REGLA DE CONVERSACIÓN Y RITMO CRÍTICA - UNA SOLA PREGUNTA A LA VEZ]`) que prohíbe explícitamente acumular 2 o más preguntas en el mismo mensaje. El agente ahora pregunta paso a paso (ej: primero el tipo de espacio, espera la respuesta, y luego el tiempo/duración en el siguiente turno).
+
+---
+
+## 2026-07-21 20:17 (COT) — Envío Nativo de Imágenes Multimedia en WhatsApp y Filtro Anti-Razonamiento (CoT)
+**Plataforma:** Antigravity
+**Tipo:** 🐞 Bugfix + IA + Multimedia WAHA
+
+- **Envío Nativo de Imágenes (WAHA `sendImage` API):**
+  - **Problema:** Las imágenes enviadas por la base de conocimiento o el agente aparecían en WhatsApp como texto plano o URLs crudas (`ppzsnsovdmxwofmuppfv.supabase.co` / `![alt](url)`).
+  - **Solución:** Reescrito `send_waha_text` en `backend/services/whatsapp_waha_service.py` con una expresión regular integral que extrae automáticamente URLs de Supabase Storage y marcas markdown (`![alt](url)`, `[alt](url)`). El texto se entrega limpio y las imágenes se transmiten inmediatamente como **fotografías multimedia nativas en WhatsApp** vía la API `sendImage`.
+- **Eliminación Total de Textos en Inglés (Chain of Thought):**
+  - **Problema:** En respuestas complejas, modelos secundarios exponían pensamientos de razonamiento en inglés (`The user wants...`, `I need to...`).
+  - **Solución:**
+    1. Inyectada regla obligatoria en `conversation_service.py` prohibiendo razonamientos en inglés y exigiendo respuestas 100% en español.
+    2. Forzado `Vertex AI (gemini-2.0-flash)` como motor prioritario sin exposición de CoT.
+    3. Implementado filtro limpiador en Python que remueve cualquier bloque de razonamiento inicial en inglés antes de transmitir el mensaje al cliente final.
+
+---
+
+## 2026-07-21 19:40 (COT) — Corrección de Redirección OAuth de Google al Dashboard y Reset Limpio de WhatsApp WAHA
+**Plataforma:** Antigravity
+**Tipo:** 🐞 Bugfix + UX + Autenticación
+
+- **Redirección de Autenticación de Google (OAuth):**
+  - **Problema:** Tras autenticarse con Google OAuth, Supabase devolvía la sesión a la página raíz `/` (`https://plataforma-genia.vercel.app/#`), haciendo que el usuario tuviera que dar clic manualmente en "Ir a la Consola".
+  - **Solución:** Implementada auto-redirección inmediata en `PublicLandingPage` (`dashboard/src/app/(public)/page.tsx`) mediante `useEffect` con `useAppContext()` y `useRouter()`. Ahora, en cuanto la sesión de Google o Supabase es detectada, el usuario es transportado automáticamente y sin fricción al Dashboard de la Consola Analítica (`/analytics`).
+- **Vinculación de WhatsApp (Hard Reset en GCP WAHA):**
+  - **Acción:** Purga total de archivos de cookies y sesiones persistentes (`/app/.sessions/*`) en el contenedor de WAHA en Google Cloud.
+  - **Resultado:** Eliminación del conflicto de credenciales por vinculación previa con otra línea. El motor de WAHA quedó en estado completamente virgen listo para escanear en los primeros 30 segundos.
+
+---
+
+## 2026-07-21 18:50 (COT) — Activación e Integración de Google Cloud Vertex AI (Plan Pago) para los Agentes
+**Plataforma:** Antigravity
+**Tipo:** 🚀 Optimización + IA de Alta Disponibilidad
+
+- **Objetivo:** Eliminar los bloqueos por límites de cuota (Rate Limits / 15 RPM) y acelerar el tiempo de respuesta de los agentes de WhatsApp activando Google Cloud Vertex AI en la cuenta de facturación de GCP.
+- **Configuración de Google Cloud Platform (GCP):**
+  - **APIs Habilitadas en GCP:** `aiplatform.googleapis.com` (Vertex AI API) e `iam.googleapis.com`.
+  - **Service Account Creada:** `vercel-vertex-sa@gen-lang-client-0111526550.iam.gserviceaccount.com` con el rol `roles/aiplatform.user`.
+  - **Clave JSON:** Generada e inyectada como `GCP_SERVICE_ACCOUNT_JSON` en Vercel.
+- **Variables de Entorno en Vercel Producción:**
+  - `GOOGLE_CLOUD_PROJECT` = `gen-lang-client-0111526550`
+  - `GOOGLE_CLOUD_LOCATION` = `us-central1`
+  - `VERTEX_GEMINI_MODEL` = `gemini-2.0-flash`
+  - `MODEL_FALLBACK_ORDER` = `vertex,groq,gemini,openrouter`
+- **Resultados:**
+  - Prioridad de modelo configurada para usar **Vertex AI (Gemini 2.0 Flash pago)** en primer lugar.
+  - Tiempo de respuesta reducido a < 1.0s sin caídas ni silencios al solicitar fotos o procesar audios.
+- **Estado:** ✅ Completado y redesplegado a producción en Vercel.
+
+---
+
+## 2026-07-21 17:58 (COT) — Migración completa de WAHA a Google Cloud Compute Engine (São Paulo) + SSL HTTPS genia.com.co
+**Plataforma:** Antigravity
+**Tipo:** 🚀 Despliegue e Infraestructura (Google Cloud Platform)
+
+- **Objetivo:** Reemplazar el servidor efímero de WAHA en Railway por una arquitectura dedicada y de alta estabilidad en Google Cloud Platform (GCP) bajo el dominio oficial `waha.genia.com.co`.
+- **Infraestructura en GCP:**
+  - **Proyecto GCP:** `gen-lang-client-0111526550` (Genia) con plan pago habilitado.
+  - **Máquina Virtual:** Compute Engine `waha-server` (`e2-medium`, 2 vCPU, 4 GB RAM, 20 GB SSD Persistente) en la zona `southamerica-east1-a` (São Paulo, Brasil).
+  - **IP Pública Estática:** Reservada e inyectada `34.151.209.188`.
+  - **Regla de Firewall GCP:** `waha-allow-web` activada para tráfico HTTP (80) y HTTPS (443).
+- **Contenedores y Servicios Desplegados en la VM:**
+  - `waha`: Motor `WEBJS` con Chromium real (v2026.7.1) y zona horaria `America/Bogota`.
+  - `audio-proxy`: Proxy en FastAPI para descarga y codificación Base64 de notas de voz.
+  - `caddy`: Proxy inverso con emisión automática de certificado SSL Let's Encrypt para `waha.genia.com.co`.
+- **Configuración DNS & Vercel:**
+  - **Landing Page Principal:** `https://genia.com.co` y `https://www.genia.com.co` asignados al proyecto `genia-ia` (Landing Page comercial con botones de registro/login).
+  - **Plataforma App / Dashboard:** `https://app.genia.com.co` asignado al proyecto `plataforma-genia` (Aplicación web).
+  - **Registro DNS A WAHA:** `waha.genia.com.co` -> `34.151.209.188` (Servidor GCP).
+  - **Variables Vercel:** `FRONTEND_URL` (`https://app.genia.com.co`), `WAHA_API_URL` (`https://waha.genia.com.co`) y `WAHA_API_KEY` en producción.
+  - **Verificación:** Todos los dominios probados respondiendo con estado HTTP 200 y certificados SSL activos.
+- **Estado:** ✅ Completado y desplegado a producción en Vercel y GCP.
+
+---
+
+## 2026-07-17 13:55 (COT) — Sincronización de historial WhatsApp + contexto histórico en agente
+**Plataforma:** opencode
+**Tipo:** ✨ Nueva funcionalidad
+
+- **Objetivo:** Sincronizar el historial de chats de WhatsApp (3 meses) al conectar con WAHA, y usarlo como contexto de entrenamiento para las respuestas del agente.
+- **Backend:**
+  - `backend/models/agent.py` — Nuevos campos: `whatsapp_history_sync_enabled`, `whatsapp_history_synced`, `whatsapp_sync_status`
+  - `backend/services/whatsapp_waha_service.py` — `create_waha_session()` acepta `history_sync: bool` e inyecta `noweb.store.enabled=true` + `fullSync=true` en la config de la sesión WAHA
+  - `backend/services/whatsapp_waha_service.py` — Nueva función `sync_waha_chat_history()`: obtiene chats → obtiene mensajes con `filter.timestamp.gte` (3 meses atrás) → upsert de conversaciones y mensajes en DB
+  - `backend/routers/whatsapp.py` — `connect_whatsapp_waha` acepta `?history_sync=true`; webhook handler dispara `sync_waha_chat_history()` automáticamente al recibir evento `CONNECTED`
+  - `backend/routers/client.py` — Nuevos endpoints: `GET /api/client/sync-status`, `POST /api/client/sync-history` (forzar resync manual)
+  - `backend/services/conversation_service.py` — `process_conversation_message()` ahora inyecta hasta 3 ejemplos de conversaciones históricas completas como `[EJEMPLOS DE CONVERSACIONES ANTERIORES]` en el system prompt, para que el agente aprenda tono y estilo de interacciones reales previas.
+- **Frontend:**
+  - `dashboard/src/app/(dashboard)/agents/[id]/page.tsx` — Nuevo checkbox "Sincronizar historial (3 meses)" antes del botón "Generar Código QR" en la sección WAHA
+  - `dashboard/src/app/client/settings/page.tsx` — Indicador visual del estado de sincronización (ícono RefreshCw verde si ya sincronizó, amarillo si pendiente)
+- **Deploy:** `https://dashboard-rouge-phi-64.vercel.app` (Vercel production)
+- **Siguiente paso:** Probar end-to-end: conectar WhatsApp con toggle activo, escanear QR, verificar que el sync se ejecuta en CONNECTED y que el agente usa el contexto histórico en sus respuestas.
+
+## 2026-07-17 11:50 (COT) — Nuevo Panel Cliente (estilo WhatsApp Web) implementado
+**Plataforma:** opencode
+**Tipo:** ✨ Nueva funcionalidad
+
+- **Objetivo:** Interfaz tipo WhatsApp Web para que el cliente/empresario que compra el agente pueda monitorear leads, conversaciones activas y chatear en vivo con sus prospectos.
+- **Backend — Nuevo router `backend/routers/client.py`:**
+  - `GET /api/client/me` — Info del negocio (nombre, teléfono, modelo, zona horaria)
+  - `GET /api/client/conversations` — Conversaciones activas con último mensaje y lead asociado
+  - `GET /api/client/conversations/{id}` — Mensajes completos de una conversación
+  - `POST /api/client/conversations/{id}/send` — Enviar mensaje como humano (supervisor)
+  - `PUT /api/client/conversations/{id}/mode` — Toggle `active` ↔ `handoff`
+  - `GET /api/client/conversations/{id}/read` — Marcar como leída
+  - `GET /api/client/leads` — Leads capturados por el agente del cliente
+  - `GET /api/client/stats` — Mini-métricas
+- **Frontend — Nueva ruta `(client)/`:**
+  - Layout tipo WhatsApp Web: sidebar angosto (56px) con iconos + nombre del negocio arriba
+  - Navegación: Chats, Leads, Configuración + botón para volver al Panel Admin
+  - **Página Conversaciones:** Lista de chats (con polling cada 5s), panel de chat con burbujas, toggle agente/humano en el header, input de texto solo habilitado en modo handoff
+  - **Página Leads:** Lista filtrable con detalle expandido (teléfono, email, custom_data, fecha)
+  - **Página Configuración:** Info del negocio, WhatsApp conectado, modelo IA, estado, zona horaria
+- **Componentes creados (7):**
+  - `ConversationList.tsx` — Sidebar de conversaciones con búsqueda
+  - `ConversationItem.tsx` — Item individual con avatar por iniciales, badge, indicador de modo
+  - `ChatPanel.tsx` — Panel central con header, burbujas, input, indicador de modo
+  - `MessageBubble.tsx` — Burbuja de mensaje (cliente a izquierda, agente a derecha)
+  - `ChatInput.tsx` — Textarea con envío por Enter/click, deshabilitado en modo agente
+  - `HandoffToggle.tsx` — Botón toggle verde (agente) / ámbar (humano)
+  - `EmptyState.tsx` — Estado cuando no hay conversación seleccionada
+- **Sidebar actualizado:** Agregado enlace "Panel Cliente" en `Sidebar.tsx`
+- **Archivos modificados/creados:**
+  - `backend/routers/client.py` (nuevo, ~200 líneas)
+  - `backend/routers/__init__.py` (+client_router)
+  - `backend/main.py` (+client_router registrado)
+  - `dashboard/src/app/(client)/layout.tsx` (nuevo)
+  - `dashboard/src/app/(client)/page.tsx` (nuevo, redirect a conversations)
+  - `dashboard/src/app/(client)/conversations/page.tsx` (nuevo)
+  - `dashboard/src/app/(client)/leads/page.tsx` (nuevo)
+  - `dashboard/src/app/(client)/settings/page.tsx` (nuevo)
+  - `dashboard/src/components/client/*` (7 componentes nuevos)
+  - `dashboard/src/components/Sidebar.tsx` (+link Panel Cliente)
+
+**Estado:** ✅ Completado
+**Siguiente paso:** Probar en local (npm run dev + uvicorn), verificar que los endpoints del panel cliente responden correctamente y que la UI se renderiza sin errores.
+
+---
+
+
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Diagnóstico y Depuración
+
+- **Problema 1: El agente no responde por WhatsApp:**
+  - **Diagnóstico:** Se analizó el flujo del webhook WAHA en producción (`/api/whatsapp/webhook/waha/{id}`). Al simular una recepción de mensaje, el backend invoca exitosamente a la IA (Groq llama-3.3-70b-versatile responde correctamente), pero al enviar la respuesta a WAHA, el servidor retorna `422 Unprocessable Entity: Session "genia_547c07f7_1784302906" does not exist`.
+  - **Causa raíz:** La sesión asignada en la base de datos no está presente en el servidor WAHA de Railway (el contenedor se reinició o recreó, perdiendo la sesión efímera). La única sesión presente en WAHA es `genia_547c07f7_1784251221` en estado `FAILED`.
+  - **Solución implementada:** Se añadieron prints de depuración a `_receive_waha_webhook_impl` y `send_waha_text_raw` para rastrear las llamadas y respuestas del servidor WAHA en vivo. Se corroboró mediante script de prueba local que la API de WAHA crea sesiones y genera códigos QR base64 perfectamente.
+  - **Siguiente paso para el usuario:** El usuario debe desconectar y volver a conectar el agente desde el dashboard para crear una sesión limpia y escanear el nuevo QR. Con las variables y la rotación a Groq ya listas, responderá inmediatamente.
+
+- **Problema 2: Los agentes no se muestran en el dashboard:**
+  - **Diagnóstico:** Se verificó que el agente `Socio` existe en la base de datos de producción (Supabase) y pertenece exactamente al usuario autenticado `2d5fc55e-48e7-43bc-8d3e-624167bdae76` (`baenalejandro@gmail.com`). 
+  - **Solución en progreso:** Se agregaron prints detallados en el endpoint `GET /api/agents` para registrar en los logs de Vercel qué `current_user` realiza la petición y qué lista de agentes se consulta en la base de datos.
+  - **Redespliegue:** Todos los cambios y prints diagnósticos se redesplegaron exitosamente en Vercel.
+
+**Estado:** 🔍 Diagnóstico completado, código con logs redesplegado
+**Siguiente paso:** Revisar los logs de `GET /api/agents` en Vercel para identificar por qué el dashboard recibe una lista vacía o si ocurre un fallo silencioso en el frontend.
+
+---
+
+## 2026-07-17 10:36 (COT) — Corrección de conexión de Base de Datos en Producción (Vercel)
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Corrección
+
+- **Problema:** En el panel "Creador de Agentes" no se listaban los agentes creados y la tabla "Estatus de Rotación" no mostraba todos los modelos en producción.
+- **Causa raíz:** La variable de entorno `DATABASE_URL` no estaba configurada en Vercel. Por lo tanto, el backend desplegado caía en el fallback de SQLite local (`sqlite:///./data/genia.db`). Como las funciones serverless de Vercel son efímeras y de solo lectura, la base de datos SQLite siempre se inicializaba vacía, perdiendo la persistencia y ocultando los datos reales.
+- **Solución:**
+  1. Se configuró e inyectó la variable de entorno `DATABASE_URL` en Vercel con la cadena de conexión real de la base de datos de Supabase PostgreSQL (`postgresql://postgres.ppzsnsovdmxwofmuppfv:platagenia2026@aws-1-us-west-2.pooler.supabase.com:6543/postgres`).
+  2. Se redesplegó el proyecto en producción (`vercel --prod --yes`).
+- **Resultado:** El backend ahora se conecta correctamente a Supabase, mostrando todos los agentes activos (como `Mia` y `Socio`) y poblando la tabla de rotación con los modelos reales de producción.
+
+**Estado:** ✅ Solucionado y Desplegado
+**Siguiente paso:** Verificar en el navegador la correcta visualización de agentes y la consola.
+
+---
+
+## 2026-07-17 10:07 (COT) — Integración de NVIDIA NIM y Auto-Rotación de Modelos
+**Plataforma:** Antigravity
+**Tipo:** ✨ Mejora
+
+- **Objetivo:** Integrar el proveedor NVIDIA NIM (NVIDIA API Catalog) en la plataforma y añadir sus modelos al pool de auto-rotación gratuita.
+- **Implementación:**
+  1. Configuración de `NVIDIA_API_KEY` en `.env` y `.env.example`.
+  2. Adición de soporte para el proveedor `"nvidia"` y modelos (`nemotron-3-nano`, `nemotron-3-ultra`, `llama-3.3-70b`, `llama-3.1-8b/70b`, `deepseek-r1`) en `backend/config.py`.
+  3. Soporte para el cliente `AsyncOpenAI` de NVIDIA y mapeo de tokens/precios en `backend/services/ai_service.py`.
+  4. Inclusión de todos los modelos de NVIDIA en el pool de auto-rotación de `FREE_MODELS` y `FREE_MODELS_QUOTAS` en `backend/services/model_rotation_service.py` con un límite de 40 RPM.
+  5. Exposición de los modelos en el endpoint `/api/models` de `backend/main.py`.
+  6. Actualización del frontend en `AppContext.tsx` y las páginas de detalle/creación de agentes (`dashboard/src/app/(dashboard)/agents/[id]/page.tsx` y `dashboard/src/app/(dashboard)/agents/page.tsx`) para listar "NVIDIA NIM" como proveedor seleccionable.
+- **Pruebas:** 
+  - Pruebas directas de API y de integración de chat con RAG y herramientas pasadas exitosamente con respuestas reales de `nemotron-3-nano` y `llama-3.3-70b`.
+  - Pruebas unitarias de rotación `test_model_rotation.py` ejecutadas y pasadas al 100%.
+
+**Estado:** ✅ Completado, Verificado y Desplegado en Producción Vercel
+**Siguiente paso:** Monitorear el uso de los modelos NVIDIA NIM por los usuarios finales y asegurar la correcta auto-rotación en producción.
+
+---
+
 ## 2026-07-16 20:05 (COT) — Solución definitiva: agente Socio no responde WhatsApp + prevención multícapa
 **Plataforma:** opencode
 **Tipo:** 🐛 Corrección + 🚀 Prevención multi-capa

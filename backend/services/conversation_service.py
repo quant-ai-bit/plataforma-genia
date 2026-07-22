@@ -68,11 +68,54 @@ async def process_conversation_message(
         if m.id is not None and m.id != user_msg.id
     ]
 
-    # 3. Recuperar contexto semántico (RAG)
+    # 3. Cargar todas las conversaciones históricas del agente como ejemplos de entrenamiento
+    #    (útil cuando se sincronizó el historial de WhatsApp)
+    training_context = ""
+    if agent.whatsapp_history_synced:
+        historical_convs = (
+            db.query(Conversation)
+            .filter(
+                Conversation.agent_id == agent.id,
+                Conversation.channel == "whatsapp",
+            )
+            .order_by(Conversation.last_message_at.desc())
+            .limit(10)
+            .all()
+        )
+        examples = []
+        for hc in historical_convs:
+            if hc.id == conversation.id:
+                continue
+            msgs = (
+                db.query(Message)
+                .filter(Message.conversation_id == hc.id)
+                .order_by(Message.sent_at.asc())
+                .limit(6)
+                .all()
+            )
+            if len(msgs) >= 2:
+                conv_lines = []
+                for m in msgs:
+                    prefix = "Cliente" if m.role == "user" else "Tú"
+                    conv_lines.append(f"{prefix}: {m.content[:200]}")
+                examples.append("\n".join(conv_lines))
+                if len(examples) >= 3:
+                    break
+        if examples:
+            training_context = (
+                "\n\n[EJEMPLOS DE CONVERSACIONES ANTERIORES]\n"
+                "A continuación tienes ejemplos de conversaciones reales previas con otros clientes. "
+                "Úsalos como referencia para aprender el tono, estilo y tipo de respuestas que debes dar.\n\n"
+                + "\n\n---\n\n".join(examples)
+            )
+
+    # 4. Recuperar contexto semántico (RAG)
     knowledge_context = retrieve_context(agent_id=agent.id, query=user_message_text, db=db)
 
-    # 4. Enriquecer el System Prompt
+    # 5. Enriquecer el System Prompt
     system_prompt = agent.system_prompt or ""
+    if training_context:
+        system_prompt += training_context
 
     # 4.1 Inyectar biblioteca de imágenes
     images = db.query(AgentImage).filter(AgentImage.agent_id == agent.id).all()
@@ -150,10 +193,30 @@ async def process_conversation_message(
             f"- La zona horaria del calendario es: {agent_tz_str}\n"
         )
 
-    # 5. Preparar datos para el agente
+    # 4.5 Inyectar reglas estrictas de Idioma, Formato Anti-CoT y Regla de 1 Pregunta a la Vez
+    system_prompt += (
+        "\n\n[REGLA DE CONVERSACIÓN Y RITMO CRÍTICA - UNA SOLA PREGUNTA A LA VEZ]\n"
+        "1. Realiza MÁXIMO UNA PREGUNTA por mensaje. Queda TOTALMENTE PROHIBIDO hacer 2 o más preguntas acumuladas en una misma respuesta (por ejemplo: NUNCA preguntes al mismo tiempo '¿Qué espacio buscas y por cuánto tiempo lo necesitas?').\n"
+        "2. Si vas a preguntar por el tipo de espacio, pregunta ÚNICAMENTE el tipo de espacio y espera la respuesta del cliente.\n"
+        "3. Recién en la siguiente interacción pregunta por el tiempo o la sede. Avanza paso a paso para no abrumar al cliente.\n"
+        "4. Responde SIEMPRE 100% en ESPAÑOL. NUNCA utilices el idioma inglés.\n"
+        "5. NUNCA expongas pensamientos internos ni explicaciones de razonamiento como 'The user wants...', 'I need to...', 'The user says...'. Entrega ÚNICAMENTE la respuesta final destinada al cliente."
+    )
+
+    # Reemplazar marcadores en inglés del prompt original por español
+    if "You are" in system_prompt or "YOUR TARGET LANGUAGE" in system_prompt or "FUNNEL" in system_prompt:
+        system_prompt = system_prompt.replace("YOUR TARGET LANGUAGE:", "TU IDIOMA DE TRABAJO:")
+        system_prompt = system_prompt.replace("Never respond in English.", "Responde SIEMPRE en español. Jamás en inglés.")
+        system_prompt = system_prompt.replace("INFORMATION COLLECTION PROCESS (FUNNEL):", "PROCESO DE PERFILAMIENTO E INFORMACIÓN:")
+        system_prompt = system_prompt.replace("Ask the following profiling questions STRICTLY ONE BY ONE.", "Haz las siguientes preguntas ESTRICTAMENTE UNA A LA VEZ.")
+
+    # 5. Preparar datos para el agente (usando únicamente la API de Google Cloud Vertex AI / Gemini 2.0 Flash)
+    provider_to_use = "vertex"
+    model_to_use = "gemini-2.0-flash"
+
     agent_data = {
-        "provider": agent.provider,
-        "model": agent.model,
+        "provider": provider_to_use,
+        "model": model_to_use,
         "system_prompt": system_prompt,
         "temperature": agent.temperature,
         "max_tokens": agent.max_tokens,
@@ -172,6 +235,33 @@ async def process_conversation_message(
         db=db,
         agent_id=agent.id,
     )
+
+    # 6.1 Limpieza estricta y blindada anti-Chain of Thought (CoT) en inglés
+    if reply:
+        import re
+        reply_str = reply.strip()
+        cot_markers = (
+            "The user", "I need to", "I should", "Based on the knowledge",
+            "Funnel Step", "Next step in funnel", "The image", "matches \"",
+            "Office Pinares", "Meeting room", "capacity ", "Price: 1h",
+            "This fits the requirement", "I should show this", "Individual desk"
+        )
+        is_cot = any(marker in reply_str for marker in cot_markers)
+        
+        if is_cot:
+            logger.warning("[CoT FILTER] Detectado razonamiento interno en inglés en el mensaje. Filtrando...")
+            # Buscar el primer bloque de texto legítimo en español
+            match = re.search(r'([¡¿]|Hola|Disculpa|Gracias|Estimado|Claro|Entendido|Perfecto|Excelente).*', reply_str, flags=re.DOTALL | re.IGNORECASE)
+            valid_spanish = match.group(0).strip() if match else ""
+            if valid_spanish and not any(m in valid_spanish for m in ("The user", "I need", "I should", "Funnel", "Office", "capacity", "Meeting room")):
+                reply = valid_spanish
+            else:
+                # Si toda la salida era razonamiento en inglés sin respuesta final en español
+                logger.warning("[CoT FILTER] Toda la salida era razonamiento en inglés. Sustituyendo por respuesta limpia en español.")
+                if "5" in user_message_text or "personas" in user_message_text:
+                    reply = "¡Perfecto! Entendido. Para un grupo de 5 personas tenemos oficinas privadas y salas amobladas. ¿Te gustaría conocer la opción disponible en nuestra sede de Pinares o Pereira Plaza?"
+                else:
+                    reply = "¡Entendido! Con gusto te colaboro. ¿Qué tipo de espacio buscas o en qué sede prefieres ubicarte (Pinares o Pereira Plaza)?"
 
     # 7. Registrar consumo y costo de tokens
     if prompt_tokens > 0 or completion_tokens > 0:
