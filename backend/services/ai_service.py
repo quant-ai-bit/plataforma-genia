@@ -537,22 +537,57 @@ async def chat_with_agent(
                         prompt_tokens += response.usage.prompt_tokens
                         completion_tokens += response.usage.completion_tokens
 
-                elif provider == "gemini":
-                    from services.providers.gemini_provider import GeminiProvider
-                    from services.providers.base import GenerationRequest
+                elif provider in ("gemini", "vertex"):
+                    try:
+                        if provider == "vertex":
+                            from services.providers.vertex_provider import VertexAIProvider
+                            from services.providers.base import GenerationRequest
 
-                    gp = GeminiProvider(model=model_name)
-                    req = GenerationRequest(
-                        messages=run_messages,
-                        system_prompt=full_system_prompt,
-                        max_tokens=max_tokens,
-                        temperature=temperature,
-                    )
-                    result = await gp.generate(req, timeout_s=30.0)
-                    response_message = {"role": "assistant", "content": result.text}
-                    tool_calls = None
-                    prompt_tokens += result.input_tokens
-                    completion_tokens += result.output_tokens
+                            vp = VertexAIProvider()
+                            req = GenerationRequest(
+                                messages=run_messages,
+                                system_prompt=full_system_prompt,
+                                max_tokens=max_tokens,
+                                temperature=temperature,
+                            )
+                            result = await vp.generate(req, timeout_s=30.0)
+                        else:
+                            from services.providers.gemini_provider import GeminiProvider
+                            from services.providers.base import GenerationRequest
+
+                            gp = GeminiProvider(model=model_name)
+                            req = GenerationRequest(
+                                messages=run_messages,
+                                system_prompt=full_system_prompt,
+                                max_tokens=max_tokens,
+                                temperature=temperature,
+                            )
+                            result = await gp.generate(req, timeout_s=30.0)
+
+                        response_message = {"role": "assistant", "content": result.text}
+                        tool_calls = None
+                        prompt_tokens += result.input_tokens
+                        completion_tokens += result.output_tokens
+                    except Exception as g_exc:
+                        logger.warning(
+                            "Error en proveedor %s (%s): %s. Ejecutando fallback a Groq...",
+                            provider,
+                            model_name,
+                            g_exc,
+                        )
+                        response = await groq_client.chat.completions.create(
+                            model="llama-3.3-70b-versatile",
+                            messages=run_messages,
+                            tools=tools,
+                            tool_choice="auto",
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                        )
+                        response_message = response.choices[0].message
+                        tool_calls = response_message.tool_calls
+                        if response.usage:
+                            prompt_tokens += response.usage.prompt_tokens
+                            completion_tokens += response.usage.completion_tokens
 
                 elif provider == "openrouter":
                     clean_messages = [message_to_dict(m) for m in run_messages]
@@ -653,8 +688,11 @@ async def chat_with_agent(
                         if second_response.usage:
                             prompt_tokens += second_response.usage.prompt_tokens
                             completion_tokens += second_response.usage.completion_tokens
-                    elif provider == "gemini":
-                        final_text = response_message.get("content") or ""
+                    elif provider in ("gemini", "vertex"):
+                        if isinstance(response_message, dict):
+                            final_text = response_message.get("content") or ""
+                        else:
+                            final_text = getattr(response_message, "content", "") or ""
                     elif provider == "openrouter":
                         clean_messages = [message_to_dict(m) for m in run_messages]
                         payload = {
@@ -686,8 +724,11 @@ async def chat_with_agent(
                 else:
                     if provider == "openrouter":
                         final_text = response_message.get("content") or ""
-                    elif provider == "gemini":
-                        final_text = response_message.get("content") or ""
+                    elif provider in ("gemini", "vertex"):
+                        if isinstance(response_message, dict):
+                            final_text = response_message.get("content") or ""
+                        else:
+                            final_text = getattr(response_message, "content", "") or ""
                     else:
                         final_text = response_message.content or ""
 
