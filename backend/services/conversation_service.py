@@ -210,9 +210,9 @@ async def process_conversation_message(
         system_prompt = system_prompt.replace("INFORMATION COLLECTION PROCESS (FUNNEL):", "PROCESO DE PERFILAMIENTO E INFORMACIÓN:")
         system_prompt = system_prompt.replace("Ask the following profiling questions STRICTLY ONE BY ONE.", "Haz las siguientes preguntas ESTRICTAMENTE UNA A LA VEZ.")
 
-    # 5. Preparar datos para el agente (usando el proveedor configurado para el agente o fallback seguro)
-    provider_to_use = getattr(agent, "provider", None) or "groq"
-    model_to_use = getattr(agent, "model", None) or "llama-3.3-70b-versatile"
+    # 5. Preparar datos para el agente (Exclusivamente Google Cloud Vertex AI / gemini-2.0-flash)
+    provider_to_use = "vertex"
+    model_to_use = "gemini-2.0-flash"
 
     agent_data = {
         "provider": provider_to_use,

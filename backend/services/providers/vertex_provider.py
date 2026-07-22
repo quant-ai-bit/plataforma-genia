@@ -46,9 +46,9 @@ class VertexAIProvider(ModelProvider):
 
     name = "vertex"
 
-    def __init__(self):
+    def __init__(self, model: str | None = None):
         self._initialized = False
-        self.model_name = getattr(settings, "vertex_gemini_model", "") or "gemini-1.5-pro"
+        self.model_name = model or getattr(settings, "vertex_gemini_model", "") or "gemini-2.0-flash"
         self.project = getattr(settings, "google_cloud_project", "") or None
         self.location = getattr(settings, "google_cloud_location", "") or "us-central1"
 

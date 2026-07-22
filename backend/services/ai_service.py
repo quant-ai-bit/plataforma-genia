@@ -543,7 +543,7 @@ async def chat_with_agent(
                             from services.providers.vertex_provider import VertexAIProvider
                             from services.providers.base import GenerationRequest
 
-                            vp = VertexAIProvider()
+                            vp = VertexAIProvider(model=model_name)
                             req = GenerationRequest(
                                 messages=run_messages,
                                 system_prompt=full_system_prompt,
