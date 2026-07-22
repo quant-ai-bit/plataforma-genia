@@ -6,6 +6,31 @@
 
 ---
 
+## 2026-07-22 17:33 (COT) — Configuración Exclusiva de Google Cloud Vertex AI (`gemini-2.0-flash`) + Resiliencia WhatsApp
+**Plataforma:** Antigravity
+**Tipo:** 🚀 Configuración Exclusiva LLM + Bugfix Resiliencia + Ajuste de Dominios Vercel
+
+- **Cambios Implementados:**
+  1. **Modelo Exclusivo Vertex AI:** Se fijó el modelo `gemini-2.0-flash` en **Google Cloud Vertex AI** como el motor exclusivo de inteligencia artificial para todos los agentes de la plataforma (desactivando la rotación dinámica de modelos).
+  2. **Resolución de Error en WhatsApp:**
+     - Se corrigió un error en `backend/services/ai_service.py` donde el manejador de `chat_with_agent` no reconocía la rama condicional `vertex`, lo que ocasionaba que las respuestas de WhatsApp devolvieran el mensaje de fallback *"Ocurrió un error al procesar tu mensaje"*.
+     - Se integró `VertexAIProvider` con credenciales de cuenta de servicio de Google Cloud (`GCP_SERVICE_ACCOUNT_JSON`).
+     - Se agregó un sistema de respaldo automático instantáneo hacia Groq (`llama-3.3-70b-versatile`) en caso de cualquier contingencia en la API.
+  3. **Restauración de Dominios Vercel:**
+     - `https://genia.com.co` y `https://www.genia.com.co` → Enlazados al proyecto `genia-ia` (Landing Page comercial estática original).
+     - `https://plataforma-genia.vercel.app` y `https://app.genia.com.co` → Enlazados al proyecto `plataforma-genia` (Aplicación web y consola de agentes).
+- **Archivos Modificados:**
+  - `backend/services/conversation_service.py`
+  - `backend/services/ai_service.py`
+  - `backend/services/providers/vertex_provider.py`
+  - `PROGRESS.md`
+- **Verificación:**
+  - Pruebas unitarias ejecutadas exitosamente (`pytest` 3/3 passed) ✅
+  - Despliegues en producción Vercel completados y verificados en vivo ✅
+- **Estado:** ✅ 100% Funcional y activo en producción.
+
+---
+
 ## 2026-07-22 12:48 (COT) — Prevención Definitiva Desconexión WhatsApp: Auto-Reconexión + Notificaciones
 **Plataforma:** Antigravity
 **Tipo:** 🐞 Bugfix + Resiliencia + Infraestructura
