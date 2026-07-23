@@ -670,16 +670,17 @@ async def get_whatsapp_status(
             import time
             # 1. Control de expiración del código QR (300 segundos de duración máxima para escaneo)
             expired = False
-            parts = session_name.split("_")
-            if len(parts) >= 3:
-                try:
-                    created_ts = int(parts[-1])
-                    age = time.time() - created_ts
-                    if age > 300:  # Expirar si pasan más de 300 segundos (5 minutos)
-                        expired = True
-                        logger.info(f"[WAHA STATUS] Sesión '{session_name}' expiró por inactividad (age={age:.1f}s). Limpiando.")
-                except Exception:
-                    pass
+            if not agent.whatsapp_qr_connected:
+                parts = session_name.split("_")
+                if len(parts) >= 3:
+                    try:
+                        created_ts = int(parts[-1])
+                        age = time.time() - created_ts
+                        if age > 300:  # Expirar si pasan más de 300 segundos (5 minutos) sin escanear
+                            expired = True
+                            logger.info(f"[WAHA STATUS] Sesión de escaneo '{session_name}' expiró por inactividad (age={age:.1f}s). Limpiando.")
+                    except Exception:
+                        pass
 
             if expired:
                 await delete_waha_session(session_name)
@@ -2126,7 +2127,7 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
             db.commit()
             logger.info(f"Línea WAHA de '{agent.name}' marcada CONECTADA.")
             # Disparar sync de historial si está habilitado y no se ha completado
-            if agent.whatsapp_history_sync_enabled and not agent.whatsapp_history_synced:
+            if getattr(agent, "whatsapp_history_sync_enabled", False) and not getattr(agent, "whatsapp_history_synced", False):
                 agent.whatsapp_sync_status = "in_progress"
                 db.commit()
                 logger.info(f"[WAHA SYNC] Iniciando sync de historial para '{agent.name}'...")
@@ -2399,8 +2400,8 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
 
         print(f"[WAHA WEBHOOK IMPL] IA respondió: '{reply[:150]}...'")
         if not reply or not reply.strip():
-            logger.warning("[WAHA WEBHOOK] IA devolvió respuesta vacía. Enviando fallback.")
-            reply = "Hola, gracias por tu mensaje. ¿En qué puedo ayudarte?"
+            logger.warning("[WAHA WEBHOOK] IA devolvió respuesta vacía. Enviando fallback contextual.")
+            reply = "¡Entendido! Con gusto te colaboro. ¿Te gustaría conocer las opciones de espacios o precios en la sede Pinares o Pereira Plaza?"
     except Exception as e:
         err_type = type(e).__name__
         err_msg = str(e)[:200]

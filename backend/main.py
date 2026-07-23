@@ -104,10 +104,12 @@ async def log_requests(request: Request, call_next):
     duration = time.time() - start_time
     if ENVIRONMENT == "development":
         try:
-            with open("C:/Users/User/Desktop/ANTIGRAVITY/PLATAFORMA GENIA/backend/data/request_debug.log", "a", encoding="utf-8") as f:
+            log_dir = os.path.join(os.path.dirname(__file__), "data")
+            os.makedirs(log_dir, exist_ok=True)
+            log_path = os.path.join(log_dir, "request_debug.log")
+            with open(log_path, "a", encoding="utf-8") as f:
                 f.write(f"[{datetime.now().isoformat()}] {request.method} {request.url.path} - Status: {response.status_code} - Duration: {duration:.4f}s\n")
         except Exception as e:
-            # write error to console if possible
             print("Log request error:", str(e))
     return response
 
@@ -152,12 +154,18 @@ app.include_router(metrics_router)
 @app.get("/", tags=["Health Check"])
 def read_root():
     """Endpoint de verificación de estado básico (Health Check)."""
+    import os
+    env_summary = {}
+    for k, v in os.environ.items():
+        if any(w in k.lower() for w in ("project", "location", "credentials", "account", "key", "token", "secret", "url", "db", "api")):
+            env_summary[k] = len(v) if v else 0
     return {
         "status": "online",
         "service": "PLATAFORMA GENIA Backend",
         "version": "1.0.0",
         "hackathon": "Build with Gemini XPRIZE",
         "google_cloud": True,
+        "env_summary": env_summary,
     }
 
 

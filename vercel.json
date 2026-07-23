@@ -13,12 +13,16 @@
   },
   "crons": [
     {
-      "path": "/api/whatsapp/waha/monitor",
+      "path": "/api/whatsapp/health",
       "schedule": "0 0 * * *"
     },
     {
-      "path": "/api/whatsapp/check-inactivity",
+      "path": "/api/whatsapp/waha/monitor",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/whatsapp/check-inactivity",
+      "schedule": "30 12 * * *"
     }
   ],
   "env": {

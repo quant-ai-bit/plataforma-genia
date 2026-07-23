@@ -183,6 +183,27 @@ class Agent(Base):
         doc="Último código QR (base64) recibido por webhook para vincular la línea",
     )
 
+    # --- Sincronización de Historial WhatsApp ---
+    whatsapp_history_sync_enabled = Column(
+        Boolean,
+        default=False,
+        nullable=True,
+        doc="Si la sincronización del historial de WhatsApp está habilitada",
+    )
+    whatsapp_history_synced = Column(
+        Boolean,
+        default=False,
+        nullable=True,
+        doc="Si el historial de WhatsApp ya fue sincronizado",
+    )
+    whatsapp_sync_status = Column(
+        String(50),
+        default="idle",
+        nullable=True,
+        doc="Estado de sincronización de WhatsApp (idle, syncing, completed, failed)",
+    )
+
+
     # --- Google Calendar OAuth 2.0 (por agente/cliente) ---
     google_calendar_client_id = Column(
         String(255),

@@ -53,12 +53,12 @@ async def process_conversation_message(
     db.add(user_msg)
     db.flush()  # Obtener ID antes de cargar el historial
 
-    # 2. Cargar historial de chat (excluyendo el mensaje recién agregado, limitado a los últimos 8)
+    # 2. Cargar historial de chat (excluyendo el mensaje recién agregado, limitado a los últimos 30)
     history_messages = (
         db.query(Message)
         .filter(Message.conversation_id == conversation.id)
         .order_by(Message.sent_at.desc())
-        .limit(8)
+        .limit(30)
         .all()
     )
     history_messages.reverse()
@@ -71,7 +71,7 @@ async def process_conversation_message(
     # 3. Cargar todas las conversaciones históricas del agente como ejemplos de entrenamiento
     #    (útil cuando se sincronizó el historial de WhatsApp)
     training_context = ""
-    if agent.whatsapp_history_synced:
+    if getattr(agent, "whatsapp_history_synced", False):
         historical_convs = (
             db.query(Conversation)
             .filter(
@@ -210,9 +210,9 @@ async def process_conversation_message(
         system_prompt = system_prompt.replace("INFORMATION COLLECTION PROCESS (FUNNEL):", "PROCESO DE PERFILAMIENTO E INFORMACIÓN:")
         system_prompt = system_prompt.replace("Ask the following profiling questions STRICTLY ONE BY ONE.", "Haz las siguientes preguntas ESTRICTAMENTE UNA A LA VEZ.")
 
-    # 5. Preparar datos para el agente (Exclusivamente Google Cloud Vertex AI / gemini-2.0-flash)
-    provider_to_use = "vertex"
-    model_to_use = "gemini-2.0-flash"
+    # 5. Preparar datos para el agente (Utiliza la configuración dinámica del agente)
+    provider_to_use = agent.provider or "vertex"
+    model_to_use = agent.model or getattr(settings, "vertex_gemini_model", "") or "gemini-2.5-flash"
 
     agent_data = {
         "provider": provider_to_use,

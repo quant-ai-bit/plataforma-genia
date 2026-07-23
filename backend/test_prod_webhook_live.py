@@ -1,4 +1,9 @@
 import asyncio
+import os
+os.environ["GOOGLE_CLOUD_PROJECT"] = "gen-lang-client-0111526550"
+os.environ["GOOGLE_CLOUD_LOCATION"] = "us-central1"
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "C:/Users/User/.gcp/genia-vertex.json"
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from models.agent import Agent

@@ -199,6 +199,14 @@ class VertexAIProvider(ModelProvider):
             ) from exc
         except ProviderError:
             raise
-        except Exception as exc:  # noqa: BLE001 - se normaliza a ProviderError
-            logger.error("VertexAIProvider: error de invocacion: %s", exc)
-            raise ProviderError(f"Vertex AI error: {exc}") from exc
+        except Exception as exc:
+            exc_str = str(exc)
+            logger.error("VertexAIProvider: error de invocacion: %s", exc_str)
+            # Preservar el tipo de error en el mensaje para mejor diagnóstico
+            if "429" in exc_str or "RESOURCE_EXHAUSTED" in exc_str or "Quota" in exc_str or "quota" in exc_str:
+                raise ProviderError(f"Vertex AI quota exceeded: {exc_str}") from exc
+            if "PERMISSION_DENIED" in exc_str or "unauthorized" in exc_str.lower() or "auth" in exc_str.lower():
+                raise ProviderError(f"Vertex AI auth error: {exc_str}") from exc
+            if "NOT_FOUND" in exc_str or "not found" in exc_str.lower() or "404" in exc_str:
+                raise ProviderError(f"Vertex AI model/endpoint not found: {exc_str}") from exc
+            raise ProviderError(f"Vertex AI error: {exc_str}") from exc

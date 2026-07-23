@@ -142,6 +142,9 @@ class AgentResponse(BaseModel):
     whatsapp_provider: str = "meta_cloud"
     whatsapp_qr_instance_name: str | None = None
     whatsapp_qr_connected: bool = False
+    whatsapp_history_sync_enabled: bool = False
+    whatsapp_history_synced: bool = False
+    whatsapp_sync_status: str = "idle"
     google_calendar_client_id: str | None = None
     google_calendar_connected: bool = False
     google_calendar_email: str | None = None
@@ -150,10 +153,15 @@ class AgentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime | None
 
-    @field_validator("whatsapp_connected", "whatsapp_qr_connected", "google_calendar_connected", mode="before")
+    @field_validator("whatsapp_connected", "whatsapp_qr_connected", "whatsapp_history_sync_enabled", "whatsapp_history_synced", "google_calendar_connected", mode="before")
     @classmethod
     def default_bool(cls, v):
         return v if v is not None else False
+
+    @field_validator("whatsapp_sync_status", mode="before")
+    @classmethod
+    def default_sync_status(cls, v):
+        return v if v is not None else "idle"
 
     @field_validator("whatsapp_provider", mode="before")
     @classmethod

@@ -1,14 +1,17 @@
 """
 GroqProvider: envuelve la invocacion de Groq como `ModelProvider`.
 
-Reutiliza el cliente Groq ya inicializado en `services.ai_service`
-(`groq_client`) y normaliza la respuesta al DTO `GenerationResult`.
+NOTA: Este proveedor ya no se usa en el flujo principal (Vertex AI exclusivo).
+Se mantiene por compatibilidad con scripts de prueba y código heredado.
+El cliente Groq se crea localmente en lugar de importarse de `ai_service`.
 
 Feature: genia-agent-platform (Tarea 2.3)
 """
 
 import asyncio
 import logging
+
+from groq import AsyncGroq
 
 from config import settings
 from services.providers.base import (
@@ -43,6 +46,7 @@ class GroqProvider(ModelProvider):
 
     def __init__(self, model: str | None = None):
         self.model = model or DEFAULT_GROQ_MODEL
+        self._client = AsyncGroq(api_key=settings.groq_api_key)
 
     def _build_messages(self, req: GenerationRequest) -> list[dict]:
         messages: list[dict] = []
@@ -52,9 +56,6 @@ class GroqProvider(ModelProvider):
         return messages
 
     async def _call(self, req: GenerationRequest) -> GenerationResult:
-        # Reutiliza el cliente Groq inicializado en ai_service.
-        from services.ai_service import groq_client
-
         kwargs = {
             "model": self.model,
             "messages": self._build_messages(req),
@@ -65,7 +66,7 @@ class GroqProvider(ModelProvider):
             kwargs["tools"] = req.tools
             kwargs["tool_choice"] = "auto"
 
-        response = await groq_client.chat.completions.create(**kwargs)
+        response = await self._client.chat.completions.create(**kwargs)
         message = response.choices[0].message
 
         tool_calls = []

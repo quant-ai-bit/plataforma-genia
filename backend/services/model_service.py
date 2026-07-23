@@ -1,19 +1,13 @@
 """
-Model_Service: orquestador de proveedores de modelo con timeout, retry y
-fallback para PLATAFORMA GENIA.
+Model_Service: orquestador de Vertex AI (proveedor exclusivo) con
+timeout, retry y monitoreo para PLATAFORMA GENIA.
 
-Recibe una lista de `ModelProvider` ordenada segun `settings.model_fallback_order`
-(por defecto: vertex, groq, openrouter) e itera sobre ella aplicando
-`model_timeout_s` y `model_max_retries`. Ante un `ProviderTimeout` o
-`ProviderError` pasa al siguiente proveedor (fallback). Si todos los proveedores
-fallan, lanza `ModelUnavailableError` (mapeable a HTTP 503).
+Ya no itera entre proveedores de fallback — toda la generacion se delega
+exclusivamente en Vertex AI (Google Cloud). El servicio aplica `model_timeout_s`
+y `model_max_retries` sobre el unico proveedor disponible. Si falla, lanza
+`ModelUnavailableError` (mapeable a HTTP 503).
 
-El registro del consumo en el Usage_Record (`agent_usages`) se delega en un
-objeto de contexto (`usage_ctx`) inyectado por el llamador, de modo que el
-servicio no se acopla directamente a la sesion de base de datos. Cuando hubo
-fallback, se persiste tambien el motivo (`fallback_reason`).
-
-Feature: genia-agent-platform (Tarea 2.4)
+El registro del consumo en el Usage_Record se delega en un `usage_ctx`.
 """
 
 from __future__ import annotations
@@ -72,56 +66,19 @@ class UsageRecorder(Protocol):
 
 def build_providers_from_settings(settings=None) -> list[ModelProvider]:
     """
-    Construye la lista ordenada de proveedores a partir de `Settings`.
-
-    El orden se determina por `settings.model_fallback_order` (lista separada por
-    comas, ej: "vertex,groq,openrouter"). Los nombres desconocidos se ignoran y
-    se evitan duplicados manteniendo el primer orden de aparicion.
+    Construye la lista de proveedores (solo Vertex AI).
 
     Args:
         settings: Objeto de configuracion (por defecto, el global `settings`).
 
     Returns:
-        Lista de instancias `ModelProvider` en el orden de fallback configurado.
+        Lista con una unica instancia de `VertexAIProvider`.
     """
     settings = settings or default_settings
 
-    # Import diferido para evitar ciclos y costo de import si no se usan.
-    from services.providers.groq_provider import GroqProvider
-    from services.providers.openrouter_provider import OpenRouterProvider
     from services.providers.vertex_provider import VertexAIProvider
-    from services.providers.gemini_provider import GeminiProvider
 
-    factories = {
-        "vertex": VertexAIProvider,
-        "groq": GroqProvider,
-        "openrouter": OpenRouterProvider,
-        "gemini": GeminiProvider,
-    }
-
-    raw_order = getattr(settings, "model_fallback_order", "") or ""
-    names = [n.strip().lower() for n in raw_order.split(",") if n.strip()]
-    if not names:
-        names = ["vertex", "groq", "openrouter"]
-
-    providers: list[ModelProvider] = []
-    seen: set[str] = set()
-    for name in names:
-        if name in seen:
-            continue
-        factory = factories.get(name)
-        if factory is None:
-            logger.warning("Proveedor de modelo desconocido ignorado: %s", name)
-            continue
-        seen.add(name)
-        providers.append(factory())
-
-    if not providers:
-        raise ValueError(
-            "No se pudo construir ningun proveedor de modelo a partir de "
-            "model_fallback_order."
-        )
-    return providers
+    return [VertexAIProvider()]
 
 
 class ModelService:
@@ -171,7 +128,7 @@ class ModelService:
         """
         last_error: Exception | None = None
 
-        for idx, provider in enumerate(self.providers):
+        for provider in self.providers:
             attempts = max(1, self.max_retries)
             for attempt in range(attempts):
                 try:
@@ -179,27 +136,18 @@ class ModelService:
                 except (ProviderTimeout, ProviderError) as exc:
                     last_error = exc
                     logger.warning(
-                        "Proveedor '%s' fallo (intento %s/%s): %s",
-                        provider.name,
+                        "Vertex AI fallo (intento %s/%s): %s",
                         attempt + 1,
                         attempts,
                         exc,
                     )
                     continue
                 else:
-                    fallback = idx > 0
-                    reason = str(last_error) if (fallback and last_error) else None
-                    self._record_usage(usage_ctx, result, fallback, reason)
-                    if fallback:
-                        logger.info(
-                            "Generacion resuelta por fallback con '%s' (motivo: %s)",
-                            provider.name,
-                            reason,
-                        )
+                    self._record_usage(usage_ctx, result, fallback=False, reason=None)
                     return result
 
-        detail = str(last_error) if last_error else "Sin proveedores disponibles"
-        logger.error("Todos los proveedores de modelo fallaron: %s", detail)
+        detail = str(last_error) if last_error else "Vertex AI no disponible"
+        logger.error("Vertex AI fallo definitivamente: %s", detail)
         raise ModelUnavailableError(detail=detail)
 
     @staticmethod

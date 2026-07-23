@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     # ChromaDB
     chroma_persist_dir: str = "./data/chroma"
 
-    # --- Vertex AI / GCP (genia-agent-platform) ---
+    # --- Vertex AI / GCP (proveedor exclusivo de LLM) ---
     google_cloud_project: str = ""
     google_cloud_location: str = "us-central1"
     # Ruta a un archivo JSON de service account (ideal en local).
@@ -57,47 +57,12 @@ class Settings(BaseSettings):
     # Contenido JSON del service account (ideal para Vercel / serverless).
     # Se lee solo desde el entorno (GCP_SERVICE_ACCOUNT_JSON); nunca en codigo.
     gcp_service_account_json: str = ""
-    vertex_gemini_model: str = "gemini-2.0-flash"
+    vertex_gemini_model: str = "gemini-2.5-flash"
 
-    # --- Orquestacion de modelos (timeout / retry / fallback) ---
+    # --- Orquestacion de modelos (Vertex AI exclusivo) ---
     model_timeout_s: float = 30.0
     model_max_retries: int = 1
-    model_fallback_order: str = "vertex,groq,openrouter"
-
-    @property
-    def available_groq_models(self) -> list[str]:
-        """Modelos disponibles en Groq."""
-        return [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "llama3-8b-8192",
-            "gemma2-9b-it",
-        ]
-
-    @property
-    def available_gemini_models(self) -> list[str]:
-        """Modelos disponibles en Google Gemini."""
-        return [
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-        ]
-
-    @property
-    def available_openrouter_models(self) -> list[str]:
-        """Modelos disponibles en OpenRouter."""
-        return [
-            "deepseek/deepseek-chat",
-            "google/gemini-2.5-flash",
-            "openai/gpt-4o-mini",
-            "meta-llama/llama-3.3-70b-instruct:free",
-            "meta-llama/llama-3.1-8b-instruct:free",
-            "google/gemma-2-9b-it:free",
-            "qwen/qwen-2.5-72b-instruct:free",
-            "openai/gpt-4o",
-            "anthropic/claude-3.5-sonnet",
-        ]
-
+    model_fallback_order: str = "vertex"
 
     # --- Cifrado de credenciales sensibles (WhatsApp, etc.) ---
     # Clave Fernet para cifrar/descifrar credenciales almacenadas en la DB.
