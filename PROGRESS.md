@@ -6,6 +6,28 @@
 
 ---
 
+## 2026-07-24 12:00 (COT) — Tres bugs encadenados: Health check, /api/models 500, Config incompleta
+**Plataforma:** opencode
+**Tipo:** 🐛 Bugfix Cadena (Frontend + Backend + Config)
+
+- **Diagnóstico:** Tras el fix de auth JWT, el dashboard seguía mostrando agentes MOCK ("Genia Agente Inmobiliario", "Genia Asistente Soporte TI") en lugar de los reales (Anita Gourmet, Mia, Socio). Banner: "Usando servidor mock local", status: "Offline (Modo Demo)".
+- **Causa Raíz 1:** El health check del frontend (`checkHealthAndLoadData`) ahora pegaba `/api/models`, pero este endpoint retornaba HTTP 500 → `res.ok = false` → caía a modo demo.
+- **Causa Raíz 2:** `/api/models` fallaba con `AttributeError` porque `main.py` referencia `settings.available_groq_models`, `available_gemini_models`, `available_openrouter_models` que fueron eliminados del `Settings` durante la migración a Vertex AI exclusivo.
+- **Causa Raíz 3:** El health check usaba `res.ok` (solo acepta 200-299). Si el backend responde con 401/500, eso **confirma** que el servidor está online. Un error de red (sin conexión) es lo que indica "offline".
+
+- **Soluciones Aplicadas:**
+  1. **`backend/config.py`:** Restauradas las listas `available_groq_models`, `available_gemini_models`, `available_openrouter_models` con los modelos por defecto.
+  2. **`dashboard/src/lib/AppContext.tsx`:** Health check ahora usa `res.status > 0` (cualquier respuesta HTTP = backend online).
+
+- **Archivos Modificados:**
+  - `backend/config.py`
+  - `dashboard/src/lib/AppContext.tsx`
+
+**Estado:** ✅ Desplegado a Vercel Producción
+**Siguiente Paso:** Recargar Dashboard → deben aparecer los 3 agentes reales.
+
+---
+
 ## 2026-07-24 11:45 (COT) — CRÍTICO: Auth JWT rechazaba todas las peticiones autenticadas en Producción
 **Plataforma:** opencode
 **Tipo:** 🐛 Bugfix Crítico + Auth + Frontend
