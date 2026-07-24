@@ -6,12 +6,9 @@ import { useAppContext } from "../../../../../lib/AppContext";
 import { authenticatedFetch } from "../../../../../lib/api";
 import {
   ArrowLeft,
-  Bot,
   RefreshCw,
   Send,
   Share2,
-  UserCheck,
-  CheckCircle,
   Loader2,
   Mic,
   Square
@@ -34,7 +31,6 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [chatInput, setChatInput] = useState<string>("");
   const [isChatSending, setIsChatSending] = useState<boolean>(false);
-  const [liveCapturedLead, setLiveCapturedLead] = useState<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Share
@@ -66,7 +62,6 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
   const startNewChatSession = () => {
     setChatConvId(null);
     setChatMessages([]);
-    setLiveCapturedLead(null);
     
     const activeAgentName = agent?.name || "Agente Genia";
     setChatMessages([
@@ -87,7 +82,6 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
     // Limpiar el chat cuando cambie el agente (ID)
     setChatConvId(null);
     setChatMessages([]);
-    setLiveCapturedLead(null);
   }, [id]);
 
 
@@ -201,17 +195,6 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
         
         loadBackendData();
         loadAgentUsage(id);
-
-        setTimeout(async () => {
-          const resLeads = await authenticatedFetch(`/api/leads`);
-          if (resLeads.ok) {
-            const currentLeads = await resLeads.json();
-            const matchingLead = currentLeads.find((l: any) => l.conversation_id === data.conversation_id);
-            if (matchingLead) {
-              setLiveCapturedLead(matchingLead);
-            }
-          }
-        }, 1000);
       } else {
         const data = await res.json();
         setChatMessages(prev => [...prev, { role: "assistant", content: `Error: ${JSON.stringify(data.detail)}` }]);
@@ -237,26 +220,8 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
     setIsChatSending(true);
 
     if (!isBackendOnline) {
-      // Local Simulation Mode
       setTimeout(() => {
-        let reply = "Esta es una respuesta simulada ya que el backend no está conectado. Para capturar tus datos, por favor inicia el backend de la PLATAFORMA GENIA.";
-        
-        // Match name/email/phone fields locally to simulate capture
-        if (
-          userMessageText.toLowerCase().includes("correo") || 
-          userMessageText.toLowerCase().includes("email") || 
-          userMessageText.toLowerCase().includes("@")
-        ) {
-          setLiveCapturedLead({
-            name: "Usuario de prueba",
-            email: "ejemplo@servidor.com",
-            business_type: "Tecnología",
-            num_employees: 10
-          });
-          reply = "¡Excelente! Acabo de detectar tus datos de contacto y negocio. He guardado a 'Usuario de prueba' en la sección de leads.";
-        }
-
-        setChatMessages(prev => [...prev, { role: "assistant", content: reply }]);
+        setChatMessages(prev => [...prev, { role: "assistant", content: "Esta es una respuesta simulada ya que el backend no está conectado." }]);
         setIsChatSending(false);
       }, 1000);
       return;
@@ -283,19 +248,6 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
         // Refresh usage metrics in context
         loadBackendData();
         loadAgentUsage(id);
-
-        // Fetch captured leads after message to check if a lead was parsed
-        setTimeout(async () => {
-          const resLeads = await authenticatedFetch(`/api/leads`);
-          if (resLeads.ok) {
-            const currentLeads = await resLeads.json();
-            const matchingLead = currentLeads.find((l: any) => l.conversation_id === data.conversation_id);
-            if (matchingLead) {
-              setLiveCapturedLead(matchingLead);
-            }
-          }
-        }, 1000);
-
       } else {
         const data = await res.json();
         setChatMessages(prev => [...prev, { role: "assistant", content: `Error: ${JSON.stringify(data.detail)}` }]);
@@ -344,50 +296,6 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
       </div>
     );
   }
-
-  // Fields to display on the Live Parser
-  const getFieldsToDisplay = () => {
-    const fields = [];
-    fields.push({
-      key: "name",
-      label: "Nombre completo",
-      required: true,
-      value: liveCapturedLead?.name || null
-    });
-
-    const emailField = agent.custom_fields?.find((f: any) => f.key === "email");
-    const phoneField = agent.custom_fields?.find((f: any) => f.key === "phone");
-
-    fields.push({
-      key: "email",
-      label: emailField?.label || "Correo electrónico",
-      required: emailField?.required || false,
-      value: liveCapturedLead?.email || null
-    });
-
-    fields.push({
-      key: "phone",
-      label: phoneField?.label || "Teléfono",
-      required: phoneField?.required || false,
-      value: liveCapturedLead?.phone || null
-    });
-
-    if (agent.custom_fields) {
-      agent.custom_fields.forEach((field: any) => {
-        if (field.key !== "email" && field.key !== "phone" && field.key !== "name") {
-          fields.push({
-            key: field.key,
-            label: field.label || field.key,
-            required: field.required || false,
-            value: liveCapturedLead?.custom_data?.[field.key] || null
-          });
-        }
-      });
-    }
-    return fields;
-  };
-
-  const fieldsToDisplay = getFieldsToDisplay();
 
   return (
     <div className="space-y-6 animate-fadeIn h-[calc(100vh-140px)] flex flex-col text-xs">
@@ -468,10 +376,10 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
         </div>
       )}
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6 min-h-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         
-        {/* Chat window (3 cols) */}
-        <div className="lg:col-span-3 flex flex-col bg-[#0c101c]/50 border border-gray-800 rounded-2xl overflow-hidden min-h-0">
+        {/* Chat window */}
+        <div className="flex flex-col bg-[#0c101c]/50 border border-gray-800 rounded-2xl overflow-hidden min-h-0">
           {/* Chat Messages */}
           <div className="flex-1 overflow-y-auto p-6 space-y-4 min-h-0">
             {chatMessages.map((msg, idx) => (
@@ -535,97 +443,6 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
               <Send className="w-4 h-4" />
             </button>
           </form>
-        </div>
-
-        {/* Live Parser CRM Side panel (1 col) */}
-        <div className="flex flex-col gap-6 overflow-y-auto">
-          
-          <div className="glow-card-purple p-5 rounded-2xl flex-1 flex flex-col bg-[#0f0a1c]/40 border border-purple-500/10">
-            <div className="flex items-center gap-2 border-b border-purple-500/20 pb-4 mb-4">
-              <div className="p-2 bg-purple-500/10 text-purple-400 rounded-lg border border-purple-500/20 animate-pulse">
-                <UserCheck className="w-4 h-4" />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-white">Parser en Vivo</h4>
-                <span className="text-[9px] text-purple-300 font-bold uppercase tracking-wider block">
-                  Captura Automática AI
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-4 flex-1 flex flex-col justify-between">
-              <div className="space-y-4">
-                {/* Status indicator */}
-                {liveCapturedLead ? (
-                  <div className="px-3 py-2 bg-green-950/20 border border-green-500/30 rounded-xl text-[10px] flex items-center gap-2 text-green-300">
-                    <CheckCircle className="w-3.5 h-3.5 flex-shrink-0 animate-pulse" />
-                    <span>¡Datos capturados en vivo!</span>
-                  </div>
-                ) : (
-                  <div className="px-3 py-2 bg-purple-950/20 border border-purple-500/30 rounded-xl text-[10px] flex items-center gap-2 text-purple-300">
-                    <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin" />
-                    <span>Escuchando conversación...</span>
-                  </div>
-                )}
-
-                {/* Captured fields */}
-                <div className="space-y-3">
-                  {fieldsToDisplay.map((field) => {
-                    const isCaptured = field.value !== null && field.value !== undefined && field.value !== "";
-                    return (
-                      <div 
-                        key={field.key} 
-                        className={`p-3 rounded-xl border transition-all duration-300 ${
-                          isCaptured 
-                            ? "bg-green-500/5 border-green-500/25 shadow-[0_0_15px_rgba(34,197,94,0.04)] animate-fadeIn" 
-                            : "bg-gray-950/40 border-gray-850"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-400 font-bold text-[10px] flex items-center gap-0.5">
-                            {field.label}
-                            {field.required && (
-                              <span className="text-red-400 text-[9px]">*</span>
-                            )}
-                          </span>
-                          <span className={`text-[7px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                            isCaptured 
-                              ? "bg-green-500/10 text-green-400 border border-green-500/20" 
-                              : "bg-gray-800/50 text-gray-500 border border-gray-800"
-                          }`}>
-                            {isCaptured ? "Capturado" : "Pendiente"}
-                          </span>
-                        </div>
-                        
-                        <div className="mt-1.5 flex items-center justify-between">
-                          {isCaptured ? (
-                            <span className="text-white font-bold text-xs truncate max-w-[120px]" title={String(field.value)}>
-                              {typeof field.value === "object" ? JSON.stringify(field.value) : String(field.value)}
-                            </span>
-                          ) : (
-                            <span className="text-gray-600 italic text-xs">
-                              Esperando dato...
-                            </span>
-                          )}
-                          
-                          {isCaptured && (
-                            <CheckCircle className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="text-[9px] text-gray-500 border-t border-gray-850 pt-3 mt-4 leading-relaxed">
-                {liveCapturedLead 
-                  ? "El lead se ha guardado permanentemente en la base de datos SQL de la plataforma." 
-                  : "Los datos se irán mostrando aquí a medida que el agente los identifique y extraiga."}
-              </div>
-            </div>
-          </div>
-
         </div>
 
       </div>
