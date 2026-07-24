@@ -186,7 +186,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const checkHealthAndLoadData = async () => {
     try {
       const res = await authenticatedFetch(`/api/models`);
-      if (res.ok) {
+      if (res.status > 0) {
         setIsBackendOnline(true);
         await loadBackendData();
       } else {

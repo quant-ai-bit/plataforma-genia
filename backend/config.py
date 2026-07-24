@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     model_max_retries: int = 1
     model_fallback_order: str = "vertex"
 
+    # --- Listas de modelos disponibles por proveedor (para el frontend) ---
+    available_groq_models: list[str] = ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it"]
+    available_gemini_models: list[str] = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    available_openrouter_models: list[str] = ["deepseek/deepseek-chat", "anthropic/claude-3.5-sonnet:beta", "openai/gpt-4o-mini", "openai/gpt-4o"]
+
     # --- Cifrado de credenciales sensibles (WhatsApp, etc.) ---
     # Clave Fernet para cifrar/descifrar credenciales almacenadas en la DB.
     # Generar con: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
