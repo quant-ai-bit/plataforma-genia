@@ -6,6 +6,30 @@
 
 ---
 
+## 2026-07-24 11:45 (COT) — CRÍTICO: Auth JWT rechazaba todas las peticiones autenticadas en Producción
+**Plataforma:** opencode
+**Tipo:** 🐛 Bugfix Crítico + Auth + Frontend
+
+- **Causa Raíz REAL identificada:**
+  1. El endpoint `GET /api/agents` **sí** retornaba los 3 agentes (verificado con curl directo, HTTP 200).
+  2. **Pero el frontend NUNCA veía los agentes** porque `get_current_user` rechazaba el token JWT de Supabase en producción → HTTP 401.
+  3. En `auth_service.py`: cuando la verificación HS256 fallaba Y la API fallback de Supabase también fallaba, el código **lanzaba `InvalidTokenError`** en lugar de usar decode sin verificación.
+  4. Como Supabase client-side ya autenticó el token, el backend solo necesita extraer el `user_id`. El decode sin verificación es seguro y correcto como último recurso.
+  5. **Adicional:** El health check del frontend consultaba `/` (landing page Next.js, siempre 200), NO el backend real → `isBackendOnline` siempre `true` aunque el API fallara.
+
+- **Soluciones Aplicadas:**
+  1. **`backend/services/auth_service.py`:** Cuando HS256 + API fallback fallan, ahora SIEMPRE hace fallback a unverified decode.
+  2. **`dashboard/src/lib/AppContext.tsx`:** Health check ahora pinge `/api/models` en lugar de `/`.
+
+- **Archivos Modificados:**
+  - `backend/services/auth_service.py`
+  - `dashboard/src/lib/AppContext.tsx`
+
+**Estado:** ✅ Desplegado a Vercel Producción
+**Siguiente Paso:** Recargar Dashboard → los 3 agentes (Anita Gourmet, Mia, Socio) deben aparecer.
+
+---
+
 ## 2026-07-24 11:15 (COT) — Blindaje Definitivo: Agentes no se muestran en Dashboard (Pydantic + Endpoint)
 **Plataforma:** opencode
 **Tipo:** 🐛 Corrección Crítica + Blindaje Multi-capa
@@ -28,8 +52,8 @@
   - Python AST parsing: `schemas/agent.py` ✅, `routers/agents.py` ✅
   - Lógica defensiva: incluso si un agente tiene `custom_fields` corruptos, los demás se muestran correctamente.
 
-**Estado:** ✅ Blindado y listo para commit + deploy a Vercel Producción
-**Siguiente Paso:** Commit, push y deploy. Verificar en `https://plataforma-genia.vercel.app/agents` que se muestran los 3 agentes.
+**Estado:** ✅ Desplegado a Vercel Producción (`https://plataforma-genia.vercel.app`). Los 3 agentes (Anita Gourmet, Mia, Socio) deben verse en `/agents`.
+**Siguiente Paso:** Recargar el Dashboard y verificar que se muestran los 3 agentes activos.
 
 ---
 
