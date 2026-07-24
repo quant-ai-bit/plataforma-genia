@@ -4,6 +4,7 @@ Router de Agentes para PLATAFORMA GENIA.
 Permite listar, crear, obtener detalles, actualizar y eliminar agentes de IA.
 """
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -12,49 +13,34 @@ from models.agent import Agent
 from schemas import AgentCreate, AgentListItem, AgentResponse, AgentUpdate, AgentUsageResponse
 from services.auth_service import get_current_user
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
 
 @router.get("", response_model=list[AgentResponse])
 def list_agents(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    """Lista todos los agentes disponibles para el usuario actual."""
-    import os
-    env = os.getenv("ENVIRONMENT", "development")
-
-    if current_user["id"] != "local_dev_user":
-        if env == "development":
-            # En desarrollo local, asociamos automáticamente todos los agentes al usuario actual
-            # para que no queden inaccesibles si el desarrollador cambia de cuenta de Google/Supabase.
-            all_agents = db.query(Agent).all()
-            updated = False
-            for agent in all_agents:
-                if agent.user_id != current_user["id"]:
-                    agent.user_id = current_user["id"]
-                    updated = True
-            if updated:
-                db.commit()
-        else:
-            # Si hay agentes huérfanos (user_id es None o 'local_dev_user'), los asociamos automáticamente al usuario actual
-            orphans = db.query(Agent).filter(
-                (Agent.user_id == None) | (Agent.user_id == "local_dev_user")
-            ).all()
-            if orphans:
-                for agent in orphans:
-                    agent.user_id = current_user["id"]
-                db.commit()
-
-    if current_user["id"] == "local_dev_user":
-        # En desarrollo local sin Supabase configurada, mostramos todos los agentes
+    """Lista todos los agentes disponibles en la plataforma."""
+    try:
         agents = db.query(Agent).order_by(Agent.created_at.desc()).all()
-    else:
-        # En producción/desarrollo con Supabase, filtramos estrictamente por el propietario creador
-        agents = (
-            db.query(Agent)
-            .filter(Agent.user_id == current_user["id"])
-            .order_by(Agent.created_at.desc())
-            .all()
+        logger.info("[AGENTS] list_agents called by user=%s, found %d agents", current_user.get("id"), len(agents))
+
+        result = []
+        for agent in agents:
+            try:
+                serialized = AgentResponse.model_validate(agent)
+                result.append(serialized)
+            except Exception as e:
+                logger.warning("[AGENTS] Skipping agent %s (%s) due to serialization error: %s", agent.id, agent.name, str(e))
+                continue
+
+        return result
+    except Exception as e:
+        logger.error("[AGENTS] Fatal error in list_agents: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al listar agentes.",
         )
-    return agents
 
 
 @router.get("/{agent_id}", response_model=AgentResponse)

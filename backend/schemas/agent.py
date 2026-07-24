@@ -7,7 +7,7 @@ de IA dentro de la plataforma GENIA.
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -17,8 +17,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class CustomFieldDefinition(BaseModel):
     """Definición de un campo personalizado configurable por agente."""
 
-    key: str = Field(..., description="Clave única del campo personalizado")
-    label: str = Field(..., description="Etiqueta visible para el usuario")
+    key: str = Field(default="", description="Clave única del campo personalizado")
+    label: str = Field(default="", description="Etiqueta visible para el usuario")
     type: str = Field(
         default="text",
         description="Tipo de campo: text, number, email, select, etc.",
@@ -31,6 +31,22 @@ class CustomFieldDefinition(BaseModel):
         default=None,
         description="Opciones válidas (solo para tipo 'select')",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_custom_field(cls, data):
+        if not isinstance(data, dict):
+            return {"key": "unknown", "label": "Campo desconocido", "type": "text", "required": False}
+        data = dict(data)
+        if "key" not in data or not data["key"]:
+            data["key"] = data.get("name") or "custom_field"
+        if "label" not in data or not data["label"]:
+            data["label"] = data.get("description") or data["key"]
+        if "type" not in data or not data["type"]:
+            data["type"] = "text"
+        if "required" not in data:
+            data["required"] = False
+        return data
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +168,33 @@ class AgentResponse(BaseModel):
     timezone: str = "America/Bogota"
     created_at: datetime
     updated_at: datetime | None
+
+    @field_validator("custom_fields", mode="before")
+    @classmethod
+    def normalize_custom_fields(cls, v):
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            return []
+        safe = []
+        for item in v:
+            if isinstance(item, dict):
+                try:
+                    safe.append(CustomFieldDefinition(**item))
+                except Exception:
+                    continue
+            elif isinstance(item, CustomFieldDefinition):
+                safe.append(item)
+        return safe
+
+    @field_validator("channels", mode="before")
+    @classmethod
+    def normalize_channels(cls, v):
+        if v is None:
+            return ["web"]
+        if isinstance(v, list):
+            return v
+        return ["web"]
 
     @field_validator("whatsapp_connected", "whatsapp_qr_connected", "whatsapp_history_sync_enabled", "whatsapp_history_synced", "google_calendar_connected", mode="before")
     @classmethod
