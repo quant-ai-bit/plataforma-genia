@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { use } from "react";
 import { getApiBaseUrl } from "../../../../lib/api";
-import { Bot, Send, Loader2 } from "lucide-react";
+import { Bot, Send, Loader2, RefreshCw } from "lucide-react";
 
 export default function PublicChatPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -52,6 +52,18 @@ export default function PublicChatPage({ params }: { params: Promise<{ id: strin
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
+
+  const handleRestart = () => {
+    setConvId(null);
+    setMessages([
+      {
+        role: "assistant",
+        content: agentName
+          ? `Hola! Soy ${agentName}. Escribe lo que necesites y te atenderé.`
+          : "Hola! Escribe lo que necesites y te atenderé.",
+      },
+    ]);
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,11 +117,19 @@ export default function PublicChatPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="flex-1 flex flex-col max-w-3xl mx-auto w-full p-4 md:p-6">
-      <div className="text-center mb-6">
+      <div className="flex items-center justify-center gap-3 mb-6">
         <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#0c101c]/60 border border-[#1e293b] rounded-2xl">
           <Bot className="w-5 h-5 text-blue-400" />
           <span className="text-sm font-bold text-white">{agentName || "Agente Genia"}</span>
         </div>
+        <button
+          onClick={handleRestart}
+          className="flex items-center gap-1.5 py-2 px-3 bg-red-950/20 hover:bg-red-900/30 text-red-400 text-[10px] rounded-xl font-bold border border-red-500/20 transition cursor-pointer"
+          title="Reiniciar conversación"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          Reiniciar
+        </button>
       </div>
 
       {error && (
