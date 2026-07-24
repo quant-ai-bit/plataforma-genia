@@ -90,9 +90,9 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
             print(f"[AUTH_DEBUG] Failed to decode unverified payload: {str(e)}")
         
         is_hs256 = unverified_headers.get("alg") == "HS256"
+        payload = None
         
         if jwt_secret and is_hs256:
-            payload = None
             verification_errors = []
             
             # Intento 1: Usar la clave decodificada en base64
