@@ -2021,13 +2021,13 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
 
                               {/* Botones de Acción QR */}
                               <div className="flex flex-wrap justify-center gap-3 pt-2">
-                                  <button
-                                    type="button"
-                                    onClick={handleRestartWhatsAppQR}
-                                    className="px-4 py-2 bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700 rounded-xl transition text-xs font-semibold cursor-pointer"
-                                  >
-                                    Regenerar QR
-                                  </button>
+                                <button
+                                  type="button"
+                                  onClick={handleRestartWhatsAppQR}
+                                  className="px-4 py-2 bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700 rounded-xl transition text-xs font-semibold cursor-pointer"
+                                >
+                                  Regenerar QR
+                                </button>
                                 <button
                                   type="button"
                                   onClick={handleDisconnectWhatsAppQR}
@@ -2038,7 +2038,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                                 {waStatus?.is_mock_mode && (
                                   <button
                                     type="button"
-                                    onClick={handleSimulateScan}
+                                    onClick={handleSimulateScanQR}
                                     className="px-4 py-2 bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/35 rounded-xl transition text-xs font-bold flex items-center gap-1 cursor-pointer animate-bounce"
                                   >
                                     ⚡ Simular Escaneo

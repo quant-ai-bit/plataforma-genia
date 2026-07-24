@@ -323,7 +323,7 @@ export default function DashboardPage() {
             {/* Gráfica básica estilizada usando CSS Flex */}
             <div className="h-64 flex items-end justify-between gap-2 pt-6">
               {metrics.leads_history && metrics.leads_history.map((day: any, idx: number) => {
-                const maxLeads = Math.max(...metrics.leads_history.map((h: any) => h.leads), 1);
+                const maxLeads = Math.max(...(metrics.leads_history || []).map((h: any) => h.leads), 1);
                 const percentHeight = (day.leads / maxLeads) * 90; // max 90%
                 
                 return (
@@ -402,13 +402,13 @@ export default function DashboardPage() {
               <div>
                 <div className="flex justify-between text-xs font-semibold mb-1">
                   <span className="text-blue-400">En Curso (Activos)</span>
-                  <span className="text-white">{metrics.conversations_by_status.active}</span>
+                  <span className="text-white">{metrics.conversations_by_status?.active || 0}</span>
                 </div>
                 <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
                   <div 
                     className="bg-blue-500 h-full rounded-full" 
                     style={{ 
-                      width: `${(metrics.conversations_by_status.active / (metrics.total_conversations || 1)) * 100}%` 
+                      width: `${((metrics.conversations_by_status?.active || 0) / (metrics.total_conversations || 1)) * 100}%` 
                     }}
                   ></div>
                 </div>
@@ -418,13 +418,13 @@ export default function DashboardPage() {
               <div>
                 <div className="flex justify-between text-xs font-semibold mb-1">
                   <span className="text-purple-400">Derivados (Handoff)</span>
-                  <span className="text-white">{metrics.conversations_by_status.handoff}</span>
+                  <span className="text-white">{metrics.conversations_by_status?.handoff || 0}</span>
                 </div>
                 <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
                   <div 
                     className="bg-purple-500 h-full rounded-full" 
                     style={{ 
-                      width: `${(metrics.conversations_by_status.handoff / (metrics.total_conversations || 1)) * 100}%` 
+                      width: `${((metrics.conversations_by_status?.handoff || 0) / (metrics.total_conversations || 1)) * 100}%` 
                     }}
                   ></div>
                 </div>
@@ -434,13 +434,13 @@ export default function DashboardPage() {
               <div>
                 <div className="flex justify-between text-xs font-semibold mb-1">
                   <span className="text-gray-400">Finalizados (Cerrados)</span>
-                  <span className="text-white">{metrics.conversations_by_status.closed}</span>
+                  <span className="text-white">{metrics.conversations_by_status?.closed || 0}</span>
                 </div>
                 <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
                   <div 
                     className="bg-gray-600 h-full rounded-full" 
                     style={{ 
-                      width: `${(metrics.conversations_by_status.closed / (metrics.total_conversations || 1)) * 100}%` 
+                      width: `${((metrics.conversations_by_status?.closed || 0) / (metrics.total_conversations || 1)) * 100}%` 
                     }}
                   ></div>
                 </div>

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppContext } from "../../../lib/AppContext";
 import { authenticatedFetch } from "../../../lib/api";
-import { Agent } from "../../lib/types";
+import { Agent } from "../../../lib/types";
 import {
   Bot,
   Plus,

@@ -23,36 +23,44 @@ export interface Agent {
 }
 
 export interface Message {
-  id: string;
-  conversation_id: string;
+  id?: string;
+  conversation_id?: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   sent_at: string;
 }
 
 export interface Conversation {
-  id: string;
-  agent_id: string;
+  id?: string;
+  agent_id?: string;
   contact_name: string | null;
-  contact_phone: string | null;
-  channel: 'web' | 'whatsapp';
-  status: 'active' | 'handoff' | 'inactive';
-  last_message_at: string;
-  created_at: string;
+  contact_phone?: string | null;
+  channel?: 'web' | 'whatsapp';
+  status: 'active' | 'handoff' | 'inactive' | 'closed';
+  last_message?: string;
+  last_message_at?: string;
+  created_at?: string;
   lead_notified?: boolean;
+  agent_name?: string;
+  agent?: { id?: string; name?: string };
+  message_count?: number;
+  started_at?: string;
 }
 
 export interface Lead {
-  id: string;
-  agent_id: string;
-  conversation_id: string | null;
+  id?: string;
+  agent_id?: string;
+  conversation_id?: string | null;
   name: string | null;
-  phone: string | null;
-  email: string | null;
-  status: 'pending' | 'qualified' | 'contacted' | 'lost';
-  custom_data: Record<string, any> | null;
-  created_at: string;
-  updated_at: string;
+  phone?: string | null;
+  email?: string | null;
+  status?: 'pending' | 'qualified' | 'contacted' | 'lost';
+  custom_data?: Record<string, any> | null;
+  created_at?: string;
+  updated_at?: string;
+  agent_name?: string;
+  source_channel?: string;
+  captured_at?: string;
 }
 
 export interface AgentImage {
@@ -61,6 +69,18 @@ export interface AgentImage {
   filename: string;
   description: string | null;
   url: string;
+  uploaded_at: string;
+}
+
+export type KbImage = AgentImage;
+
+export interface KbDocument {
+  id: string;
+  agent_id: string;
+  filename: string;
+  content_type?: string;
+  chunk_count?: number;
+  content?: string;
   uploaded_at: string;
 }
 
@@ -79,7 +99,12 @@ export interface DashboardMetrics {
   total_agents: number;
   total_conversations: number;
   total_leads: number;
-  qualified_leads: number;
-  total_tokens_used: number;
-  total_cost_usd: number;
+  qualified_leads?: number;
+  total_tokens_used?: number;
+  total_cost_usd?: number;
+  conversations_by_status?: Record<string, number>;
+  leads_history?: Array<{ date: string; leads: number }>;
+  recent_leads?: Lead[];
+  recent_conversations?: Conversation[];
 }
+

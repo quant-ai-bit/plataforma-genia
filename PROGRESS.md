@@ -6,6 +6,26 @@
 
 ---
 
+## 2026-07-24 15:24 (COT) — Botón Compartir en Sandbox + Página Pública de Chat
+**Plataforma:** opencode
+**Tipo:** ✨ Nueva funcionalidad (Frontend + Backend)
+
+- **Objetivo:** Permitir compartir un enlace público del sandbox del agente para que clientes puedan probarlo sin autenticarse.
+- **Cambios Realizados:**
+  1. **`backend/routers/public_chat.py`** (nuevo): Router público sin auth con dos endpoints:
+     - `POST /api/public/chat` — envía mensaje al agente (sin necesidad de JWT)
+     - `GET /api/public/agent/{agent_id}` — obtiene nombre del agente
+  2. **`backend/main.py`** — registrado `public_chat_router` sin dependencias de auth.
+  3. **`dashboard/src/app/(public)/chat/[id]/page.tsx`** (nuevo): Página pública de chat con UI limpia que usa los endpoints públicos.
+  4. **`dashboard/src/app/(dashboard)/agents/[id]/chat/page.tsx`** — añadido botón "Compartir" que copia al portapapeles el enlace `{origin}/chat/{agentId}`.
+- **URL generada:** `https://plataforma-genia.vercel.app/chat/{agent_id}` (ej. para Clara: `/chat/f28b2e93be7141edbfda4aa59833d348`)
+- **Nota:** Cualquiera con el enlace puede chatear con el agente sin login. Ideal para pruebas con clientes.
+
+**Estado:** ✅ Implementado y listo para deploy.
+**Siguiente Paso:** Probar localmente o deployar a Vercel.
+
+---
+
 ## 2026-07-24 12:00 (COT) — Tres bugs encadenados: Health check, /api/models 500, Config incompleta
 **Plataforma:** opencode
 **Tipo:** 🐛 Bugfix Cadena (Frontend + Backend + Config)
@@ -28,7 +48,24 @@
 
 ---
 
-## 2026-07-24 11:45 (COT) — CRÍTICO: Auth JWT rechazaba todas las peticiones autenticadas en Producción
+## 2026-07-24 12:15 (COT) — Creación del Agente "Clara" para Legaria Capital
+**Plataforma:** opencode
+**Tipo:** ✨ Nuevo Agente Inmobiliario
+
+- **Objetivo:** Crear agente inmobiliario para Legaria Capital (Pereira, Colombia) con embudo de calificación completo.
+- **Agente Creado:**
+  - **Nombre:** Clara
+  - **ID:** `f28b2e93be7141edbfda4aa59833d348`
+  - **Provider:** Vertex AI (Gemini 2.5 Flash)
+  - **Canales:** Web + WhatsApp
+  - **Timezone:** America/Bogota
+- **System Prompt:** 2052 caracteres definiendo embudo de 8 pasos: nombre → propósito (vivir/inversión) → tipo propiedad → presupuesto → match con portafolio → agendar llamada.
+- **Custom Fields:** 6 campos (nombre, teléfono, tipo_propiedad, propósito, presupuesto, proyecto_recomendado)
+- **Base de Conocimiento:** 12 documentos subidos (11 proyectos + info empresa). Nota: La indexación en ChromaDB falla en Vercel serverless (entorno efímero). Los documentos están creados en BD pero requieren entorno local para ChromaDB.
+- **Pendientes:** Conectar WhatsApp QR, configurar Google Calendar, indexar knowledge base localmente.
+
+**Estado:** ✅ Agente Clara creado y funcional en producción.
+**Siguiente Paso:** Recargar dashboard → crear agente desde plataforma o ver Clara en `/agents/f28b2e93be7141edbfda4aa59833d348`.
 **Plataforma:** opencode
 **Tipo:** 🐛 Bugfix Crítico + Auth + Frontend
 

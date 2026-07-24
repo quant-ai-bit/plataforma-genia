@@ -75,6 +75,8 @@ class VertexAIProvider(ModelProvider):
                 from google.oauth2 import service_account  # import diferido
 
                 info = json.loads(raw_json)
+                if isinstance(info, dict) and "private_key" in info and isinstance(info["private_key"], str):
+                    info["private_key"] = info["private_key"].replace("\\n", "\n")
             except json.JSONDecodeError as exc:
                 raise ProviderError(
                     "GCP_SERVICE_ACCOUNT_JSON no contiene un JSON valido."
@@ -136,15 +138,34 @@ class VertexAIProvider(ModelProvider):
         )
         self._initialized = True
 
-    def _build_contents(self, req: GenerationRequest) -> list[str]:
-        """Aplana los mensajes a texto para la invocacion de Gemini."""
-        parts: list[str] = []
+    def _build_contents(self, req: GenerationRequest) -> list:
+        """Construye la lista de objetos Content para la invocación nativa de Gemini en Vertex AI."""
+        from vertexai.generative_models import Content, Part
+
+        contents = []
         for msg in req.messages:
             role = msg.get("role", "user")
+            if role == "system":
+                continue  # system_instruction se pasa en GenerativeModel
+
             content = msg.get("content", "") or ""
-            if content:
-                parts.append(f"{role}: {content}")
-        return parts
+            if not isinstance(content, str):
+                content = str(content)
+
+            # Omitir mensajes de error del sistema previamente guardados
+            if content.startswith("⚠️"):
+                continue
+
+            content_clean = content.strip()
+            if content_clean:
+                gemini_role = "model" if role in ("assistant", "model") else "user"
+                contents.append(
+                    Content(
+                        role=gemini_role,
+                        parts=[Part.from_text(content_clean)]
+                    )
+                )
+        return contents
 
     def _generate_sync(self, req: GenerationRequest) -> GenerationResult:
         """Invocacion sincrona de Gemini (ejecutada en un hilo)."""

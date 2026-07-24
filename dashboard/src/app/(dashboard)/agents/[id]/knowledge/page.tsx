@@ -4,7 +4,7 @@ import React, { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { useAppContext } from "../../../../../lib/AppContext";
 import { authenticatedFetch } from "../../../../../lib/api";
-import { KbDocument } from "../../../../lib/types";
+import { KbDocument } from "../../../../../lib/types";
 import {
   ArrowLeft,
   Bot,
@@ -465,7 +465,7 @@ export default function AgentKnowledgePage({ params }: { params: Promise<{ id: s
                         {doc.filename}
                       </h5>
                       <span className="text-[8px] font-mono px-1.5 py-0.5 bg-gray-850 text-gray-400 rounded border border-gray-700">
-                        {doc.content_type.split("/")[1] || "text"}
+                        {doc.content_type?.split("/")[1] || "text"}
                       </span>
                     </div>
                   </div>

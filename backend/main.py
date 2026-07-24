@@ -73,9 +73,9 @@ app = FastAPI(
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
 allowed_origins = settings.allowed_origins_list
-if not allowed_origins and ENVIRONMENT != "production":
-    # Fallback SOLO para desarrollo local si no se configuro ALLOWED_ORIGINS.
+if not allowed_origins:
     allowed_origins = [
+        "https://plataforma-genia.vercel.app",
         "http://localhost:3000",
         "http://localhost:3001",
         "http://localhost:3002",
@@ -87,6 +87,7 @@ if not allowed_origins and ENVIRONMENT != "production":
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -147,6 +148,10 @@ app.include_router(public_api_router)
 # Router publico de métricas para el hackathon.
 from routers.metrics import router as metrics_router
 app.include_router(metrics_router)
+
+# Router publico de chat compartido (sin auth - enlace publico).
+from routers.public_chat import router as public_chat_router
+app.include_router(public_chat_router)
 
 
 

@@ -9,6 +9,7 @@ import {
   Bot,
   RefreshCw,
   Send,
+  Share2,
   UserCheck,
   CheckCircle,
   Loader2,
@@ -35,6 +36,21 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
   const [isChatSending, setIsChatSending] = useState<boolean>(false);
   const [liveCapturedLead, setLiveCapturedLead] = useState<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Share
+  const [showSharePanel, setShowSharePanel] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/chat/${id}` : "";
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    }).catch(() => {
+      prompt("Copia este enlace para compartir tu agente:", shareUrl);
+    });
+  };
 
   // Audio Recording States
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -392,14 +408,65 @@ export default function AgentChatSandbox({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
-        <button
-          onClick={startNewChatSession}
-          className="flex items-center gap-1.5 py-2 px-3 bg-red-950/20 hover:bg-red-900/30 text-red-400 text-[10px] rounded-xl font-bold border border-red-500/20 transition cursor-pointer"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          Reiniciar Sesión
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowSharePanel(!showSharePanel)}
+            className={`flex items-center gap-1.5 py-2 px-3 text-[10px] rounded-xl font-bold border transition cursor-pointer ${
+              showSharePanel
+                ? "bg-blue-950/40 text-blue-300 border-blue-500/40"
+                : "bg-blue-950/20 hover:bg-blue-900/30 text-blue-400 border-blue-500/20"
+            }`}
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            Compartir
+          </button>
+          <button
+            onClick={startNewChatSession}
+            className="flex items-center gap-1.5 py-2 px-3 bg-red-950/20 hover:bg-red-900/30 text-red-400 text-[10px] rounded-xl font-bold border border-red-500/20 transition cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Reiniciar Sesión
+          </button>
+        </div>
       </div>
+
+      {showSharePanel && (
+        <div className="bg-[#0c101c]/80 border border-blue-500/20 rounded-2xl p-4 flex flex-col gap-3 animate-fadeIn flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">
+              Enlace público para compartir
+            </span>
+            <button
+              onClick={() => setShowSharePanel(false)}
+              className="text-[10px] text-gray-500 hover:text-gray-300 transition cursor-pointer"
+            >
+              Cerrar
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={shareUrl}
+              readOnly
+              onClick={(e) => e.currentTarget.select()}
+              className="flex-1 bg-[#070b13] border border-gray-700 rounded-xl px-3 py-2 text-xs text-blue-300 font-mono focus:outline-none focus:border-blue-500 transition cursor-text"
+            />
+            <button
+              onClick={handleCopyLink}
+              className={`flex items-center gap-1.5 px-4 py-2 text-xs rounded-xl font-bold border transition cursor-pointer flex-shrink-0 ${
+                copied
+                  ? "bg-green-950/20 text-green-400 border-green-500/20"
+                  : "bg-blue-600 hover:bg-blue-500 text-white border-blue-500 shadow-sm"
+              }`}
+            >
+              {copied ? "Copiado!" : "Copiar"}
+            </button>
+          </div>
+          <p className="text-[9px] text-gray-500">
+            Cualquier persona con este enlace puede chatear con {agent?.name || "el agente"} sin iniciar sesión.
+          </p>
+        </div>
+      )}
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6 min-h-0 overflow-hidden">
         

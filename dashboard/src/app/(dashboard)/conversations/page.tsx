@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAppContext } from "../../../lib/AppContext";
 import { authenticatedFetch } from "../../../lib/api";
-import { Conversation, Message } from "../../lib/types";
+import { Conversation, Message } from "../../../lib/types";
 import {
   MessageSquare,
   Trash2,
@@ -148,7 +148,7 @@ export default function ConversationsPage() {
     }
   };
 
-  const handleUpdateStatus = async (convId: string, newStatus: string) => {
+  const handleUpdateStatus = async (convId: string, newStatus: any) => {
     if (!isBackendOnline) {
       setConversations(prev => prev.map(c => c.id === convId ? { ...c, status: newStatus } : c));
       if (transcript && transcript.id === convId) {
@@ -328,19 +328,19 @@ export default function ConversationsPage() {
                       {conv.message_count}
                     </td>
                     <td className="px-6 py-4 text-gray-500">
-                      {parseBackendDate(conv.last_message_at || conv.started_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                      {parseBackendDate(conv.last_message_at || conv.started_at || "").toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-2">
                         <button
-                          onClick={() => handleViewTranscript(conv.id)}
+                          onClick={() => conv.id && handleViewTranscript(conv.id)}
                           className="p-1.5 bg-blue-950/20 hover:bg-blue-900/30 text-blue-400 rounded-lg border border-blue-500/10 hover:border-blue-500/20 transition cursor-pointer"
                           title="Ver Transcripción"
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => handleDeleteConv(conv.id)}
+                          onClick={() => conv.id && handleDeleteConv(conv.id)}
                           className="p-1.5 bg-red-950/20 hover:bg-red-900/30 text-red-400 rounded-lg border border-red-500/10 hover:border-red-500/20 transition cursor-pointer"
                           title="Eliminar Conversación"
                         >

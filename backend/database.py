@@ -25,19 +25,32 @@ except Exception as e:
         str(e)
     )
 
+from sqlalchemy.pool import NullPool
+
 is_sqlite = "sqlite" in settings.effective_database_url
+is_vercel = os.getenv("VERCEL") == "1" or os.getenv("ENVIRONMENT") == "production"
 
 engine_kwargs = {}
 if is_sqlite:
     engine_kwargs["connect_args"] = {"check_same_thread": False}
 else:
-    # PostgreSQL con pooling para producción
-    engine_kwargs.update(
-        pool_size=20,
-        max_overflow=10,
-        pool_pre_ping=True,
-        pool_recycle=300,
-    )
+    engine_kwargs["connect_args"] = {
+        "prepare_threshold": None,
+        "connect_timeout": 10,
+    }
+    if is_vercel:
+        # En Vercel Serverless, NullPool previene que las lambdas agoten conexiones en Supabase o se cuelguen
+        engine_kwargs.update(
+            poolclass=NullPool,
+            pool_pre_ping=True,
+        )
+    else:
+        engine_kwargs.update(
+            pool_size=5,
+            max_overflow=5,
+            pool_pre_ping=True,
+            pool_recycle=300,
+        )
 
 engine = create_engine(
     settings.effective_database_url,
@@ -60,12 +73,15 @@ def get_db():
 
 def init_db():
     """Inicializa la base de datos aplicando todas las migraciones de Alembic."""
+    if os.getenv("VERCEL") == "1":
+        # En Vercel Serverless no ejecutamos Alembic DDL en cada invocación HTTP para evitar timeouts
+        return
+
     import os
     from alembic.config import Config
     from alembic import command
 
     try:
-        # Obtener la ruta absoluta de alembic.ini relativa a este archivo
         base_dir = os.path.dirname(os.path.abspath(__file__))
         ini_path = os.path.join(base_dir, "alembic.ini")
         

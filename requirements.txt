@@ -19,3 +19,5 @@ psycopg2-binary>=2.9.0
 qrcode[pil]>=7.4.0
 python-dotenv>=1.0.0
 tzdata>=2024.1
+google-cloud-aiplatform>=1.60.0
+google-auth>=2.30.0

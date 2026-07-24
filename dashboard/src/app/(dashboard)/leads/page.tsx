@@ -68,7 +68,7 @@ export default function LeadsPage() {
   const filteredLeads = leads.filter(lead => {
     const term = searchTerm.toLowerCase();
     return (
-      lead.name.toLowerCase().includes(term) ||
+      (lead.name && lead.name.toLowerCase().includes(term)) ||
       (lead.email && lead.email.toLowerCase().includes(term)) ||
       (lead.phone && lead.phone.toLowerCase().includes(term))
     );
@@ -148,7 +148,7 @@ export default function LeadsPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-gray-500">
-                    {new Date(lead.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                    {new Date(lead.created_at || "").toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
@@ -161,7 +161,7 @@ export default function LeadsPage() {
                       </button>
                       <button
                         disabled={deleteLoading === lead.id}
-                        onClick={() => handleDeleteLead(lead.id)}
+                        onClick={() => lead.id && handleDeleteLead(lead.id)}
                         className="p-1.5 bg-red-950/20 hover:bg-red-900/30 text-red-400 rounded-lg border border-red-500/10 hover:border-red-500/20 transition disabled:opacity-40 cursor-pointer"
                         title="Eliminar lead"
                       >
@@ -241,7 +241,7 @@ export default function LeadsPage() {
                   <span>Registrado el</span>
                 </div>
                 <span className="font-semibold text-gray-300">
-                  {new Date(selectedLead.created_at).toLocaleString([], { dateStyle: 'long', timeStyle: 'short' })}
+                  {new Date(selectedLead.created_at || "").toLocaleString([], { dateStyle: 'long', timeStyle: 'short' })}
                 </span>
               </div>
 
@@ -295,7 +295,7 @@ export default function LeadsPage() {
               </button>
               <button
                 type="button"
-                onClick={() => handleDeleteLead(selectedLead.id)}
+                onClick={() => selectedLead.id && handleDeleteLead(selectedLead.id)}
                 className="py-2 px-4 bg-red-950/20 hover:bg-red-900/30 text-red-400 rounded-xl font-bold border border-red-500/10 hover:border-red-500/20 transition cursor-pointer flex items-center justify-center gap-1.5"
               >
                 <Trash2 className="w-4 h-4" />

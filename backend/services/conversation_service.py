@@ -65,7 +65,7 @@ async def process_conversation_message(
     conversation_history = [
         {"role": m.role, "content": m.content}
         for m in history_messages
-        if m.id is not None and m.id != user_msg.id
+        if m.id is not None and m.id != user_msg.id and m.content and not m.content.startswith("⚠️")
     ]
 
     # 3. Cargar todas las conversaciones históricas del agente como ejemplos de entrenamiento
@@ -214,12 +214,13 @@ async def process_conversation_message(
     provider_to_use = agent.provider or "vertex"
     model_to_use = agent.model or getattr(settings, "vertex_gemini_model", "") or "gemini-2.5-flash"
 
+    agent_max_tokens = max(agent.max_tokens or 1024, 1024)
     agent_data = {
         "provider": provider_to_use,
         "model": model_to_use,
         "system_prompt": system_prompt,
         "temperature": agent.temperature,
-        "max_tokens": agent.max_tokens,
+        "max_tokens": agent_max_tokens,
         "custom_fields": agent.custom_fields,
         "google_calendar_connected": google_calendar_connected,
         "timezone": agent_tz_str,
@@ -241,10 +242,9 @@ async def process_conversation_message(
         import re
         reply_str = reply.strip()
         cot_markers = (
-            "The user", "I need to", "I should", "Based on the knowledge",
-            "Funnel Step", "Next step in funnel", "The image", "matches \"",
-            "Office Pinares", "Meeting room", "capacity ", "Price: 1h",
-            "This fits the requirement", "I should show this", "Individual desk"
+            "The user ", "I need to ", "I should ", "Based on the knowledge",
+            "Funnel Step", "Next step in funnel", "This fits the requirement",
+            "I should show this"
         )
         is_cot = any(marker in reply_str for marker in cot_markers)
         
@@ -253,7 +253,7 @@ async def process_conversation_message(
             # Buscar el primer bloque de texto legítimo en español
             match = re.search(r'([¡¿]|Hola|Disculpa|Gracias|Estimado|Claro|Entendido|Perfecto|Excelente).*', reply_str, flags=re.DOTALL | re.IGNORECASE)
             valid_spanish = match.group(0).strip() if match else ""
-            if valid_spanish and not any(m in valid_spanish for m in ("The user", "I need", "I should", "Funnel", "Office", "capacity", "Meeting room")):
+            if valid_spanish and not any(m in valid_spanish for m in ("The user ", "I need to ", "I should ", "Funnel Step")):
                 reply = valid_spanish
             else:
                 # Si toda la salida era razonamiento en inglés sin respuesta final en español

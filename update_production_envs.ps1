@@ -14,13 +14,16 @@ Write-Host "Cargando variables desde: $(Resolve-Path $envFile)"
 $envs = [ordered]@{}
 Get-Content $envFile | ForEach-Object {
     $line = $_.Trim()
-    if ($line -and -not $line.StartsWith("#") -and $line -match "^([^=]+)=(.*)$") {
+    if ($line -and -not $line.StartsWith("#") -and $line -match '^([^=]+)=(.*)$') {
         $key = $Matches[1].Trim()
-        $value = $Matches[2].Trim()
-        # Limpiar comillas si existen
-        if ($value -match "^`\"(.*)`\"$") { $value = $Matches[1] }
-        elseif ($value -match "^'(.*)'$") { $value = $Matches[1] }
-        $envs[$key] = $value
+        $val = $Matches[2].Trim()
+        if ($val.StartsWith('"') -and $val.EndsWith('"') -and $val.Length -ge 2) {
+            $val = $val.Substring(1, $val.Length - 2)
+        }
+        elseif ($val.StartsWith("'") -and $val.EndsWith("'") -and $val.Length -ge 2) {
+            $val = $val.Substring(1, $val.Length - 2)
+        }
+        $envs[$key] = $val
     }
 }
 
@@ -33,7 +36,7 @@ $scope = "alejos-projects-14de84b4"
 foreach ($key in $envs.Keys) {
     Write-Host "Configurando variable $key en Vercel..."
     # Eliminar la variable si existe para evitar duplicados
-    vercel env rm "$key" production --yes --scope "$scope" *>$null
+    vercel env rm "$key" production --yes --scope "$scope" 2>$null
     # Agregar la variable con el nuevo valor en producción
     vercel env add "$key" production --value "$($envs[$key])" --yes --scope "$scope"
 }
