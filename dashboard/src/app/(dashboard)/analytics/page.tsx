@@ -228,15 +228,15 @@ export default function DashboardPage() {
             <div className="space-y-4">
               <div className="flex justify-between items-center py-2 border-b border-[#1e293b]">
                 <span className="text-xs text-gray-400 font-medium">Por Hora:</span>
-                <span className="text-sm font-extrabold text-white">{freeModels?.aggregate_potentials?.hourly_tokens.toLocaleString() || "0"} tokens</span>
+                <span className="text-sm font-extrabold text-white">{(freeModels?.aggregate_potentials?.hourly_tokens ?? 0).toLocaleString()} tokens</span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-[#1e293b]">
                 <span className="text-xs text-gray-400 font-medium">Por Día:</span>
-                <span className="text-sm font-extrabold text-amber-400">{freeModels?.aggregate_potentials?.daily_tokens.toLocaleString() || "0"} tokens</span>
+                <span className="text-sm font-extrabold text-amber-400">{(freeModels?.aggregate_potentials?.daily_tokens ?? 0).toLocaleString()} tokens</span>
               </div>
               <div className="flex justify-between items-center py-2">
                 <span className="text-xs text-gray-400 font-medium">Por Mes:</span>
-                <span className="text-sm font-extrabold text-blue-400">{freeModels?.aggregate_potentials?.monthly_tokens.toLocaleString() || "0"} tokens</span>
+                <span className="text-sm font-extrabold text-blue-400">{(freeModels?.aggregate_potentials?.monthly_tokens ?? 0).toLocaleString()} tokens</span>
               </div>
             </div>
           </div>
@@ -281,8 +281,8 @@ export default function DashboardPage() {
                     <td className="py-2.5 text-gray-400 capitalize">{m.provider}</td>
                     <td className="py-2.5 text-center font-semibold text-blue-400">{m.priority}</td>
                     <td className="py-2.5 text-center text-gray-300">
-                      {m.tokens_used_today.toLocaleString()} tokens
-                      <p className="text-[9px] text-gray-500">{m.requests_used_today} reqs</p>
+                      {(m.tokens_used_today ?? 0).toLocaleString()} tokens
+                      <p className="text-[9px] text-gray-500">{m.requests_used_today ?? 0} reqs</p>
                     </td>
                     <td className="py-2.5 text-right">
                       {m.is_exhausted ? (
@@ -290,9 +290,9 @@ export default function DashboardPage() {
                           <span className="px-2 py-0.5 bg-rose-950/60 border border-rose-500/20 text-rose-400 rounded-lg text-[9px] font-extrabold uppercase">
                             Agotado
                           </span>
-                          <span className="text-[9px] text-rose-400/70 mt-0.5 flex items-center gap-0.5" title={m.reason}>
+                          <span className="text-[9px] text-rose-400/70 mt-0.5 flex items-center gap-0.5" title={m.reason || ""}>
                             <Clock className="w-2.5 h-2.5" />
-                            Reactivación en {Math.ceil(m.cooldown_left_seconds / 60)}m
+                            Reactivación en {Math.ceil((m.cooldown_left_seconds ?? 0) / 60)}m
                           </span>
                         </div>
                       ) : (

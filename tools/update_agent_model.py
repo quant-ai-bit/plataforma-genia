@@ -18,8 +18,8 @@ AGENT_ID = "547c07f714394e399c504d4bb3da37ac"
 
 conn = http.client.HTTPSConnection(SUPABASE_URL.replace("https://", ""))
 
-# 1. Update agent provider and model
-payload = json.dumps({"provider": "groq", "model": "llama-3.3-70b-versatile"})
+# 1. Update agent provider and model to Vertex AI gemini-2.5-flash
+payload = json.dumps({"provider": "vertex", "model": "gemini-2.5-flash"})
 conn.request(
     "PATCH",
     f"/rest/v1/agents?id=eq.{AGENT_ID}",

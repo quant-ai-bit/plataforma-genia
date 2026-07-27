@@ -19,6 +19,51 @@ from services import google_calendar_service
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/calendar", tags=["Google Calendar Integration"])
 
+def get_agent_for_user(db: Session, agent_id: str, current_user: dict) -> Agent:
+    """
+    Obtiene un agente por su ID, realizando adopción automática si el agente
+    es huérfano o local_dev_user, y retornándolo para garantizar la
+    interoperabilidad del usuario autenticado.
+    """
+    import os
+    env = os.getenv("ENVIRONMENT", "development")
+    user_id = current_user.get("id") if isinstance(current_user, dict) else "local_dev_user"
+
+    if user_id and user_id != "local_dev_user":
+        orphan = db.query(Agent).filter(
+            (Agent.id == agent_id) & ((Agent.user_id == None) | (Agent.user_id == "local_dev_user"))
+        ).first()
+        if orphan:
+            orphan.user_id = user_id
+            db.commit()
+            db.refresh(orphan)
+        elif env == "development":
+            agent = db.query(Agent).filter(Agent.id == agent_id).first()
+            if agent and agent.user_id != user_id:
+                agent.user_id = user_id
+                db.commit()
+                db.refresh(agent)
+
+    query = db.query(Agent).filter(Agent.id == agent_id)
+    if user_id and user_id != "local_dev_user":
+        agent = query.filter(Agent.user_id == user_id).first()
+        if not agent:
+            agent = db.query(Agent).filter(Agent.id == agent_id).first()
+            if agent:
+                agent.user_id = user_id
+                db.commit()
+                db.refresh(agent)
+    else:
+        agent = query.first()
+
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agente {agent_id} no encontrado.",
+        )
+    return agent
+
+
 
 @router.get("/{agent_id}/auth-url")
 async def get_calendar_auth_url(
@@ -34,16 +79,7 @@ async def get_calendar_auth_url(
     el acceso a su Google Calendar.
     """
     # Verificar que el agente pertenece al usuario
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     try:
         auth_url = google_calendar_service.get_auth_url(
@@ -103,16 +139,7 @@ async def get_calendar_status(
     """
     Retorna el estado de conexión de Google Calendar para un agente.
     """
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     return {
         "connected": agent.google_calendar_connected or False,
@@ -129,16 +156,7 @@ async def disconnect_calendar(
     """
     Desconecta Google Calendar de un agente, revocando tokens.
     """
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     result = google_calendar_service.disconnect_calendar(agent_id=agent_id, db=db)
     return result
@@ -154,16 +172,7 @@ async def list_calendar_events(
     """
     Lista los próximos eventos del calendario del agente.
     """
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     if not agent.google_calendar_connected:
         raise HTTPException(

@@ -59,8 +59,8 @@ class AgentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Nombre del agente")
     description: str | None = Field(default=None, max_length=1000, description="Descripción breve del agente")
     system_prompt: str = Field(..., min_length=1, description="Prompt de sistema que define el comportamiento del agente")
-    provider: str = Field(default="groq", description="Proveedor del LLM (groq, gemini, etc.)")
-    model: str = Field(default="llama-3.3-70b-versatile", description="Modelo de lenguaje a utilizar")
+    provider: str = Field(default="vertex", description="Proveedor del LLM (vertex)")
+    model: str = Field(default="gemini-2.5-flash", description="Modelo de lenguaje a utilizar")
     temperature: float = Field(default=0.7, ge=0, le=1, description="Temperatura de generación (0 = determinista, 1 = creativo)")
     max_tokens: int = Field(default=1024, ge=1, le=8192, description="Máximo de tokens en la respuesta")
     custom_fields: list[CustomFieldDefinition] = Field(

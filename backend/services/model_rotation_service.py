@@ -21,8 +21,8 @@ class ModelRotationService:
     def track_usage_and_check_limits(
         db: Session, provider: str, model: str, input_tokens: int, output_tokens: int
     ):
-        """Registra el consumo diario del modelo."""
-        model_id = f"{provider}:{model}"
+        """Registra el consumo diario del modelo Vertex AI."""
+        model_id = "vertex:gemini-2.5-flash"
         total_tokens = input_tokens + output_tokens
 
         db_status = (
@@ -31,8 +31,8 @@ class ModelRotationService:
         if not db_status:
             db_status = FreeModelStatus(
                 id=model_id,
-                provider=provider,
-                model=model,
+                provider="vertex",
+                model="gemini-2.5-flash",
                 is_exhausted=False,
                 tokens_used_today=0,
                 requests_used_today=0,
@@ -47,34 +47,34 @@ class ModelRotationService:
 
     @staticmethod
     def get_free_tier_potentials(db: Session) -> dict:
-        """Retorna potencial de tokens por dia para el modelo configurado."""
-        now = datetime.now(timezone.utc)
-        db_statuses = db.query(FreeModelStatus).all()
-        status_map = {status.id: status for status in db_statuses}
-
-        models_data = []
-        total_daily_potential = 0
-
-        for model_id, status in status_map.items():
-            tokens_used = status.tokens_used_today or 0
-            requests_used = status.requests_used_today or 0
-
-            models_data.append({
-                "provider": status.provider,
-                "model": status.model,
-                "tokens_used_today": tokens_used,
-                "requests_used_today": requests_used,
-                "potentials": {
-                    "daily_tokens": 1000000,
-                },
-            })
-            total_daily_potential += 1000000
+        """Retorna potencial de tokens por dia para el modelo Vertex AI."""
+        vertex_status = (
+            db.query(FreeModelStatus)
+            .filter(FreeModelStatus.id == "vertex:gemini-2.5-flash")
+            .first()
+        )
+        tokens_used = vertex_status.tokens_used_today if vertex_status else 0
+        requests_used = vertex_status.requests_used_today if vertex_status else 0
 
         return {
             "aggregate_potentials": {
-                "daily_tokens": total_daily_potential,
+                "daily_tokens": 1000000,
+                "hourly_tokens": 1000000 // 24,
+                "monthly_tokens": 1000000 * 30,
             },
-            "models": models_data,
+            "models": [
+                {
+                    "provider": "vertex",
+                    "model": "gemini-2.5-flash",
+                    "tokens_used_today": tokens_used,
+                    "requests_used_today": requests_used,
+                    "is_exhausted": vertex_status.is_exhausted if vertex_status else False,
+                    "cooldown_left_seconds": 0,
+                    "potentials": {
+                        "daily_tokens": 1000000,
+                    },
+                }
+            ],
         }
 
     @staticmethod

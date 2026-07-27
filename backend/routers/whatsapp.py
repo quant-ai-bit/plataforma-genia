@@ -138,6 +138,52 @@ class WhatsAppStatusResponse(BaseModel):
     is_mock_mode: bool | None = None
 
 
+def get_agent_for_user(db: Session, agent_id: str, current_user: dict) -> Agent:
+    """
+    Obtiene un agente por su ID, realizando adopción automática si el agente
+    es huérfano o local_dev_user, y retornándolo para garantizar la
+    interoperabilidad del usuario autenticado.
+    """
+    import os
+    env = os.getenv("ENVIRONMENT", "development")
+    user_id = current_user.get("id") if isinstance(current_user, dict) else "local_dev_user"
+
+    if user_id and user_id != "local_dev_user":
+        orphan = db.query(Agent).filter(
+            (Agent.id == agent_id) & ((Agent.user_id == None) | (Agent.user_id == "local_dev_user"))
+        ).first()
+        if orphan:
+            orphan.user_id = user_id
+            db.commit()
+            db.refresh(orphan)
+        elif env == "development":
+            agent = db.query(Agent).filter(Agent.id == agent_id).first()
+            if agent and agent.user_id != user_id:
+                agent.user_id = user_id
+                db.commit()
+                db.refresh(agent)
+
+    query = db.query(Agent).filter(Agent.id == agent_id)
+    if user_id and user_id != "local_dev_user":
+        agent = query.filter(Agent.user_id == user_id).first()
+        if not agent:
+            agent = db.query(Agent).filter(Agent.id == agent_id).first()
+            if agent:
+                agent.user_id = user_id
+                db.commit()
+                db.refresh(agent)
+    else:
+        agent = query.first()
+
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agente {agent_id} no encontrado.",
+        )
+    return agent
+
+
+
 class WhatsAppProviderRequest(BaseModel):
     """Request para cambiar de proveedor de WhatsApp."""
 
@@ -320,16 +366,7 @@ async def connect_whatsapp(
     las cifra y las almacena.
     """
     # Buscar agente validando pertenencia
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     # Verificar que no haya otro agente con el mismo phone_number_id
     existing = (
@@ -421,16 +458,7 @@ async def disconnect_whatsapp(
     """
     Desconecta WhatsApp de un agente: limpia las credenciales almacenadas.
     """
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     agent.whatsapp_phone_number_id = None
     agent.whatsapp_access_token = None
@@ -461,16 +489,7 @@ async def configure_webhook_meta(
     """
     from services.whatsapp_service import configure_meta_webhook
 
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     if not agent.whatsapp_connected:
         raise HTTPException(
@@ -587,16 +606,7 @@ async def get_whatsapp_status(
     Soporta los proveedores 'meta_cloud' y 'qr_code'.
     No expone tokens ni claves.
     """
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     whatsapp_provider = agent.whatsapp_provider or "meta_cloud"
     base_url = _get_webhook_base_url(request)
@@ -1148,16 +1158,7 @@ async def update_whatsapp_provider(
     current_user: dict = Depends(get_current_user),
 ):
     """Cambia el proveedor de WhatsApp entre 'meta_cloud' y 'qr_code'."""
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     if body.provider not in ["meta_cloud", "qr_code", "waha"]:
         raise HTTPException(
@@ -1189,16 +1190,7 @@ async def connect_whatsapp_qr(
     Inicializa una sesión QR (Evolution API) para vincular el agente.
     Genera el código QR base64 inicial y configura el webhook.
     """
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     # Definir nombre de instancia único para evitar colisiones de caché de Baileys
     import time
@@ -1253,16 +1245,7 @@ async def disconnect_whatsapp_qr(
     current_user: dict = Depends(get_current_user),
 ):
     """Desconecta la línea QR y destruye la instancia."""
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     if agent.whatsapp_qr_instance_name:
         await delete_qr_instance(agent.whatsapp_qr_instance_name)
@@ -1289,16 +1272,7 @@ async def restart_whatsapp_qr(
     Fuerza el reinicio de la instancia de WhatsApp QR para obtener un nuevo
     código QR limpio si el dispositivo se desconectó.
     """
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     if not agent.whatsapp_qr_instance_name:
         raise HTTPException(
@@ -1353,16 +1327,7 @@ async def simulate_scan_qr(
             detail="La simulación de escaneo solo está disponible en modo de desarrollo local sin Evolution API.",
         )
 
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     instance_name = agent.whatsapp_qr_instance_name or f"genia_agent_{agent.id}"
     simulate_qr_scan(instance_name)
@@ -1399,16 +1364,7 @@ async def connect_whatsapp_waha(
     Soporta multi-agente: reusa sesiones existentes WORKING/CONNECTED
     para evitar duplicar sesiones por agente.
     """
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     from services.whatsapp_waha_service import list_waha_sessions
 
@@ -1547,16 +1503,7 @@ async def disconnect_whatsapp_waha(
     current_user: dict = Depends(get_current_user),
 ):
     """Desconecta la línea WAHA y destruye la sesión."""
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     if agent.whatsapp_qr_instance_name:
         await delete_waha_session(agent.whatsapp_qr_instance_name)
@@ -1580,16 +1527,7 @@ async def restart_whatsapp_waha(
     current_user: dict = Depends(get_current_user),
 ):
     """Reinicia la sesión WAHA para obtener un nuevo QR limpio."""
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     if not agent.whatsapp_qr_instance_name:
         raise HTTPException(
@@ -1841,16 +1779,7 @@ async def simulate_scan_waha(
             detail="La simulación solo está disponible en modo desarrollo local sin WAHA.",
         )
 
-    query = db.query(Agent).filter(Agent.id == agent_id)
-    if current_user["id"] != "local_dev_user":
-        query = query.filter(Agent.user_id == current_user["id"])
-
-    agent = query.first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    agent = get_agent_for_user(db, agent_id, current_user)
 
     session_name = agent.whatsapp_qr_instance_name or f"genia_agent_{agent.id}"
     simulate_waha_scan(session_name)

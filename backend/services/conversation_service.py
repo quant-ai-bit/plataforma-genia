@@ -210,9 +210,9 @@ async def process_conversation_message(
         system_prompt = system_prompt.replace("INFORMATION COLLECTION PROCESS (FUNNEL):", "PROCESO DE PERFILAMIENTO E INFORMACIÓN:")
         system_prompt = system_prompt.replace("Ask the following profiling questions STRICTLY ONE BY ONE.", "Haz las siguientes preguntas ESTRICTAMENTE UNA A LA VEZ.")
 
-    # 5. Preparar datos para el agente (Utiliza la configuración dinámica del agente)
-    provider_to_use = agent.provider or "vertex"
-    model_to_use = agent.model or getattr(settings, "vertex_gemini_model", "") or "gemini-2.5-flash"
+    # 5. Preparar datos para el agente (Vertex AI exclusivo con gemini-2.5-flash)
+    provider_to_use = "vertex"
+    model_to_use = "gemini-2.5-flash"
 
     agent_max_tokens = max(agent.max_tokens or 1024, 1024)
     agent_data = {

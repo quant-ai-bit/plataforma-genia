@@ -62,13 +62,13 @@ class Agent(Base):
     )
     provider = Column(
         String(50),
-        default="groq",
+        default="vertex",
         nullable=False,
-        doc="Proveedor de LLM: 'groq' o 'gemini'",
+        doc="Proveedor de LLM (vertex)",
     )
     model = Column(
         String(100),
-        default="llama-3.3-70b-versatile",
+        default="gemini-2.5-flash",
         nullable=False,
         doc="Modelo de LLM a utilizar",
     )

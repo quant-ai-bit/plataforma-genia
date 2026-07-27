@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from database import Base
 from models.agent import Agent
 from models.free_model_status import FreeModelStatus
-from services.model_rotation_service import ModelRotationService, FREE_MODELS
+from services.model_rotation_service import ModelRotationService
 from services.ai_service import chat_with_agent
 
 # Configurar Logging

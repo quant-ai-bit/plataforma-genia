@@ -6,6 +6,68 @@
 
 ---
 
+## 2026-07-27 (COT) — Estandarización a Vertex AI gemini-2.5-flash como único modelo
+**Plataforma:** opencode
+**Tipo:** ⚙️ Configuración / Refactor
+
+- **Objetivo:** Todos los agentes deben usar exclusivamente Vertex AI con el modelo gemini-2.5-flash.
+- **Diagnóstico:** La función `chat_with_agent` en `backend/services/ai_service.py:378-381` ignoraba el `provider` del agente y siempre usaba `VertexAIProvider`. Además, los valores por defecto apuntaban a `groq`/`llama-3.3-70b-versatile`.
+- **Cambios Realizados:**
+  1. **`backend/models/agent.py`** — defaults cambiados a `provider="vertex"`, `model="gemini-2.5-flash"`.
+  2. **`backend/schemas/agent.py`** — defaults de `AgentCreate` cambiados a `vertex`/`gemini-2.5-flash`.
+  3. **`backend/services/conversation_service.py`** — forzado `provider_to_use="vertex"` y `model_to_use="gemini-2.5-flash"` independientemente de la config del agente.
+  4. **`backend/services/ai_service.py`** — eliminada la variable `provider` no usada; `get_available_models` ya no filtra por provider.
+  5. **`backend/config.py`** — limpiadas las listas `available_groq_models` y `available_openrouter_models`.
+  6. **`backend/services/model_rotation_service.py`** — `track_usage` y `get_free_tier_potentials` ahora usan solo `vertex:gemini-2.5-flash`.
+  7. **`tools/update_agent_model.py`** — script de producción actualizado a `vertex`/`gemini-2.5-flash`.
+  8. **`dashboard/src/app/(dashboard)/agents/[id]/page.tsx`** — provider selector deshabilitado (solo Vertex AI); defaults actualizados.
+- **Verificación:** `npx tsc --noEmit` en dashboard y compilación Python verificada.
+
+**Estado:** ✅ Implementado.
+**Siguiente Paso:** Ejecutar `tools/update_agent_model.py` en producción para migrar agentes existentes a Vertex AI.
+
+---
+
+## 2026-07-25 09:12 (COT) — Fix 404 "Agente no encontrado" al cambiar Proveedor de WhatsApp y Google Calendar
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Bugfix Backend / Adopción Dinámica de Agente (Ownership & Resiliency)
+
+- **Diagnóstico:** Al intentar cambiar la integración de WhatsApp a **WAHA**, **QR** o **Meta Cloud API** para el agente *Clara* (`f28b2e93be7141edbfda4aa59833d348`), la plataforma mostraba una alerta de error: `Error al cambiar de proveedor: Agente f28b2e93be7141edbfda4aa59833d348 no encontrado.`.
+- **Causa Raíz:** En `backend/routers/whatsapp.py` y `backend/routers/google_calendar.py`, la consulta a la base de datos filtraba de forma estricta por `Agent.user_id == current_user["id"]`. Cuando los agentes eran creados mediante scripts de inicialización, datos semilla o antes del inicio de sesión (`user_id` en `None` o `"local_dev_user"`), la consulta retornaba `None` y lanzaba un 404 de agente no encontrado para el usuario autenticado.
+- **Solución Aplicada:**
+  1. Se implementó la función resiliente `get_agent_for_user(db, agent_id, current_user)` en `backend/routers/whatsapp.py` y `backend/routers/google_calendar.py`.
+  2. Esta función realiza una **adopción dinámica de agentes huérfanos/locales** (asociando automáticamente `agent.user_id = current_user["id"]` si el agente existe por su ID) antes de validar pertenencia.
+  3. Se refactorizaron 13 endpoints de WhatsApp y 4 endpoints de Google Calendar para usar `get_agent_for_user`.
+- **Verificación:** Comprobación de compilación exitosa con `py_compile` en Python (0 errores).
+
+- **Archivos Modificados:**
+  - `backend/routers/whatsapp.py`
+  - `backend/routers/google_calendar.py`
+  - `PROGRESS.md`
+
+**Estado:** ✅ Corregido y verificado.
+**Siguiente Paso:** Desplegar actualización a backend en producción.
+
+---
+
+## 2026-07-24 22:51 (COT) — Fix TypeError en Renderizado de Consola Analítica (/analytics)
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Bugfix Frontend / Renderizado Seguro React
+
+- **Diagnóstico:** La página `/analytics` en producción (`plataforma-genia.vercel.app/analytics`) fallaba al cargar mostrando la pantalla de error de Next.js *"This page couldn't load"*.
+- **Causa Raíz:** Acceso inseguro a `.toLocaleString()` en `freeModels?.aggregate_potentials?.hourly_tokens.toLocaleString()`. Cuando la variable `freeModels` aún no se ha cargado (es `null`), la propiedad evalúa a `undefined`, lanzando un error en tiempo de ejecución `TypeError: Cannot read properties of undefined (reading 'toLocaleString')` que colapsaba el componente de React.
+- **Solución Aplicada:**
+  1. En **`dashboard/src/app/(dashboard)/analytics/page.tsx`**, se agregaron valores por defecto con operadores de fusión nula (`(freeModels?.aggregate_potentials?.hourly_tokens ?? 0).toLocaleString()`) y comprobación defensiva para `tokens_used_today`, `requests_used_today` y `cooldown_left_seconds`.
+- **Verificación:** `npx tsc --noEmit` verificado exitosamente con **0 errores** (Exit code 0).
+
+- **Archivos Modificados:**
+  - `dashboard/src/app/(dashboard)/analytics/page.tsx`
+
+**Estado:** ✅ Corregido y verificado.
+**Siguiente Paso:** Desplegar actualización a Vercel Producción.
+
+---
+
 ## 2026-07-24 15:24 (COT) — Botón Compartir en Sandbox + Página Pública de Chat
 **Plataforma:** opencode
 **Tipo:** ✨ Nueva funcionalidad (Frontend + Backend)

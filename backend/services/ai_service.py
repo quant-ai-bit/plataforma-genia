@@ -323,7 +323,6 @@ async def chat_with_agent(
     Returns:
         Tupla (respuesta, lead_data, handoff, unanswered_q, prompt_tokens, completion_tokens).
     """
-    provider: str = agent_model_data.get("provider", "vertex")
     model_name: str = agent_model_data.get("model", "gemini-2.5-flash")
     system_prompt: str = agent_model_data.get("system_prompt", "")
     temperature: float = agent_model_data.get("temperature", 0.7)
@@ -519,10 +518,8 @@ async def chat_with_agent(
 
 
 def get_available_models(provider: str) -> list[str]:
-    """Retorna la lista de modelos disponibles para un proveedor (solo vertex/gemini)."""
-    if provider in ("vertex", "gemini"):
-        return ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-    return []
+    """Retorna la lista de modelos disponibles (solo vertex/gemini)."""
+    return ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
 
 
 # ── Delegacion en Model_Service (Vertex AI exclusivo) ───────────────

@@ -53,8 +53,8 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     name: "",
     description: "",
     system_prompt: "",
-    provider: "groq",
-    model: "llama-3.3-70b-versatile",
+    provider: "vertex",
+    model: "gemini-2.5-flash",
     temperature: 0.7,
     max_tokens: 1024,
     custom_fields: [] as any[],
@@ -852,13 +852,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
   };
 
   const handleProviderChange = (provider: string) => {
-    let defaultModel = "llama-3.3-70b-versatile";
-    if (provider === "gemini") {
-      defaultModel = "gemini-2.5-flash";
-    } else if (provider === "openrouter") {
-      defaultModel = "deepseek/deepseek-chat";
-    }
-    setForm(prev => ({ ...prev, provider, model: defaultModel }));
+    setForm(prev => ({ ...prev, provider: "vertex", model: "gemini-2.5-flash" }));
   };
 
   // Custom Fields Functions
@@ -1116,13 +1110,8 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     );
   }
 
-  // Get active models list based on provider in form
-  const currentProviderModels = 
-    form.provider === "groq"
-      ? availableModels.groq || []
-      : form.provider === "gemini"
-      ? availableModels.gemini || []
-      : availableModels.openrouter || [];
+  // Gemini models (Vertex AI exclusivo)
+  const currentProviderModels = availableModels.gemini || ["gemini-2.5-flash"];
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-12 animate-fadeIn text-xs">
@@ -1209,13 +1198,11 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
               <div>
                 <label className="block text-gray-400 font-semibold mb-1">Proveedor LLM</label>
                 <select
-                  value={form.provider}
-                  onChange={e => handleProviderChange(e.target.value)}
-                  className="w-full bg-[#0c101c] border border-gray-850 focus:border-blue-500 rounded-xl px-4 py-2 text-white focus:outline-none font-semibold"
+                  value="vertex"
+                  disabled
+                  className="w-full bg-[#0c101c] border border-gray-850 rounded-xl px-4 py-2 text-gray-400 font-semibold cursor-not-allowed"
                 >
-                  <option value="groq">Groq (Chat LLM)</option>
-                  <option value="gemini">Gemini (Utility LLM)</option>
-                  <option value="openrouter">OpenRouter (Multi-LLM)</option>
+                  <option value="vertex">Vertex AI (Gemini)</option>
                 </select>
               </div>
               <div>
