@@ -475,9 +475,12 @@ async def chat_with_agent(
                 final_text = getattr(response_message, "content", "") or ""
 
         if final_text:
-            # Eliminar etiquetas de función pseudo-XML sin borrar el texto que le sigue
+            # Eliminar etiquetas de función pseudo-XML, tool_code y print(...) en texto
             final_text = re.sub(r"<function=\w+>.*?</function>", "", final_text, flags=re.DOTALL)
             final_text = re.sub(r"<function=\w+>[^<\n]*", "", final_text)
+            final_text = re.sub(r"tool_code\s+print\(.*?\)", "", final_text, flags=re.DOTALL)
+            final_text = re.sub(r"print\([a_z_]+\(.*?\)\)", "", final_text, flags=re.DOTALL)
+            final_text = re.sub(r"tool_code\s+[^\n]*", "", final_text)
             final_text = final_text.strip()
 
         if db:

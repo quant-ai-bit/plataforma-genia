@@ -4,6 +4,22 @@
 > **Lo leen y lo actualizan TODAS las plataformas** (Kiro, opencode, Antigravity, etc.).
 > Si entras al proyecto desde cualquier herramienta, empieza leyendo este archivo.
 
+## 2026-07-30 11:16 (COT) — Fix StringDataRightTruncation en Carga y Entrenamiento de Imágenes del Agente
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Bugfix Base de Datos PostgreSQL (Supabase) + Modelo ORM `AgentImage`
+
+- **Diagnóstico:** Al subir una imagen para entrenar al agente en la biblioteca de imágenes, la plataforma arrojaba una alerta de error: `Error en la generación de entrenamiento: (psycopg2.errors.StringDataRightTruncation) value too long for type character varying(500)` al ejecutar `INSERT INTO agent_images`.
+- **Causa Raíz:** En Supabase PostgreSQL, la tabla `agent_images` tenía las columnas `filename`, `description` y `url` declaradas como `VARCHAR(500)` / `VARCHAR(1000)`. Al almacenar URLs públicas en formato Data URL Base64 o descripciones extensas generadas por IA para el entrenamiento didáctico, los caracteres superaban el límite de 500/1000 caracteres, haciendo fallar la inserción en PostgreSQL.
+- **Solución Aplicada:**
+  1. **`backend/models/agent_image.py`:** Se actualizaron los tipos de columnas `filename`, `description` y `url` a `Text` en SQLAlchemy.
+  2. **Migración en Caliente en Supabase PostgreSQL:** Se ejecutó la migración DDL sin interrupción de servicio (`ALTER TABLE agent_images ALTER COLUMN filename TYPE TEXT;`, `ALTER COLUMN description TYPE TEXT;`, `ALTER COLUMN url TYPE TEXT;`).
+  3. **`tools/patch_agent_images_table.py` (nuevo):** Creado script de migración y parche.
+- **Verificación:** `python -m py_compile` verificado con **0 errores** y migración ejecutada en Supabase PostgreSQL con **éxito total**.
+
+**Estado:** ✅ Solucionado, verificado y desplegado en producción.
+
+---
+
 ## 2026-07-30 10:54 (COT) — Fix 404 "No se encontró ningún agente con el ID" al guardar en Dashboard
 **Plataforma:** Antigravity
 **Tipo:** 🐛 Bugfix Backend & Adopción de Pertenencia (`user_id`)
