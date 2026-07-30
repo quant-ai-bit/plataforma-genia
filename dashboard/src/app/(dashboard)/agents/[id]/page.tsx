@@ -1799,7 +1799,15 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                             </p>
                           </div>
 
-                          <div className="flex justify-end gap-3">
+                          <div className="flex justify-end gap-3 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => router.push(`/agents/${id}/diagnostic`)}
+                              className="flex items-center gap-1.5 px-4 py-2 border border-purple-500/30 bg-purple-500/15 text-purple-300 hover:bg-purple-500/25 rounded-xl transition text-xs font-semibold cursor-pointer shadow-lg shadow-purple-950/20"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                              Diagnóstico WhatsApp
+                            </button>
                             <button
                               type="button"
                               disabled={waConnecting}
@@ -1819,6 +1827,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                               Desconectar WAHA
                             </button>
                           </div>
+
                         </div>
                       ) : (
                         <div className="space-y-5">

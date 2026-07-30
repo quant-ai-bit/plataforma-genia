@@ -54,6 +54,15 @@ def extract_and_save_lead(
         k: v for k, v in lead_data.items() if k not in standard_fields
     }
 
+    # Intentar obtener teléfono y nombre desde la conversación si no vinieron en lead_data
+    from models.conversation import Conversation
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if conv:
+        if not lead_phone and conv.contact_phone:
+            lead_phone = conv.contact_phone
+        if not lead_name and conv.contact_name:
+            lead_name = conv.contact_name
+
     # ── Buscar lead existente por conversation_id ────────────────
     existing_lead: Lead | None = (
         db.query(Lead)
@@ -81,6 +90,10 @@ def extract_and_save_lead(
         current_custom.update(custom_data_new)
         existing_lead.custom_data = current_custom
 
+        # Actualizar estado si aún está en primer_contacto
+        if not existing_lead.status or existing_lead.status == "primer_contacto":
+            existing_lead.status = "en_cualificacion"
+
         existing_lead.updated_at = datetime.now(timezone.utc)
 
         db.commit()
@@ -103,6 +116,7 @@ def extract_and_save_lead(
             email=lead_email or None,
             phone=lead_phone or None,
             source_channel=source_channel,
+            status="en_cualificacion",
             custom_data=custom_data_new if custom_data_new else None,
         )
 
@@ -112,6 +126,7 @@ def extract_and_save_lead(
 
         logger.info("Lead creado correctamente: %s", new_lead.id)
         return new_lead
+
 
 
 async def check_lead_completeness_and_notify(
@@ -205,6 +220,9 @@ async def check_lead_completeness_and_notify(
         f"ID Conversación: `{conversation.id}`"
     )
 
+    # El lead está cualificado y completo
+    lead.status = "cualificado"
+
     # Enviar notificación de WhatsApp (usando credenciales del agente)
     _phone_id = agent.whatsapp_phone_number_id or ""
     _token = _decrypt(agent.whatsapp_access_token) if agent.whatsapp_access_token else ""
@@ -218,4 +236,6 @@ async def check_lead_completeness_and_notify(
         logger.info("Notificación de lead completado enviada y guardada para conversación %s", conversation.id)
         return True
     
-    return False
+    db.commit()
+    return True
+

@@ -119,6 +119,14 @@ def update_agent(
     """Actualiza un agente de IA existente validando pertenencia."""
     from services.encryption_service import encrypt
 
+    if current_user["id"] != "local_dev_user":
+        orphan = db.query(Agent).filter(
+            (Agent.id == agent_id) & ((Agent.user_id == None) | (Agent.user_id == "local_dev_user"))
+        ).first()
+        if orphan:
+            orphan.user_id = current_user["id"]
+            db.commit()
+
     query = db.query(Agent).filter(Agent.id == agent_id)
     if current_user["id"] != "local_dev_user":
         query = query.filter(Agent.user_id == current_user["id"])
@@ -147,6 +155,14 @@ def update_agent(
 @router.delete("/{agent_id}", status_code=status.HTTP_200_OK)
 def delete_agent(agent_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Elimina un agente de IA validando pertenencia."""
+    if current_user["id"] != "local_dev_user":
+        orphan = db.query(Agent).filter(
+            (Agent.id == agent_id) & ((Agent.user_id == None) | (Agent.user_id == "local_dev_user"))
+        ).first()
+        if orphan:
+            orphan.user_id = current_user["id"]
+            db.commit()
+
     query = db.query(Agent).filter(Agent.id == agent_id)
     if current_user["id"] != "local_dev_user":
         query = query.filter(Agent.user_id == current_user["id"])

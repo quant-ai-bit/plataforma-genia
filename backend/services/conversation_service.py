@@ -159,20 +159,51 @@ async def process_conversation_message(
         "NO esperes a tener todos los datos para llamar a la función. Ve guardando y actualizando los datos de forma incremental paso a paso a medida que fluye la conversación."
     )
 
-    # 4.3.1 Inyectar reglas específicas de teléfono según el canal de comunicación
-    if source_channel == "whatsapp" and conversation.contact_phone:
-        system_prompt += (
-            f"\n\n[CANAL DE COMUNICACIÓN ACTUAL]\n"
-            f"El usuario se está comunicando contigo a través de WhatsApp desde el número: {conversation.contact_phone}\n"
-            f"REGLA DE TELÉFONO EN WHATSAPP: Cuando necesites su número de teléfono de contacto para formalizar la reserva, NO le pidas que te lo escriba de cero. "
-            f"En su lugar, pregúntale si desea que registremos el número desde el que te está escribiendo en este momento ({conversation.contact_phone}) o si prefiere darte otro número diferente."
-        )
-    else:
-        system_prompt += (
-            "\n\n[CANAL DE COMUNICACIÓN ACTUAL]\n"
-            "El usuario se está comunicando a través de una aplicación web (chat web).\n"
-            "REGLA DE TELÉFONO EN WEB: Dado que estás en un chat web y no tienes su información de contacto, debes pedirle explícitamente su número de teléfono al final de la reserva para poder registrarlo."
-        )
+    # 4.3.2 Búsqueda defensiva en la BD privada de contactos precargados para reconocimiento automático
+    if conversation.contact_phone:
+        try:
+            from models.contact import PreloadedContact
+            import re
+            clean_phone = re.sub(r"\D", "", str(conversation.contact_phone))
+            if clean_phone:
+                preloaded = (
+                    db.query(PreloadedContact)
+                    .filter(
+                        PreloadedContact.agent_id == agent.id,
+                        PreloadedContact.phone == clean_phone
+                    )
+                    .first()
+                )
+                if preloaded:
+                    if preloaded.name and not conversation.contact_name:
+                        conversation.contact_name = preloaded.name
+                    
+                    nickname_str = getattr(preloaded, "nickname", None)
+                    nickname_rule = ""
+                    if nickname_str:
+                        nickname_rule = (
+                            f"\n- Apodo / Nombre cariñoso detectado: \"{nickname_str}\"\n"
+                            f"REGLA CRÍTICA OBLIGATORIA DE APODO: El dueño del negocio suele referirse a este cliente como \"{nickname_str}\". "
+                            f"DEBES dirigirte al cliente como \"{nickname_str}\" en tus respuestas (ejemplo: '¡Hola {nickname_str}! Qué gusto saludarte...')."
+                        )
+                    else:
+                        nickname_rule = (
+                            f"REGLA CRÍTICA OBLIGATORIA DE SALUDO: Como ya conoces el nombre del cliente ({preloaded.name}), "
+                            f"DEBES saludarlo directamente por su nombre de forma cálida, cercana y profesional desde tu primer mensaje de bienvenida (ejemplo: '¡Hola {preloaded.name}! Qué gusto saludarte...'). NO le preguntes su nombre de cero ya que lo conoces."
+                        )
+
+                    system_prompt += (
+                        f"\n\n[CLIENTE RECONOCIDO EN BASE DE DATOS PRIVADA DE LA EMPRESA]\n"
+                        f"Este cliente ha sido reconocido automáticamente en la base de datos de clientes precargada para este agente.\n"
+                        f"- Nombre del cliente: {preloaded.name}\n"
+                        f"- Teléfono: {preloaded.phone}\n"
+                        f"- Correo: {preloaded.email or 'No registrado'}\n"
+                        f"{nickname_rule}"
+                    )
+
+        except Exception as p_ex:
+            logger.error("Error silencioso al verificar contacto precargado para el agente %s: %s", agent.id, p_ex)
+
 
     # 4.4 Inyectar instrucciones de Google Calendar cuando está conectado
     google_calendar_connected = getattr(agent, 'google_calendar_connected', False)

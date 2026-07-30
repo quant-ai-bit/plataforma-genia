@@ -64,7 +64,6 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     """
     jwt_secret = getattr(settings, "supabase_jwt_secret", "")
     
-    # Decodificar el secret de Supabase si es un hash base64
     secret_key = jwt_secret
     if jwt_secret:
         try:
@@ -72,33 +71,25 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         except Exception as e:
             print(f"[AUTH_DEBUG] No se pudo decodificar SUPABASE_JWT_SECRET en base64, usando string original: {str(e)}")
     
-    print(f"[AUTH_DEBUG] get_current_user called. Credentials present: {credentials is not None}")
-
     if not credentials:
-        print("[AUTH_DEBUG] No credentials provided, using fallback default user for dashboard access")
-        return {"id": "local_dev_user", "email": "admin@genia.app"}
+        print("[AUTH_DEBUG] No credentials provided.")
+        raise HTTPException(
+            status_code=401,
+            detail="Falta el token de autenticación (Bearer Token).",
+        )
     
     token = credentials.credentials
     
     try:
         unverified_headers = jwt.get_unverified_header(token)
-        print(f"[AUTH_DEBUG] Token unverified headers: {unverified_headers}")
-        try:
-            unverified_payload = jwt.decode(token, options={"verify_signature": False})
-            print(f"[AUTH_DEBUG] Unverified token payload: {unverified_payload}")
-        except Exception as e:
-            print(f"[AUTH_DEBUG] Failed to decode unverified payload: {str(e)}")
-        
         is_hs256 = unverified_headers.get("alg") == "HS256"
         payload = None
         
         if jwt_secret and is_hs256:
             verification_errors = []
             
-            # Intento 1: Usar la clave decodificada en base64
             if secret_key:
                 try:
-                    print("[AUTH_DEBUG] Attempting verification with base64-decoded key...")
                     payload = jwt.decode(
                         token,
                         secret_key,
@@ -106,15 +97,11 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
                         options={"verify_aud": True},
                         audience="authenticated",
                     )
-                    print("[AUTH_DEBUG] Verification succeeded with base64-decoded key.")
                 except jwt.InvalidTokenError as e:
-                    print(f"[AUTH_DEBUG] Verification failed with base64-decoded key: {str(e)}")
                     verification_errors.append(f"base64-decoded: {str(e)}")
             
-            # Intento 2: Usar la clave como cadena de texto cruda (raw string bytes)
             if payload is None and jwt_secret:
                 try:
-                    print("[AUTH_DEBUG] Attempting verification with raw string key...")
                     raw_key = jwt_secret.encode('utf-8') if isinstance(jwt_secret, str) else jwt_secret
                     payload = jwt.decode(
                         token,
@@ -123,37 +110,30 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
                         options={"verify_aud": True},
                         audience="authenticated",
                     )
-                    print("[AUTH_DEBUG] Verification succeeded with raw string key.")
                 except jwt.InvalidTokenError as e:
-                    print(f"[AUTH_DEBUG] Verification failed with raw string key: {str(e)}")
                     verification_errors.append(f"raw-string: {str(e)}")
             
-            # Si ambos fallaron localmente, intentar la API de Supabase
             if payload is None:
                 api_user = verify_token_via_supabase_api(token)
                 if api_user:
                     return api_user
-                    
-                # Si la API también falló, usar decode sin verificación como último recurso.
-                # El token ya fue autenticado por Supabase client-side; solo extraemos el user_id.
-                print(f"[AUTH_DEBUG] HS256 verification failed for all keys. Falling back to unverified decode. Errors: {verification_errors}")
-                payload = jwt.decode(token, options={"verify_signature": False})
+                
+                print(f"[AUTH_DEBUG] HS256 verification failed. Errors: {verification_errors}")
+                raise HTTPException(
+                    status_code=401,
+                    detail="Firma del token inválida o no se pudo verificar con Supabase.",
+                )
+        
         if payload is None:
-            # Intentar primero verificación mediante la API de Supabase Auth
+            # Para tokens RS256 de Supabase (o si no se configuró HS256 localmente)
             api_user = verify_token_via_supabase_api(token)
             if api_user:
                 return api_user
             
-            # Fallback seguro para tokens de Supabase (RS256 / ES256 / HS256)
-            try:
-                payload = jwt.decode(token, options={"verify_signature": False})
-                print(f"[AUTH_DEBUG] Decodificado token de Supabase ({unverified_headers.get('alg')}). user_id: {payload.get('sub')}")
-            except Exception as e:
-                print(f"[AUTH_DEBUG] Error decodificando token: {e}")
-                raise HTTPException(
-                    status_code=401,
-                    detail="Token de sesión no válido o ilegible.",
-                )
+            raise HTTPException(
+                status_code=401,
+                detail="Firma del token inválida o no se pudo verificar con Supabase (RS256).",
+            )
         
         user_id = payload.get("sub")
         email = payload.get("email")

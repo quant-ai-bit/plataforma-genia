@@ -62,3 +62,6 @@ backend/proxy_log.txt
 # Debug files
 .dbg/
 nul
+
+*.env
+production.env

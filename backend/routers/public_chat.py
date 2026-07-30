@@ -1,12 +1,13 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models.agent import Agent
 from models.conversation import Conversation
+from rate_limit import limiter
 
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,9 @@ class PublicAgentInfo(BaseModel):
 
 
 @router.post("/chat", response_model=PublicChatResponse)
+@limiter.limit("30/minute")
 async def public_chat(
+    req: Request,
     body: PublicChatRequest,
     db: Session = Depends(get_db),
 ):

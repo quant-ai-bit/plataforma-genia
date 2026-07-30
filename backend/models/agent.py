@@ -203,6 +203,26 @@ class Agent(Base):
         doc="Estado de sincronización de WhatsApp (idle, syncing, completed, failed)",
     )
 
+    # --- Diagnóstico WhatsApp & IA (Contexto de Negocio & Estado) ---
+    diagnostic_business_context = Column(
+        JSON,
+        nullable=True,
+        default=None,
+        doc="Contexto de negocio editable para diagnóstico IA de WhatsApp",
+    )
+    diagnostic_last_run_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Última ejecución del diagnóstico WhatsApp",
+    )
+    diagnostic_status = Column(
+        String(20),
+        default="idle",
+        nullable=True,
+        doc="Estado del diagnóstico (idle, running, completed, failed)",
+    )
+
+
 
     # --- Google Calendar OAuth 2.0 (por agente/cliente) ---
     google_calendar_client_id = Column(

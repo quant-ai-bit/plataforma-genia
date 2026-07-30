@@ -30,7 +30,10 @@ from routers import (
     public_api_router,
     google_calendar_router,
     free_models_router,
+    contacts_router,
+    whatsapp_diagnostic_router,
 )
+
 
 
 import os
@@ -141,6 +144,9 @@ app.include_router(whatsapp_router, prefix="/api")
 app.include_router(mcp_router, prefix="/api", dependencies=[Depends(get_current_user)])
 app.include_router(google_calendar_router, prefix="/api")
 app.include_router(free_models_router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(contacts_router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(whatsapp_diagnostic_router, prefix="/api", dependencies=[Depends(get_current_user)])
+
 
 # Router publico B2B multi-tenant (auth por API key en sus propias dependencias).
 app.include_router(public_api_router)
@@ -155,22 +161,25 @@ app.include_router(public_chat_router)
 
 
 
+# ── Middleware de Rate Limiting (SlowAPI) ──────────────────────────────
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
+from rate_limit import limiter
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
 # ── Endpoints Globales / de Utilidad ──────────────────────────────────
 @app.get("/", tags=["Health Check"])
 def read_root():
     """Endpoint de verificación de estado básico (Health Check)."""
-    import os
-    env_summary = {}
-    for k, v in os.environ.items():
-        if any(w in k.lower() for w in ("project", "location", "credentials", "account", "key", "token", "secret", "url", "db", "api")):
-            env_summary[k] = len(v) if v else 0
     return {
         "status": "online",
         "service": "PLATAFORMA GENIA Backend",
         "version": "1.0.0",
         "hackathon": "Build with Gemini XPRIZE",
         "google_cloud": True,
-        "env_summary": env_summary,
     }
 
 

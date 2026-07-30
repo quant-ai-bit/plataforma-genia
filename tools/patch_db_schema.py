@@ -37,6 +37,16 @@ def patch_db(db_path):
             conn.commit()
         except Exception as e:
             print(f"Error adding whatsapp_qr_code to agents: {e}")
+
+    # 3b. Check/Add diagnostic columns in agents
+    for col in ["diagnostic_business_context", "diagnostic_last_run_at", "diagnostic_status"]:
+        if col not in columns_agents:
+            print(f"Adding {col} to agents in {db_path}")
+            try:
+                cursor.execute(f"ALTER TABLE agents ADD COLUMN {col} TEXT")
+                conn.commit()
+            except Exception as e:
+                print(f"Error adding {col} to agents: {e}")
             
     # 4. Check/Add tenant_id in knowledge_documents
     cursor.execute("PRAGMA table_info(knowledge_documents)")

@@ -8,7 +8,7 @@ de historial de mensajes y la activación de la captura de leads.
 from datetime import datetime, timezone, timedelta
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -19,6 +19,7 @@ from schemas.conversation import ChatRequest, ChatResponse
 from services.ai_service import chat_with_agent
 from services.knowledge_service import retrieve_context
 from services.lead_service import extract_and_save_lead
+from rate_limit import limiter
 
 
 logger = logging.getLogger(__name__)
@@ -26,28 +27,29 @@ router = APIRouter(prefix="/chat", tags=["Chat Sandbox"])
 
 
 @router.post("", response_model=ChatResponse)
-async def chat_sandbox(request: ChatRequest, db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+async def chat_sandbox(req: Request, chat_request: ChatRequest, db: Session = Depends(get_db)):
     """
     Envía un mensaje a un agente y recibe su respuesta.
 
     Si no se envía un `conversation_id`, se inicia una nueva conversación.
     """
     # 1. Verificar si el agente existe
-    agent = db.query(Agent).filter(Agent.id == request.agent_id).first()
+    agent = db.query(Agent).filter(Agent.id == chat_request.agent_id).first()
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontró ningún agente con el ID {request.agent_id}",
+            detail=f"No se encontró ningún agente con el ID {chat_request.agent_id}",
         )
 
     # 2. Obtener o crear la conversación
     conversation = None
-    if request.conversation_id:
+    if chat_request.conversation_id:
         conversation = (
             db.query(Conversation)
             .filter(
-                Conversation.id == request.conversation_id,
-                Conversation.agent_id == request.agent_id,
+                Conversation.id == chat_request.conversation_id,
+                Conversation.agent_id == chat_request.agent_id,
             )
             .first()
         )
@@ -55,14 +57,14 @@ async def chat_sandbox(request: ChatRequest, db: Session = Depends(get_db)):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=(
-                    f"No se encontró la conversación con ID {request.conversation_id} "
-                    f"asociada al agente {request.agent_id}"
+                    f"No se encontró la conversación con ID {chat_request.conversation_id} "
+                    f"asociada al agente {chat_request.agent_id}"
                 ),
             )
     else:
         # Crear nueva conversación
         conversation = Conversation(
-            agent_id=request.agent_id,
+            agent_id=chat_request.agent_id,
             channel="web",
             status="active",
         )
@@ -71,7 +73,7 @@ async def chat_sandbox(request: ChatRequest, db: Session = Depends(get_db)):
         db.refresh(conversation)
         logger.info(
             "Nueva conversación creada para el agente %s (ID: %s)",
-            request.agent_id,
+            chat_request.agent_id,
             conversation.id,
         )
 
@@ -82,7 +84,7 @@ async def chat_sandbox(request: ChatRequest, db: Session = Depends(get_db)):
         db=db,
         agent=agent,
         conversation=conversation,
-        user_message_text=request.message,
+        user_message_text=chat_request.message,
         source_channel="web",
     )
 

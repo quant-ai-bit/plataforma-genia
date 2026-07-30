@@ -54,7 +54,7 @@ export interface Lead {
   name: string | null;
   phone?: string | null;
   email?: string | null;
-  status?: 'pending' | 'qualified' | 'contacted' | 'lost';
+  status?: 'primer_contacto' | 'en_cualificacion' | 'cualificado' | 'objetivo_cumplido' | 'perdido' | string;
   custom_data?: Record<string, any> | null;
   created_at?: string;
   updated_at?: string;
@@ -62,6 +62,70 @@ export interface Lead {
   source_channel?: string;
   captured_at?: string;
 }
+
+export interface PreloadedContact {
+  id: string;
+  agent_id: string;
+  name: string;
+  phone: string;
+  email?: string | null;
+  notes?: string | null;
+  custom_data?: Record<string, any> | null;
+  created_at?: string;
+  source?: string;
+  nickname?: string | null;
+  ai_category?: string | null;
+  ai_confidence?: number | null;
+  ai_analysis?: any;
+  whatsapp_chat_id?: string | null;
+  last_message_preview?: string | null;
+}
+
+export interface BusinessContext {
+  business_name: string;
+  business_type: string;
+  products_services?: string;
+  ideal_client?: string;
+  sale_keywords?: string[];
+  personal_keywords?: string[];
+  additional_notes?: string;
+}
+
+export interface WhatsAppContact {
+  chat_id: string;
+  name: string;
+  phone: string;
+  last_message: string;
+  last_message_at: string;
+  message_count: number;
+  is_group: boolean;
+}
+
+export interface DiagnosticResult {
+  contact: WhatsAppContact;
+  category: 'cliente_potencial' | 'cliente_existente' | 'aliado_estrategico' | 'personal' | 'proveedor' | 'irrelevante';
+  confidence: number;
+  reason: string;
+  nickname: string | null;
+  business_data?: {
+    interest?: string;
+    budget?: string;
+    last_purchase?: string;
+    interaction_summary?: string;
+  };
+  suggested_crm_stage: string;
+}
+
+export interface DiagnosticStatus {
+  status: 'idle' | 'running' | 'completed' | 'failed';
+  progress: number;
+  current_chat?: string;
+  total_chats: number;
+  analyzed_chats: number;
+  estimated_remaining_seconds: number;
+  results?: DiagnosticResult[];
+}
+
 
 export interface AgentImage {
   id: string;
@@ -107,4 +171,3 @@ export interface DashboardMetrics {
   recent_leads?: Lead[];
   recent_conversations?: Conversation[];
 }
-

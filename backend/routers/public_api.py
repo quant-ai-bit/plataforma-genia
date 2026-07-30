@@ -36,6 +36,7 @@ from services.knowledge_service import retrieve_context_for_tenant
 from services.model_service import AgentUsageRecorder
 from services.providers.base import ModelUnavailableError
 from services.security.api_key_dep import enforce_subscription, require_tenant
+from rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,9 @@ async def health():
 
 
 @router.post("/agent/chat", response_model=ChatResponse)
+@limiter.limit("30/minute")
 async def agent_chat(
+    req: Request,
     body: ChatRequest,
     tenant: Tenant = Depends(enforce_subscription),
     db: Session = Depends(get_db),

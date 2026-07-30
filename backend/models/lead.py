@@ -22,7 +22,9 @@ class Lead(Base):
     email = Column(String(255), nullable=True)
     custom_data = Column(JSON, default=dict)  # Campos dinámicos capturados
     source_channel = Column(String(20), default="web")
+    status = Column(String(50), default="primer_contacto", nullable=True)  # primer_contacto, en_cualificacion, cualificado, objetivo_cumplido, perdido
     captured_at = Column(DateTime(timezone=True), server_default=func.now())
+
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
 
     # Relaciones
