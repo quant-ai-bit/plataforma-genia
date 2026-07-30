@@ -30,8 +30,7 @@
   3. **Base de Conocimiento:** Generados e integrados 3 documentos (`aji_artesanal_producto.txt`, `envios_y_domicilios_pereira.txt`, `preguntas_frecuentes_aji.txt`).
   4. **Persistencia & Creación en BD:** Creado script `tools/create_agent_juan.py` y ejecutado exitosamente.
 - **Detalles del Agente:**
-  - **ID de Agente (Producción Supabase):** `d6cecadcbd304c6c8d124a60b6458a85`
-  - **ID de Agente (Local SQLite):** `7f720ca49ca349c99da107f2fd050f4d`
+  - **ID de Agente (Producción Supabase):** `04b0a43c8a814eae8c6e84124b9b6aa1`
   - **Nombre:** `Juan - A la mesa Juan cocina`
   - **Proveedor / Modelo:** Vertex AI (`vertex` / `gemini-2.5-flash`)
   - **Canales:** Web + WhatsApp
