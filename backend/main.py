@@ -80,6 +80,10 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 allowed_origins = settings.allowed_origins_list
 if not allowed_origins:
     allowed_origins = [
+        "https://app.genia.com.co",
+        "https://genia.com.co",
+        "https://www.genia.com.co",
+        "https://plataforma.genia.com.co",
         "https://plataforma-genia.vercel.app",
         "http://localhost:3000",
         "http://localhost:3001",
@@ -92,7 +96,7 @@ if not allowed_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origin_regex=r"https://.*(\.vercel\.app|\.genia\.com\.co)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -28,7 +28,12 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (!authLoading) {
-      if (isSupabaseConfigured && !user) {
+      const hasAuthParams = typeof window !== "undefined" && (
+        window.location.hash.includes("access_token") || 
+        window.location.hash.includes("refresh_token") ||
+        window.location.search.includes("code=")
+      );
+      if (isSupabaseConfigured && !user && !hasAuthParams) {
         router.push("/login");
       }
     }
@@ -73,20 +78,28 @@ export default function DashboardLayout({
     return "Plataforma autónoma de agentes de Inteligencia Artificial & CRM.";
   };
 
-  if (authLoading) {
+  const hasAuthParams = typeof window !== "undefined" && (
+    window.location.hash.includes("access_token") || 
+    window.location.hash.includes("refresh_token") ||
+    window.location.search.includes("code=")
+  );
+
+  if (authLoading || (hasAuthParams && !user)) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#070a12] text-white">
         <div className="flex flex-col items-center gap-3">
           <div className="p-3 bg-gradient-to-tr from-indigo-500 to-cyan-400 rounded-2xl shadow-lg shadow-indigo-500/25 animate-pulse">
             <Loader2 className="w-8 h-8 text-white animate-spin" />
           </div>
-          <p className="text-slate-400 text-sm font-medium">Verificando credenciales...</p>
+          <p className="text-slate-400 text-sm font-medium">
+            {hasAuthParams ? "Autenticando sesión con Google..." : "Verificando credenciales..."}
+          </p>
         </div>
       </div>
     );
   }
 
-  if (isSupabaseConfigured && !user) {
+  if (isSupabaseConfigured && !user && !hasAuthParams) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#070a12] text-white">
         <div className="flex flex-col items-center gap-3">

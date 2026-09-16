@@ -1,11 +1,12 @@
 import { supabase } from "./supabase";
 
 export function getApiBaseUrl(): string {
-  if (process.env.NEXT_PUBLIC_API_URL !== undefined && process.env.NEXT_PUBLIC_API_URL !== "") {
-    return process.env.NEXT_PUBLIC_API_URL;
-  }
+  // En el navegador en producción, siempre usar ruta relativa para respetar el dominio actual (app.genia.com.co)
   if (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
     return "";
+  }
+  if (process.env.NEXT_PUBLIC_API_URL !== undefined && process.env.NEXT_PUBLIC_API_URL !== "") {
+    return process.env.NEXT_PUBLIC_API_URL;
   }
   return "http://127.0.0.1:8000";
 }

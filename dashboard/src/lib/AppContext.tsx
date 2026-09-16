@@ -246,17 +246,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const hasAuthParams = typeof window !== "undefined" && (
+      window.location.hash.includes("access_token") || 
+      window.location.hash.includes("refresh_token") ||
+      window.location.search.includes("code=")
+    );
+
+    let safetyTimer: NodeJS.Timeout | null = null;
+
     supabase!.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         setUser(session.user);
         setToken(session.access_token);
+        setAuthLoading(false);
+      } else if (!hasAuthParams) {
+        setAuthLoading(false);
       }
-      setAuthLoading(false);
     }).catch(() => {
-      setAuthLoading(false);
+      if (!hasAuthParams) {
+        setAuthLoading(false);
+      }
     });
 
-    const { data: { subscription } } = supabase!.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase!.auth.onAuthStateChange((event, session) => {
       if (session) {
         setUser(session.user);
         setToken(session.access_token);
@@ -267,7 +279,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setAuthLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    // Safety timeout in case auth params exist in URL but Supabase fails to exchange them
+    if (hasAuthParams) {
+      safetyTimer = setTimeout(() => {
+        setAuthLoading(false);
+      }, 7000);
+    }
+
+    return () => {
+      subscription.unsubscribe();
+      if (safetyTimer) clearTimeout(safetyTimer);
+    };
   }, []);
 
   // Sync data on token/backend changes
