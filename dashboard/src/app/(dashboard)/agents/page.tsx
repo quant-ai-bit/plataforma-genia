@@ -15,7 +15,8 @@ import {
   ChevronDown,
   ChevronRight,
   ShieldAlert,
-  Loader2
+  Loader2,
+  RefreshCw
 } from "lucide-react";
 
 export default function AgentsPage() {
@@ -40,6 +41,23 @@ export default function AgentsPage() {
       router.replace("/analytics");
     }
   }, [authLoading, isAdmin, router]);
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    if (isAdmin) {
+      loadBackendData();
+    }
+  }, [isAdmin]);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await loadBackendData();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Modal State for New Agent
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -208,16 +226,27 @@ export default function AgentsPage() {
             Lista de asistentes configurados en la plataforma.
           </p>
         </div>
-        <button
-          onClick={() => {
-            resetForm();
-            setIsModalOpen(true);
-          }}
-          className="flex items-center gap-1.5 py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs rounded-xl font-bold border border-blue-500/20 shadow-lg shadow-blue-500/15 transition cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          Crear Agente
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+            className="flex items-center gap-1.5 py-2 px-3 bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white text-xs rounded-xl font-medium border border-white/[0.08] transition cursor-pointer disabled:opacity-50"
+            title="Recargar lista de agentes"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-indigo-400" : ""}`} />
+            <span className="hidden sm:inline">Actualizar</span>
+          </button>
+          <button
+            onClick={() => {
+              resetForm();
+              setIsModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs rounded-xl font-bold border border-blue-500/20 shadow-lg shadow-blue-500/15 transition cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Crear Agente
+          </button>
+        </div>
       </div>
 
       {/* Grid of Agents */}

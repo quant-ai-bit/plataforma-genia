@@ -32,6 +32,7 @@ DEFAULT_ADMIN_EMAILS = {
     "alejandr.ia.8725@gmail.com",
     "conecta@genia.com.co",
     "alejandro_baena@hotmail.com",
+    "baenalejandro@gmail.com",
 }
 
 def get_admin_emails() -> set[str]:

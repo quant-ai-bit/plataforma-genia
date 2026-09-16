@@ -199,7 +199,8 @@ export interface UserProfile {
 export const ADMIN_EMAILS = [
   "alejandr.ia.8725@gmail.com",
   "conecta@genia.com.co",
-  "alejandro_baena@hotmail.com"
+  "alejandro_baena@hotmail.com",
+  "baenalejandro@gmail.com"
 ];
 
 export function checkIsAdmin(userEmail?: string | null, role?: string | null): boolean {
