@@ -31,6 +31,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 DEFAULT_ADMIN_EMAILS = {
     "alejandr.ia.8725@gmail.com",
     "conecta@genia.com.co",
+    "alejandro_baena@hotmail.com",
 }
 
 def get_admin_emails() -> set[str]:
