@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useAppContext } from "../../lib/AppContext";
 import Sidebar from "../../components/Sidebar";
-import { Loader2, RefreshCw, AlertTriangle } from "lucide-react";
+import PendingVerification from "../../components/PendingVerification";
+import { Loader2, RefreshCw, AlertTriangle, Bell, Shield } from "lucide-react";
 
 export default function DashboardLayout({
   children,
@@ -13,7 +15,15 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, authLoading, isSupabaseConfigured, isBackendOnline, checkHealthAndLoadData } = useAppContext();
+  const { 
+    user, 
+    userProfile, 
+    pendingUsersCount, 
+    authLoading, 
+    isSupabaseConfigured, 
+    isBackendOnline, 
+    checkHealthAndLoadData 
+  } = useAppContext();
 
   useEffect(() => {
     if (!authLoading) {
@@ -25,99 +35,154 @@ export default function DashboardLayout({
 
   // Page title mapping based on route path
   const getHeaderTitle = () => {
-    if (pathname === "/analytics") return "Consola Analítica";
-    if (pathname === "/agents") return "Creador e Ingeniería de Agentes";
+    if (pathname === "/analytics") return "Resumen Ejecutivo";
+    if (pathname === "/conversations") return "Conversaciones (Inbox)";
+    if (pathname === "/leads") return "CRM Pipeline";
+    if (pathname === "/agenda") return "Agenda & Citas";
+    if (pathname === "/catalog") return "Catálogo de Productos & Propiedades";
+    if (pathname === "/workflows") return "Flujos & Automatizaciones";
+    if (pathname === "/integrations") return "Hub de Integraciones Nativas";
+    if (pathname === "/settings") return "Mi Negocio";
+    if (pathname === "/admin") return "Super Admin Master Console";
+    if (pathname === "/agents") return "Ingeniería de Agentes";
+    if (pathname === "/users") return "Gestión de Usuarios y Accesos";
     if (pathname.includes("/knowledge")) return "Base de Conocimiento RAG";
     if (pathname.includes("/chat")) return "Simulador Sandbox E2E";
-    if (pathname.startsWith("/agents/")) return "Configuración de Agente";
-    if (pathname === "/leads") return "Leads Capturados";
-    if (pathname === "/conversations") return "Historial de Chats";
+    if (pathname.startsWith("/agents/")) return "Configuración Técnica de Agente";
+    if (pathname === "/evidence") return "Evidencias y Auditoría";
     return "Consola GENIA";
   };
 
   const getHeaderSub = () => {
-    if (pathname === "/analytics") return "Estadísticas y métricas generales del ecosistema.";
-    if (pathname === "/agents") return "Crea, modifica y despliega agentes de Inteligencia Artificial.";
-    if (pathname.includes("/knowledge")) return "Gestiona los documentos del almacenamiento de RAG.";
-    if (pathname.includes("/chat")) return "Interactúa y pon a prueba tu agente en tiempo real.";
-    if (pathname.startsWith("/agents/")) return "Modifica el comportamiento, modelo y parámetros del agente.";
-    if (pathname === "/leads") return "Monitorea la captura automática de clientes potenciales.";
-    if (pathname === "/conversations") return "Historial completo de conversaciones activas e inactivas.";
-    return "Consola administrativa para gestionar el ecosistema GENIA IA.";
+    if (pathname === "/analytics") return "Métricas operativas, interacciones y estado en tiempo real.";
+    if (pathname === "/conversations") return "Bandeja omnicanal en vivo: WhatsApp, Telegram y Chat Web.";
+    if (pathname === "/leads") return "Embudo de oportunidades con etapas y gestión visual de prospectos.";
+    if (pathname === "/agenda") return "Sincronización de citas y reuniones con Google Calendar y Outlook.";
+    if (pathname === "/catalog") return "Inventario comercial para respuestas de IA y consulta interactiva.";
+    if (pathname === "/workflows") return "Automatizaciones nativas por eventos, condiciones y acciones.";
+    if (pathname === "/integrations") return "Conectores directos sin intermediarios para WhatsApp, Telegram y más.";
+    if (pathname === "/settings") return "Perfil corporativo, datos de contacto, horarios y preferencias.";
+    if (pathname === "/admin") return "Control maestro de subcuentas, tiers, rotación de modelos LLM y auditoría.";
+    if (pathname === "/agents") return "Configuración y comportamiento técnico de agentes de IA.";
+    if (pathname === "/users") return "Aprobación de cuentas y asignación de agentes de IA.";
+    if (pathname.includes("/knowledge")) return "Documentos vectorizados y RAG para entrenamiento de agentes.";
+    if (pathname.includes("/chat")) return "Pruebas interactivas y diagnóstico en vivo del agente.";
+    if (pathname.startsWith("/agents/")) return "Parámetros avanzados, prompts del sistema y herramientas.";
+    if (pathname === "/evidence") return "Registro forense de actividad y pruebas de integridad.";
+    return "Plataforma autónoma de agentes de Inteligencia Artificial & CRM.";
   };
 
   if (authLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#070b13] text-white">
+      <div className="flex h-screen items-center justify-center bg-[#070a12] text-white">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
-          <p className="text-gray-400 text-sm">Verificando sesión...</p>
+          <div className="p-3 bg-gradient-to-tr from-indigo-500 to-cyan-400 rounded-2xl shadow-lg shadow-indigo-500/25 animate-pulse">
+            <Loader2 className="w-8 h-8 text-white animate-spin" />
+          </div>
+          <p className="text-slate-400 text-sm font-medium">Verificando credenciales...</p>
         </div>
       </div>
     );
   }
 
   if (isSupabaseConfigured && !user) {
-    // Show a loading/redirecting spinner while useEffect pushes to /login
     return (
-      <div className="flex h-screen items-center justify-center bg-[#070b13] text-white">
+      <div className="flex h-screen items-center justify-center bg-[#070a12] text-white">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
-          <p className="text-gray-400 text-sm">Redireccionando al login...</p>
+          <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
+          <p className="text-slate-400 text-sm">Redireccionando al inicio de sesión...</p>
         </div>
       </div>
     );
   }
 
+  // Si la cuenta está pendiente de verificación y no es administrador, mostrar pantalla de espera
+  if (userProfile && userProfile.status === "pending" && userProfile.role !== "admin") {
+    return <PendingVerification />;
+  }
+
   return (
-    <div className="flex h-screen overflow-hidden bg-[#070b13]">
+    <div className="flex h-screen overflow-hidden bg-[#070a12]">
       {/* Dynamic Sidebar */}
       <Sidebar />
 
       {/* Main Content Pane */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Header Superior */}
-        <header className="h-20 border-b border-[#1e293b] bg-[#0c101c]/45 flex items-center justify-between px-8 flex-shrink-0">
+      <main className="flex-1 flex flex-col overflow-hidden bg-[#070a12]">
+        {/* Header Superior - genia.com.co design */}
+        <header className="h-20 border-b border-white/[0.08] bg-[#0b0f19]/80 backdrop-blur-xl flex items-center justify-between px-8 flex-shrink-0 z-10">
           <div>
-            <h2 className="text-xl font-bold tracking-tight text-white capitalize">
+            <h2 className="text-lg font-bold tracking-tight text-white flex items-center gap-2.5">
               {getHeaderTitle()}
             </h2>
-            <p className="text-xs text-gray-400 mt-0.5">
+            <p className="text-xs text-slate-400 mt-0.5">
               {getHeaderSub()}
             </p>
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             {isBackendOnline === false && (
               <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-950/40 border border-amber-500/20 text-amber-300 text-xs rounded-xl">
                 <AlertTriangle className="w-3.5 h-3.5 animate-pulse" />
-                <span>Usando servidor mock local</span>
+                <span>Servidor local</span>
               </div>
+            )}
+
+            {/* Notificaciones (Solo Administradores) */}
+            {userProfile?.role === "admin" && (
+              <Link
+                href="/users"
+                className="relative p-2.5 text-slate-400 hover:text-white bg-[#0b0f19] hover:bg-slate-800/60 border border-white/[0.08] rounded-xl transition shadow-sm"
+                title={pendingUsersCount > 0 ? `${pendingUsersCount} usuario(s) pendiente(s) de autorización` : "Gestión de Usuarios"}
+              >
+                <Bell className="w-4 h-4" />
+                {pendingUsersCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-gradient-to-r from-red-500 to-rose-600 text-white font-black text-[9px] rounded-full flex items-center justify-center border-2 border-[#070a12] animate-pulse shadow-lg shadow-rose-500/50">
+                    {pendingUsersCount}
+                  </span>
+                )}
+              </Link>
             )}
             
             <button 
               onClick={checkHealthAndLoadData}
-              className="p-2 text-gray-400 hover:text-white bg-gray-800/40 hover:bg-gray-800 border border-gray-700 rounded-xl transition"
+              className="p-2.5 text-slate-400 hover:text-white bg-[#0b0f19] hover:bg-slate-800/60 border border-white/[0.08] rounded-xl transition shadow-sm cursor-pointer"
               title="Sincronizar Datos"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
 
             {user && (
-              <div className="flex items-center gap-2 pl-2 border-l border-gray-800">
-                <div className="w-8 h-8 rounded-full bg-blue-600/35 border border-blue-500/30 flex items-center justify-center text-xs font-bold text-blue-200">
-                  {user.email?.[0].toUpperCase() || "U"}
+              <div className="flex items-center gap-2.5 pl-3 border-l border-white/[0.08]">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-cyan-400 p-[1px] shadow-sm">
+                  <div className="w-full h-full rounded-full bg-[#0b0f19] flex items-center justify-center text-xs font-bold text-indigo-300">
+                    {user.email?.[0].toUpperCase() || "U"}
+                  </div>
                 </div>
-                <span className="text-xs text-gray-300 font-medium hidden md:inline truncate max-w-[120px]" title={user.email}>
-                  {user.email?.split("@")[0]}
-                </span>
+                <div className="flex flex-col">
+                  <span className="text-xs text-slate-200 font-medium hidden md:inline truncate max-w-[140px]" title={user.email}>
+                    {user.email?.split("@")[0]}
+                  </span>
+                  {userProfile?.role === "admin" ? (
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400 hidden md:inline">
+                      Super Admin
+                    </span>
+                  ) : userProfile?.assigned_agent ? (
+                    <span className="text-[9px] text-slate-400 font-medium truncate max-w-[140px] hidden md:inline">
+                      {userProfile.assigned_agent.name}
+                    </span>
+                  ) : (
+                    <span className="text-[9px] text-slate-400 hidden md:inline">
+                      Cliente
+                    </span>
+                  )}
+                </div>
               </div>
             )}
           </div>
         </header>
 
         {/* Tab/Page Content scroll region */}
-        <div className="flex-1 overflow-y-auto p-8 bg-[#080d1a]">
+        <div className="flex-1 overflow-y-auto p-8 bg-[#070a12]">
           {children}
         </div>
       </main>

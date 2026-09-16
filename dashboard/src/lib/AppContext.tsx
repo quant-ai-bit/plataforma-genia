@@ -4,12 +4,18 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { User } from "@supabase/supabase-js";
 import { supabase, isSupabaseConfigured } from "./supabase";
 import { authenticatedFetch, getApiBaseUrl } from "./api";
-import { Agent, Lead } from "./types";
+import { Agent, Lead, UserProfile } from "./types";
 
 const API_BASE_URL = getApiBaseUrl();
 
 interface AppContextType {
   user: User | null;
+  userProfile: UserProfile | null;
+  setUserProfile: React.Dispatch<React.SetStateAction<UserProfile | null>>;
+  pendingUsersCount: number;
+  setPendingUsersCount: React.Dispatch<React.SetStateAction<number>>;
+  loadUserProfile: () => Promise<UserProfile | null>;
+  loadPendingUsersCount: () => Promise<void>;
   token: string;
   authLoading: boolean;
   logout: () => Promise<void>;
@@ -48,6 +54,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     gemini: [],
     openrouter: []
   });
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [pendingUsersCount, setPendingUsersCount] = useState<number>(0);
+
+  const loadPendingUsersCount = async () => {
+    try {
+      const res = await authenticatedFetch(`/api/users/pending`);
+      if (res.ok) {
+        const data = await res.json();
+        setPendingUsersCount(data.count || 0);
+      }
+    } catch (err) {
+      console.warn("No se pudo cargar el conteo de usuarios pendientes:", err);
+    }
+  };
+
+  const loadUserProfile = async (): Promise<UserProfile | null> => {
+    try {
+      const res = await authenticatedFetch(`/api/users/me`);
+      if (res.ok) {
+        const profile: UserProfile = await res.json();
+        setUserProfile(profile);
+        if (profile.role === "admin") {
+          loadPendingUsersCount();
+        }
+        return profile;
+      }
+    } catch (err) {
+      console.warn("Error al cargar perfil de usuario:", err);
+    }
+    return null;
+  };
 
   const logout = async () => {
     if (isSupabaseConfigured && supabase) {
@@ -57,6 +94,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         console.error("Error al cerrar sesión:", err);
       } finally {
+        setUserProfile(null);
+        setPendingUsersCount(0);
         setAuthLoading(false);
       }
     }
@@ -234,6 +273,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Sync data on token/backend changes
   useEffect(() => {
     if (!isSupabaseConfigured || token) {
+      loadUserProfile();
       checkHealthAndLoadData();
     }
   }, [token]);
@@ -242,6 +282,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <AppContext.Provider
       value={{
         user,
+        userProfile,
+        setUserProfile,
+        pendingUsersCount,
+        setPendingUsersCount,
+        loadUserProfile,
+        loadPendingUsersCount,
         token,
         authLoading,
         logout,

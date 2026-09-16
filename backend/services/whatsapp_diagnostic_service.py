@@ -26,9 +26,15 @@ from models.agent import Agent
 from models.contact import PreloadedContact
 from models.lead import Lead
 from services.providers.vertex_provider import VertexAIProvider
-from services.whatsapp_waha_service import waha_is_mock_mode, _headers, _normalize_phone_number
+from services.whatsapp_waha_service import waha_is_mock_mode, _headers, _normalize_chat_id
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_phone_number(chat_id: str) -> str:
+    """Extrae el número de teléfono limpio de un chat_id de WhatsApp (ej: '573001234567@c.us' -> '573001234567')."""
+    return "".join(ch for ch in chat_id.split("@")[0] if ch.isdigit())
+
 
 # ── Constantes de Throttling Seguro ──
 DELAY_BETWEEN_CHATS_MIN = 1.5  # segundos mínimos entre lectura de chats

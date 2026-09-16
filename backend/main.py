@@ -32,6 +32,8 @@ from routers import (
     free_models_router,
     contacts_router,
     whatsapp_diagnostic_router,
+    wasi_router,
+    users_router,
 )
 
 
@@ -146,6 +148,8 @@ app.include_router(google_calendar_router, prefix="/api")
 app.include_router(free_models_router, prefix="/api", dependencies=[Depends(get_current_user)])
 app.include_router(contacts_router, prefix="/api", dependencies=[Depends(get_current_user)])
 app.include_router(whatsapp_diagnostic_router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(wasi_router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(users_router, prefix="/api", dependencies=[Depends(get_current_user)])
 
 
 # Router publico B2B multi-tenant (auth por API key en sus propias dependencias).

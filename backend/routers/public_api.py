@@ -117,7 +117,7 @@ async def health():
 @router.post("/agent/chat", response_model=ChatResponse)
 @limiter.limit("30/minute")
 async def agent_chat(
-    req: Request,
+    request: Request,
     body: ChatRequest,
     tenant: Tenant = Depends(enforce_subscription),
     db: Session = Depends(get_db),

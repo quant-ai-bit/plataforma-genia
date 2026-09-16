@@ -3,8 +3,8 @@ import "./globals.css";
 import { AppProvider } from "../lib/AppContext";
 
 export const metadata: Metadata = {
-  title: "GENIA — IA Automation Platform",
-  description: "Plataforma de automatización de agentes de IA y captura de leads",
+  title: "GENIA — Plataforma de Agentes de IA & CRM Autónomo",
+  description: "Ecosistema integral de agentes autónomos de Inteligencia Artificial, CRM y automatizaciones.",
 };
 
 export default function RootLayout({
@@ -14,7 +14,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className="antialiased bg-[#0b0f19] text-gray-100 min-h-screen">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body className="antialiased bg-[#070a12] text-slate-100 min-h-screen selection:bg-indigo-500/30 selection:text-indigo-200">
         <AppProvider>
           {children}
         </AppProvider>
@@ -22,4 +30,3 @@ export default function RootLayout({
     </html>
   );
 }
-

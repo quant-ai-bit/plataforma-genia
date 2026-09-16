@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, use } from "react";
+import React, { useState, useEffect, useRef, use } from "react";
 import { useRouter } from "next/navigation";
 import { useAppContext } from "../../../../lib/AppContext";
 import { authenticatedFetch } from "../../../../lib/api";
@@ -31,7 +31,12 @@ import {
   EyeOff,
   Copy,
   Check,
-  RefreshCw
+  RefreshCw,
+  LogOut,
+  FileSpreadsheet,
+  Search,
+  Users,
+  ShieldAlert
 } from "lucide-react";
 
 export default function AgentConfigPage({ params }: { params: Promise<{ id: string }> }) {
@@ -42,8 +47,19 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     agents,
     isBackendOnline,
     availableModels,
-    loadBackendData
+    loadBackendData,
+    userProfile,
+    authLoading
   } = useAppContext();
+
+  // Strict role guard: only admin can view or edit technical agent configuration & prompts
+  const isAdmin = userProfile?.role === "admin";
+
+  useEffect(() => {
+    if (!authLoading && !isAdmin) {
+      router.replace("/analytics");
+    }
+  }, [authLoading, isAdmin, router]);
 
   // Agent State
   const [agent, setAgent] = useState<Agent | null>(null);
@@ -63,7 +79,9 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     stt_provider: "groq_whisper",
     timezone: "America/Bogota",
     google_calendar_client_id: "",
-    google_calendar_client_secret: ""
+    google_calendar_client_secret: "",
+    wasi_company_id: "",
+    wasi_token: "",
   });
 
   // Collapsible Sections
@@ -74,6 +92,8 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     fields: true,
     channels: true,
     calendar: true,
+    wasi: true,
+    database: true,
     advanced: false,
     visual: true
   });
@@ -88,6 +108,29 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
   const [calEvents, setCalEvents] = useState<any[]>([]);
   const [calEventsLoading, setCalEventsLoading] = useState<boolean>(false);
   const [showCalSecrets, setShowCalSecrets] = useState<boolean>(false);
+
+  // Wasi.co Integration State
+  const [wasiStatus, setWasiStatus] = useState<{
+    wasi_connected: boolean;
+    wasi_company_id: string | null;
+    wasi_sync_status: string;
+    wasi_last_sync_at: string | null;
+    wasi_properties_count: number;
+  } | null>(null);
+  const [wasiStatusLoading, setWasiStatusLoading] = useState<boolean>(false);
+  const [wasiConnecting, setWasiConnecting] = useState<boolean>(false);
+  const [wasiDisconnecting, setWasiDisconnecting] = useState<boolean>(false);
+  const [wasiSyncing, setWasiSyncing] = useState<boolean>(false);
+  const [showWasiToken, setShowWasiToken] = useState<boolean>(false);
+
+  // Database / Preloaded Contacts State
+  const [dbContacts, setDbContacts] = useState<any[]>([]);
+  const [dbLoading, setDbLoading] = useState<boolean>(false);
+  const [dbUploading, setDbUploading] = useState<boolean>(false);
+  const [dbClearing, setDbClearing] = useState<boolean>(false);
+  const [dbSearch, setDbSearch] = useState<string>("");
+  const [dbUploadSuccess, setDbUploadSuccess] = useState<string | null>(null);
+  const [dbUploadError, setDbUploadError] = useState<string | null>(null);
 
   // Custom Fields Editing State
   const [newField, setNewField] = useState({
@@ -118,6 +161,16 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
   const [waConnecting, setWaConnecting] = useState<boolean>(false);
   const [waDisconnecting, setWaDisconnecting] = useState<boolean>(false);
   const [waQrRequested, setWaQrRequested] = useState<boolean>(false);
+  const [autoRedirectToDiagnostic, setAutoRedirectToDiagnostic] = useState<boolean>(false);
+  const prevConnectedRef = useRef<boolean>(false);
+
+  // Redirección opcional al Diagnóstico si el usuario activó la opción al escanear el QR
+  useEffect(() => {
+    if (!prevConnectedRef.current && waStatus?.connected && autoRedirectToDiagnostic) {
+      router.push(`/agents/${id}/diagnostic`);
+    }
+    prevConnectedRef.current = !!waStatus?.connected;
+  }, [waStatus?.connected, autoRedirectToDiagnostic, id, router]);
   const [showWaSecrets, setShowWaSecrets] = useState<boolean>(false);
   const [copiedWebhook, setCopiedWebhook] = useState<boolean>(false);
   const [copiedToken, setCopiedToken] = useState<boolean>(false);
@@ -161,7 +214,9 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
         stt_provider: foundAgent.stt_provider || "groq_whisper",
         timezone: foundAgent.timezone || "America/Bogota",
         google_calendar_client_id: foundAgent.google_calendar_client_id || "",
-        google_calendar_client_secret: ""
+        google_calendar_client_secret: "",
+        wasi_company_id: foundAgent.wasi_company_id || "",
+        wasi_token: "",
       });
     }
   }, [id, agents]);
@@ -171,6 +226,8 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
       loadKbImages();
       fetchWhatsAppStatus();
       fetchCalendarStatus();
+      fetchWasiStatus();
+      fetchDbContacts();
     }
   }, [id, isBackendOnline]);
 
@@ -398,6 +455,181 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     } catch (err) {
       console.error(err);
       alert("Error al intentar conectar.");
+    }
+  };
+
+  // ── Wasi.co Handlers ─────────────────────────────────────────────────
+  const fetchWasiStatus = async () => {
+    if (!id) return;
+    setWasiStatusLoading(true);
+    try {
+      const res = await fetch(`/api/wasi/status/${id}`, {
+        headers: { "x-api-key": localStorage.getItem("apiKey") || "" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWasiStatus(data);
+      }
+    } catch (err) {
+      console.error("Error fetching Wasi status:", err);
+    } finally {
+      setWasiStatusLoading(false);
+    }
+  };
+
+  const handleConnectWasi = async () => {
+    if (!form.wasi_company_id?.trim() || !form.wasi_token?.trim()) {
+      alert("Por favor ingresa el ID de empresa y el Token de Wasi.co.");
+      return;
+    }
+    setWasiConnecting(true);
+    try {
+      const res = await fetch(`/api/wasi/connect/${id}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": localStorage.getItem("apiKey") || "",
+        },
+        body: JSON.stringify({
+          company_id: form.wasi_company_id,
+          wasi_token: form.wasi_token,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`✅ ${data.message}`);
+        await fetchWasiStatus();
+        setForm(prev => ({ ...prev, wasi_token: "" })); // Clear token from form for security
+      } else {
+        alert(`❌ ${data.detail || "Error al conectar con Wasi.co"}`);
+      }
+    } catch (err) {
+      alert("Error de conexión con el servidor.");
+    } finally {
+      setWasiConnecting(false);
+    }
+  };
+
+  const handleSyncWasi = async () => {
+    if (!id) return;
+    setWasiSyncing(true);
+    try {
+      const res = await fetch(`/api/wasi/sync/${id}`, {
+        method: "POST",
+        headers: { "x-api-key": localStorage.getItem("apiKey") || "" },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`🔄 ${data.message}`);
+        // Poll status after 3s to show updated count
+        setTimeout(() => fetchWasiStatus(), 3000);
+      } else {
+        alert(`❌ ${data.detail || "Error al sincronizar inventario Wasi"}`);
+      }
+    } catch (err) {
+      alert("Error de conexión al sincronizar.");
+    } finally {
+      setWasiSyncing(false);
+    }
+  };
+
+  const handleDisconnectWasi = async () => {
+    if (!confirm("¿Desconectar Wasi.co? Las credenciales se eliminarán del agente.")) return;
+    setWasiDisconnecting(true);
+    try {
+      const res = await fetch(`/api/wasi/disconnect/${id}`, {
+        method: "POST",
+        headers: { "x-api-key": localStorage.getItem("apiKey") || "" },
+      });
+      if (res.ok) {
+        setWasiStatus({ wasi_connected: false, wasi_company_id: null, wasi_sync_status: "idle", wasi_last_sync_at: null, wasi_properties_count: 0 });
+        alert("Wasi.co desconectado correctamente.");
+      }
+    } catch (err) {
+      alert("Error al desconectar.");
+    } finally {
+      setWasiDisconnecting(false);
+    }
+  };
+
+  // ── Database / Preloaded Contacts Handlers ─────────────────────────
+  const fetchDbContacts = async () => {
+    if (!id) return;
+    setDbLoading(true);
+    try {
+      const res = await fetch(`/api/agents/${id}/contacts`, {
+        headers: { "x-api-key": localStorage.getItem("apiKey") || "" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDbContacts(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error("Error fetching agent contacts:", err);
+    } finally {
+      setDbLoading(false);
+    }
+  };
+
+  const handleUploadDatabase = async (file: File) => {
+    if (!id || !file) return;
+    setDbUploading(true);
+    setDbUploadSuccess(null);
+    setDbUploadError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/agents/${id}/contacts/upload`, {
+        method: "POST",
+        headers: { "x-api-key": localStorage.getItem("apiKey") || "" },
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setDbUploadSuccess(data.message || `Archivo procesado: ${data.created || 0} creados, ${data.updated || 0} actualizados.`);
+        await fetchDbContacts();
+      } else {
+        setDbUploadError(data.detail || "Error al procesar la base de datos.");
+      }
+    } catch (err: any) {
+      setDbUploadError(err.message || "Error al subir el archivo.");
+    } finally {
+      setDbUploading(false);
+    }
+  };
+
+  const handleDeleteDbContact = async (contactId: string) => {
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/agents/${id}/contacts/${contactId}`, {
+        method: "DELETE",
+        headers: { "x-api-key": localStorage.getItem("apiKey") || "" },
+      });
+      if (res.ok) {
+        setDbContacts(prev => prev.filter(c => c.id !== contactId));
+      }
+    } catch (err) {
+      console.error("Error deleting contact:", err);
+    }
+  };
+
+  const handleClearDatabase = async () => {
+    if (!id) return;
+    if (!confirm("¿Estás seguro de vaciar toda la base de datos de este agente? Esta acción no se puede deshacer.")) return;
+    setDbClearing(true);
+    try {
+      const res = await fetch(`/api/agents/${id}/contacts/clear`, {
+        method: "DELETE",
+        headers: { "x-api-key": localStorage.getItem("apiKey") || "" },
+      });
+      if (res.ok) {
+        setDbContacts([]);
+        setDbUploadSuccess("Base de datos vaciada correctamente.");
+      }
+    } catch (err) {
+      console.error("Error clearing database:", err);
+    } finally {
+      setDbClearing(false);
     }
   };
 
@@ -1846,6 +2078,44 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                                 />
                               </div>
 
+                              {/* Selector de Modo: Solo Integrar vs Integrar + Diagnóstico */}
+                              <div className="w-full max-w-md my-1 p-3 bg-gray-900/80 border border-gray-800 rounded-xl space-y-2 text-left">
+                                <span className="text-[11px] font-bold text-gray-200 block">Modo de Integración al Escanear:</span>
+                                <div className="grid grid-cols-1 gap-2">
+                                  <label className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition ${!autoRedirectToDiagnostic ? 'bg-green-500/10 border-green-500/40 text-white' : 'bg-gray-950/40 border-gray-800 text-gray-400 hover:bg-gray-800/40'}`}>
+                                    <input
+                                      type="radio"
+                                      name="qr_integration_mode_waha"
+                                      checked={!autoRedirectToDiagnostic}
+                                      onChange={() => setAutoRedirectToDiagnostic(false)}
+                                      className="mt-0.5 text-green-500 focus:ring-0 cursor-pointer"
+                                    />
+                                    <div>
+                                      <span className="text-xs font-bold text-white block">🤖 Solo Integrar Agente (Sin Diagnóstico)</span>
+                                      <span className="text-[10px] text-gray-400 block leading-tight">
+                                        El agente atenderá respuestas en tiempo real. Tu historial de chats permanecerá privado sin escaneo pasivo.
+                                      </span>
+                                    </div>
+                                  </label>
+
+                                  <label className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition ${autoRedirectToDiagnostic ? 'bg-purple-500/10 border-purple-500/40 text-white' : 'bg-gray-950/40 border-gray-800 text-gray-400 hover:bg-gray-800/40'}`}>
+                                    <input
+                                      type="radio"
+                                      name="qr_integration_mode_waha"
+                                      checked={autoRedirectToDiagnostic}
+                                      onChange={() => setAutoRedirectToDiagnostic(true)}
+                                      className="mt-0.5 text-purple-500 focus:ring-0 cursor-pointer"
+                                    />
+                                    <div>
+                                      <span className="text-xs font-bold text-white block">✨ Integrar Agente + Diagnóstico de Línea</span>
+                                      <span className="text-[10px] text-gray-400 block leading-tight">
+                                        Conecta la línea y te redirige a la suite de diagnóstico pasivo para clasificar clientes con IA.
+                                      </span>
+                                    </div>
+                                  </label>
+                                </div>
+                              </div>
+
                               <div className="flex items-center gap-2 text-xs text-green-400 font-medium">
                                 <Loader2 className="w-4 h-4 animate-spin text-green-400" />
                                 <span>Esperando escaneo en el móvil...</span>
@@ -2008,6 +2278,44 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                                   alt="Código QR WhatsApp"
                                   className="w-44 h-44 object-contain"
                                 />
+                              </div>
+
+                              {/* Selector de Modo: Solo Integrar vs Integrar + Diagnóstico */}
+                              <div className="w-full max-w-md my-1 p-3 bg-gray-900/80 border border-gray-800 rounded-xl space-y-2 text-left">
+                                <span className="text-[11px] font-bold text-gray-200 block">Modo de Integración al Escanear:</span>
+                                <div className="grid grid-cols-1 gap-2">
+                                  <label className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition ${!autoRedirectToDiagnostic ? 'bg-green-500/10 border-green-500/40 text-white' : 'bg-gray-950/40 border-gray-800 text-gray-400 hover:bg-gray-800/40'}`}>
+                                    <input
+                                      type="radio"
+                                      name="qr_integration_mode_direct"
+                                      checked={!autoRedirectToDiagnostic}
+                                      onChange={() => setAutoRedirectToDiagnostic(false)}
+                                      className="mt-0.5 text-green-500 focus:ring-0 cursor-pointer"
+                                    />
+                                    <div>
+                                      <span className="text-xs font-bold text-white block">🤖 Solo Integrar Agente (Sin Diagnóstico)</span>
+                                      <span className="text-[10px] text-gray-400 block leading-tight">
+                                        El agente atenderá respuestas en tiempo real. Tu historial de chats permanecerá privado sin escaneo pasivo.
+                                      </span>
+                                    </div>
+                                  </label>
+
+                                  <label className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition ${autoRedirectToDiagnostic ? 'bg-purple-500/10 border-purple-500/40 text-white' : 'bg-gray-950/40 border-gray-800 text-gray-400 hover:bg-gray-800/40'}`}>
+                                    <input
+                                      type="radio"
+                                      name="qr_integration_mode_direct"
+                                      checked={autoRedirectToDiagnostic}
+                                      onChange={() => setAutoRedirectToDiagnostic(true)}
+                                      className="mt-0.5 text-purple-500 focus:ring-0 cursor-pointer"
+                                    />
+                                    <div>
+                                      <span className="text-xs font-bold text-white block">✨ Integrar Agente + Diagnóstico de Línea</span>
+                                      <span className="text-[10px] text-gray-400 block leading-tight">
+                                        Conecta la línea y te redirige a la suite de diagnóstico pasivo para clasificar clientes con IA.
+                                      </span>
+                                    </div>
+                                  </label>
+                                </div>
                               </div>
 
                               <div className="flex items-center gap-2 text-xs text-green-400 font-medium">
@@ -2249,6 +2557,424 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                   </div>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+
+        {/* ── SECCIÓN WASI.CO: INVENTARIO INMOBILIARIO ── */}
+        <div className="glow-card rounded-2xl overflow-hidden">
+          <button
+            type="button"
+            onClick={() => toggleSection("wasi")}
+            className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-white/[0.02] transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${wasiStatus?.wasi_connected ? "bg-emerald-500/10" : "bg-gray-800"}`}>
+                <span className="text-base">🏠</span>
+              </div>
+              <div>
+                <span className="font-bold text-white text-sm">Wasi.co — Inventario Inmobiliario</span>
+                {wasiStatus?.wasi_connected && (
+                  <span className="ml-2 px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-[10px] rounded-full font-bold">
+                    {wasiStatus.wasi_properties_count} propiedades
+                  </span>
+                )}
+              </div>
+            </div>
+            {expandedSections.wasi ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+          </button>
+
+          {expandedSections.wasi && (
+            <div className="px-6 pb-6 border-t border-gray-800/50 pt-5 space-y-5">
+              {/* Description */}
+              <p className="text-gray-500 text-[11px] leading-relaxed">
+                Conecta el inventario inmobiliario de <strong className="text-gray-300">Wasi.co</strong> para que el agente pueda buscar y recomendar propiedades en tiempo real con base en las preferencias del cliente.
+              </p>
+
+              {wasiStatus?.wasi_connected ? (
+                /* ── CONNECTED STATE ── */
+                <div className="space-y-4 animate-fadeIn">
+                  {/* Status Card */}
+                  <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="text-emerald-400 text-xs font-bold">Conectado a Wasi.co</span>
+                      </div>
+                      <span className="text-gray-500 text-[10px] font-mono">ID: {wasiStatus.wasi_company_id}</span>
+                    </div>
+
+                    {/* Metrics Grid */}
+                    <div className="grid grid-cols-3 gap-3 pt-1">
+                      <div className="text-center">
+                        <div className="text-2xl font-black text-emerald-400">{wasiStatus.wasi_properties_count}</div>
+                        <div className="text-gray-500 text-[10px] mt-0.5">Propiedades</div>
+                      </div>
+                      <div className="text-center">
+                        <div className={`text-xs font-bold capitalize px-2 py-1 rounded-lg ${
+                          wasiStatus.wasi_sync_status === "completed" ? "bg-emerald-500/10 text-emerald-400" :
+                          wasiStatus.wasi_sync_status === "syncing" ? "bg-blue-500/10 text-blue-400 animate-pulse" :
+                          wasiStatus.wasi_sync_status === "failed" ? "bg-red-500/10 text-red-400" :
+                          "bg-gray-800 text-gray-500"
+                        }`}>
+                          {wasiStatus.wasi_sync_status === "idle" ? "Sin sincronizar" :
+                           wasiStatus.wasi_sync_status === "syncing" ? "Sincronizando..." :
+                           wasiStatus.wasi_sync_status === "completed" ? "Sincronizado" : "Fallo"}
+                        </div>
+                        <div className="text-gray-500 text-[10px] mt-0.5">Estado</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xs text-gray-400 font-mono">
+                          {wasiStatus.wasi_last_sync_at
+                            ? new Date(wasiStatus.wasi_last_sync_at).toLocaleDateString("es-CO", { day: "2-digit", month: "short" })
+                            : "—"}
+                        </div>
+                        <div className="text-gray-500 text-[10px] mt-0.5">Última sync</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={handleSyncWasi}
+                      disabled={wasiSyncing || wasiStatus.wasi_sync_status === "syncing"}
+                      className="flex items-center gap-1.5 px-4 py-2 border border-blue-500/25 bg-blue-500/10 text-blue-400 hover:bg-blue-500/15 rounded-xl transition text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      {wasiSyncing ? (
+                        <><span className="animate-spin">⟳</span> Sincronizando...</>
+                      ) : (
+                        <><RefreshCw className="w-3.5 h-3.5" /> Sincronizar Inventario</>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDisconnectWasi}
+                      disabled={wasiDisconnecting}
+                      className="flex items-center gap-1.5 px-4 py-2 border border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/10 rounded-xl transition text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      {wasiDisconnecting ? "Desconectando..." : "Desconectar"}
+                    </button>
+                  </div>
+
+                  {/* Info note */}
+                  <p className="text-gray-600 text-[10px] italic">
+                    💡 Sincroniza el inventario cada vez que agregues nuevas propiedades en Wasi para mantener el agente actualizado. La búsqueda en tiempo real siempre usa los datos más recientes de la API.
+                  </p>
+                </div>
+              ) : (
+                /* ── DISCONNECTED STATE ── */
+                <div className="space-y-4 animate-fadeIn">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Company ID */}
+                    <div>
+                      <label className="block text-gray-400 font-semibold mb-1 text-[11px]">
+                        ID de Empresa Wasi.co *
+                        <a href="https://wasi.co" target="_blank" rel="noreferrer" className="ml-1 text-blue-400 hover:underline">(¿Dónde lo encuentro?)</a>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ej: 12345"
+                        value={form.wasi_company_id || ""}
+                        onChange={e => setForm(prev => ({ ...prev, wasi_company_id: e.target.value }))}
+                        className="w-full bg-[#0c101c] border border-gray-850 focus:border-emerald-500 rounded-xl px-4 py-2 text-white focus:outline-none text-xs transition-all font-mono"
+                      />
+                    </div>
+
+                    {/* Wasi Token */}
+                    <div>
+                      <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Token API Wasi.co *</label>
+                      <div className="relative">
+                        <input
+                          type={showWasiToken ? "text" : "password"}
+                          placeholder="Token de acceso de tu cuenta Wasi"
+                          value={form.wasi_token || ""}
+                          onChange={e => setForm(prev => ({ ...prev, wasi_token: e.target.value }))}
+                          className="w-full bg-[#0c101c] border border-gray-850 focus:border-emerald-500 rounded-xl pl-4 pr-10 py-2 text-white focus:outline-none text-xs transition-all font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowWasiToken(!showWasiToken)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition"
+                        >
+                          {showWasiToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-amber-500/5 border border-amber-500/15 rounded-xl px-4 py-3">
+                    <p className="text-amber-400/80 text-[10px] leading-relaxed">
+                      🔑 Encuentra tu <strong>ID de empresa</strong> y <strong>token</strong> en tu cuenta Wasi.co →
+                      Configuración → API. El token se guardará cifrado de forma segura.
+                    </p>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleConnectWasi}
+                      disabled={wasiConnecting}
+                      className="flex items-center gap-1.5 px-5 py-2 border border-emerald-500/25 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 rounded-xl transition text-xs font-semibold disabled:opacity-50 cursor-pointer"
+                    >
+                      {wasiConnecting ? "Verificando credenciales..." : "🏠 Conectar Wasi.co"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── SECCIÓN: BASE DE DATOS PRIVADA (EXCEL / CSV) ── */}
+        <div className="glow-card rounded-2xl overflow-hidden">
+          <button
+            type="button"
+            onClick={() => toggleSection("database")}
+            className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-white/[0.02] transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
+                <FileSpreadsheet className="w-4 h-4 text-purple-400" />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-white text-sm">Base de Datos Privada del Agente (Excel / CSV)</span>
+                <span className="px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 text-purple-300 text-[10px] rounded-full font-semibold">
+                  {dbContacts.length} {dbContacts.length === 1 ? "registro" : "registros"}
+                </span>
+              </div>
+            </div>
+            {expandedSections.database ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+          </button>
+
+          {expandedSections.database && (
+            <div className="px-6 pb-6 border-t border-gray-800/50 pt-5 space-y-5">
+              {/* Explicación de la base de datos */}
+              <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-800/30 text-xs text-purple-200/90 leading-relaxed flex items-start gap-3">
+                <Users className="w-5 h-5 text-purple-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-purple-300 mb-1">Base de Datos Estructurada y Reconocimiento Inteligente</p>
+                  <p className="text-gray-400">
+                    Sube aquí el listado de tus clientes, inquilinos o inventario administrado en formato <strong className="text-white">Excel (.xlsx)</strong> o <strong className="text-white">CSV</strong>. 
+                    El agente identificará automáticamente a los usuarios que escriban por WhatsApp y tendrá acceso a consultar cédulas, apartamentos, cánones de arrendamiento y notas en tiempo real.
+                  </p>
+                </div>
+              </div>
+
+              {/* Zona de Carga / Drag & Drop */}
+              <div className="border-2 border-dashed border-purple-500/30 hover:border-purple-500/60 bg-purple-950/10 hover:bg-purple-950/20 rounded-2xl p-6 text-center transition group">
+                <input
+                  type="file"
+                  id="agent-database-upload"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      handleUploadDatabase(file);
+                      e.target.value = "";
+                    }
+                  }}
+                  disabled={dbUploading}
+                />
+                <label
+                  htmlFor="agent-database-upload"
+                  className="cursor-pointer flex flex-col items-center gap-2"
+                >
+                  <div className="w-12 h-12 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center group-hover:scale-110 transition">
+                    {dbUploading ? (
+                      <Loader2 className="w-6 h-6 text-purple-400 animate-spin" />
+                    ) : (
+                      <Upload className="w-6 h-6 text-purple-400" />
+                    )}
+                  </div>
+                  <p className="text-sm font-semibold text-white mt-1">
+                    {dbUploading ? "Procesando e importando base de datos..." : "Haz clic o arrastra un archivo Excel (.xlsx, .csv)"}
+                  </p>
+                  <p className="text-xs text-gray-500 max-w-md">
+                    Columnas recomendadas: <code className="text-purple-300">Nombre</code>, <code className="text-purple-300">Teléfono</code>, <code className="text-purple-300">Cédula</code>, <code className="text-purple-300">Inmueble / Apto</code>, <code className="text-purple-300">Canon</code>, etc. Cualquier columna adicional se almacena automáticamente.
+                  </p>
+                </label>
+              </div>
+
+              {/* Mensajes de Estado */}
+              {dbUploadSuccess && (
+                <div className="p-3 bg-emerald-950/30 border border-emerald-800/40 rounded-xl flex items-center justify-between text-xs text-emerald-300">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-400" />
+                    <span>{dbUploadSuccess}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDbUploadSuccess(null)}
+                    className="text-emerald-400 hover:text-emerald-200 text-sm font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {dbUploadError && (
+                <div className="p-3 bg-red-950/30 border border-red-800/40 rounded-xl flex items-center justify-between text-xs text-red-300">
+                  <div className="flex items-center gap-2">
+                    <span>⚠️ {dbUploadError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDbUploadError(null)}
+                    className="text-red-400 hover:text-red-200 text-sm font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Barra de Búsqueda y Acciones de la Tabla */}
+              <div className="flex flex-col sm:flex-row gap-3 items-center justify-between pt-2">
+                <div className="relative w-full sm:w-72">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por nombre, teléfono, apto..."
+                    value={dbSearch}
+                    onChange={(e) => setDbSearch(e.target.value)}
+                    className="w-full bg-gray-900/60 border border-gray-800 text-xs text-white rounded-xl pl-8 pr-3 py-2 focus:outline-none focus:border-purple-500/50 transition"
+                  />
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <button
+                    type="button"
+                    onClick={fetchDbContacts}
+                    disabled={dbLoading}
+                    className="p-2 border border-gray-800 bg-gray-900/40 text-gray-400 hover:text-white rounded-xl transition text-xs flex items-center gap-1.5"
+                    title="Recargar base de datos"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${dbLoading ? "animate-spin" : ""}`} />
+                    <span className="hidden sm:inline">Actualizar</span>
+                  </button>
+                  {dbContacts.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearDatabase}
+                      disabled={dbClearing}
+                      className="px-3 py-2 border border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-xl transition text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{dbClearing ? "Vaciando..." : "Vaciar Base de Datos"}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Tabla de Registros */}
+              <div className="rounded-xl border border-gray-800/80 overflow-hidden bg-gray-950/40">
+                <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-gray-900/70 text-gray-400 border-b border-gray-800 sticky top-0 backdrop-blur-sm z-10">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Nombre / Contacto</th>
+                        <th className="px-4 py-3 font-semibold">Teléfono</th>
+                        <th className="px-4 py-3 font-semibold">Correo</th>
+                        <th className="px-4 py-3 font-semibold">Datos Adicionales / Inmueble</th>
+                        <th className="px-4 py-3 font-semibold text-right">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-850">
+                      {dbContacts
+                        .filter((c: any) => {
+                          if (!dbSearch.trim()) return true;
+                          const q = dbSearch.toLowerCase();
+                          if (c.name?.toLowerCase().includes(q)) return true;
+                          if (c.phone?.toLowerCase().includes(q)) return true;
+                          if (c.email?.toLowerCase().includes(q)) return true;
+                          if (c.custom_data && typeof c.custom_data === "object") {
+                            return Object.values(c.custom_data).some((val: any) =>
+                              String(val).toLowerCase().includes(q)
+                            );
+                          }
+                          return false;
+                        })
+                        .map((contact: any) => (
+                          <tr key={contact.id} className="hover:bg-white/[0.02] transition">
+                            <td className="px-4 py-3">
+                              <span className="font-semibold text-white">{contact.name}</span>
+                              {contact.notes && (
+                                <p className="text-[10px] text-gray-500 line-clamp-1">{contact.notes}</p>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-purple-300 font-mono text-[11px]">
+                              {contact.phone}
+                            </td>
+                            <td className="px-4 py-3 text-gray-400">
+                              {contact.email || <span className="text-gray-600 italic">No registrado</span>}
+                            </td>
+                            <td className="px-4 py-3">
+                              {contact.custom_data && typeof contact.custom_data === "object" && Object.keys(contact.custom_data).length > 0 ? (
+                                <div className="flex flex-wrap gap-1 max-w-md">
+                                  {Object.entries(contact.custom_data).map(([k, v]: [string, any]) => (
+                                    <span
+                                      key={k}
+                                      className="px-1.5 py-0.5 bg-purple-950/40 border border-purple-800/40 rounded text-[10px] text-purple-300 font-mono"
+                                    >
+                                      {k}: {String(v)}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-gray-600 text-[11px] italic">Sin datos adicionales</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteDbContact(contact.id)}
+                                className="p-1.5 text-gray-500 hover:text-red-400 transition rounded-lg hover:bg-red-500/10"
+                                title="Eliminar registro"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+
+                      {dbContacts.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-10 text-center text-gray-500">
+                            <FileSpreadsheet className="w-8 h-8 mx-auto mb-2 text-gray-600 opacity-50" />
+                            <p className="text-xs font-semibold text-gray-400">Aún no hay base de datos cargada</p>
+                            <p className="text-[11px] text-gray-600 mt-0.5">
+                              Sube un archivo Excel (.xlsx) o CSV con tus 120 propiedades o clientes para empezar.
+                            </p>
+                          </td>
+                        </tr>
+                      )}
+
+                      {dbContacts.length > 0 &&
+                        dbContacts.filter((c: any) => {
+                          if (!dbSearch.trim()) return true;
+                          const q = dbSearch.toLowerCase();
+                          if (c.name?.toLowerCase().includes(q)) return true;
+                          if (c.phone?.toLowerCase().includes(q)) return true;
+                          if (c.email?.toLowerCase().includes(q)) return true;
+                          if (c.custom_data && typeof c.custom_data === "object") {
+                            return Object.values(c.custom_data).some((val: any) =>
+                              String(val).toLowerCase().includes(q)
+                            );
+                          }
+                          return false;
+                        }).length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="px-6 py-8 text-center text-gray-500 text-xs">
+                              No se encontraron registros que coincidan con "<span className="text-purple-300">{dbSearch}</span>".
+                            </td>
+                          </tr>
+                        )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
         </div>

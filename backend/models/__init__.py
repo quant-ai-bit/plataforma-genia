@@ -17,3 +17,4 @@ from models.subscription import Subscription  # noqa: F401
 from models.payment import Payment  # noqa: F401
 from models.action_log import ActionLog  # noqa: F401
 from models.contact import PreloadedContact  # noqa: F401
+from models.user_account import UserAccount  # noqa: F401

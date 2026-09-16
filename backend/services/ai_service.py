@@ -291,6 +291,145 @@ def build_calendar_tools() -> list[dict]:
     ]
 
 
+def build_wasi_tools() -> list[dict]:
+    """
+    Genera las herramientas de function-calling para la integración Wasi.co.
+
+    Incluye: search_wasi_properties, register_wasi_lead.
+    El agente usará search_wasi_properties al final del embudo de calificación
+    para retornar máximo 3 propiedades con links directos.
+    """
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "search_wasi_properties",
+                "description": (
+                    "Busca propiedades en el inventario inmobiliario Wasi.co según las preferencias "
+                    "del cliente y retorna MAXIMUM 3 opciones con su enlace directo. "
+                    "IMPORTANTE: Usa esta herramienta SOLO después de haber recopilado: tipo de "
+                    "propiedad, propósito (vivir/invertir), presupuesto y zona de interés. "
+                    "Presenta las propiedades encontradas con formato amigable e incluye el link."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "tipo_propiedad": {
+                            "type": "string",
+                            "description": (
+                                "Tipo de propiedad que busca el cliente. Valores válidos: "
+                                "'Casa', 'Apartamento', 'Local Comercial', 'Oficina', 'Bodega', "
+                                "'Lote / Terreno', 'Casa Campestre', 'Apartaestudio', 'Finca', "
+                                "'Parqueadero', 'Consultorio'. Si el cliente no especificó, omitir."
+                            ),
+                        },
+                        "proposito": {
+                            "type": "string",
+                            "description": (
+                                "Propósito de la propiedad. Valores: 'Vivir' (compra para habitar), "
+                                "'Inversión' (renta o valorizar), 'Arrendar' (busca arrendar, no comprar). "
+                                "Determina si se busca venta o arriendo."
+                            ),
+                        },
+                        "presupuesto_min": {
+                            "type": "integer",
+                            "description": "Presupuesto mínimo en pesos colombianos COP (ej: 200000000)",
+                        },
+                        "presupuesto_max": {
+                            "type": "integer",
+                            "description": "Presupuesto máximo en pesos colombianos COP (ej: 500000000)",
+                        },
+                        "zona": {
+                            "type": "string",
+                            "description": (
+                                "Zona, barrio, ciudad o sector de interés (ej: 'Laureles', 'Bogotá', "
+                                "'El Poblado', 'Cali'). Si el cliente no especificó, omitir."
+                            ),
+                        },
+                    },
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "register_wasi_lead",
+                "description": (
+                    "Registra al cliente calificado como lead en el CRM de Wasi.co. "
+                    "Usa esta herramienta después de que el cliente haya mostrado interés en alguna "
+                    "propiedad o haya completado el proceso de calificación."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "nombre": {
+                            "type": "string",
+                            "description": "Nombre completo del cliente",
+                        },
+                        "telefono": {
+                            "type": "string",
+                            "description": "Número de teléfono del cliente",
+                        },
+                        "email": {
+                            "type": "string",
+                            "description": "Correo electrónico del cliente (si lo proporcionó)",
+                        },
+                        "tipo_propiedad": {
+                            "type": "string",
+                            "description": "Tipo de propiedad que busca",
+                        },
+                        "proposito": {
+                            "type": "string",
+                            "description": "Propósito: Vivir, Inversión o Arrendar",
+                        },
+                        "presupuesto": {
+                            "type": "string",
+                            "description": "Presupuesto del cliente en formato legible (ej: '$300.000.000 COP')",
+                        },
+                        "zona_interes": {
+                            "type": "string",
+                            "description": "Zona o sector donde le interesa la propiedad",
+                        },
+                    },
+                    "required": ["nombre", "telefono"],
+                },
+            },
+        },
+    ]
+
+
+def build_database_tools() -> list[dict]:
+    """
+    Herramientas de function-calling para consultar la Base de Datos Privada del Agente
+    (Clientes, Inquilinos, Propiedades, Inventario cargado en Excel/CSV).
+    """
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "search_agent_database",
+                "description": (
+                    "Consulta la base de datos privada precargada del agente (inquilinos, clientes, propiedades, "
+                    "contratos, inventario o datos adicionales). Úsala cuando el usuario mencione su nombre, "
+                    "cédula, número de teléfono, código de inmueble, torre/apartamento o cualquier dato que necesites "
+                    "buscar para reconocerlo o responder con precisión."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Término de búsqueda: cédula, teléfono, nombre, apartamento o palabra clave.",
+                        }
+                    },
+                    "required": ["query"],
+                },
+            },
+        }
+    ]
+
+
 def _get_model_context_limit(model_name: str) -> int:
     """Retorna el límite de contexto del modelo. Para Gemini/Vertex es 1M tokens."""
     name_lower = model_name.lower()
@@ -323,6 +462,7 @@ async def chat_with_agent(
     Returns:
         Tupla (respuesta, lead_data, handoff, unanswered_q, prompt_tokens, completion_tokens).
     """
+    provider_name: str = agent_model_data.get("provider", "vertex")
     model_name: str = agent_model_data.get("model", "gemini-2.5-flash")
     system_prompt: str = agent_model_data.get("system_prompt", "")
     temperature: float = agent_model_data.get("temperature", 0.7)
@@ -354,12 +494,25 @@ async def chat_with_agent(
             "alert_owner_about_unanswered_query": "builtin",
         }
 
+    # Herramienta nativa de Base de Datos Privada del Agente (siempre disponible para consultar inventario/clientes)
+    database_tools = build_database_tools()
+    tools.extend(database_tools)
+    for dt in database_tools:
+        tool_origin_map[dt["function"]["name"]] = "database_builtin"
+
     calendar_connected = agent_model_data.get("google_calendar_connected", False)
     if calendar_connected:
         calendar_tools = build_calendar_tools()
         tools.extend(calendar_tools)
         for ct in calendar_tools:
             tool_origin_map[ct["function"]["name"]] = "calendar_builtin"
+
+    wasi_connected = agent_model_data.get("wasi_connected", False)
+    if wasi_connected:
+        wasi_tools = build_wasi_tools()
+        tools.extend(wasi_tools)
+        for wt in wasi_tools:
+            tool_origin_map[wt["function"]["name"]] = "wasi_builtin"
 
     final_text: str = ""
     lead_data: dict | None = None
@@ -486,7 +639,7 @@ async def chat_with_agent(
         if db:
             from services.model_rotation_service import ModelRotationService
             ModelRotationService.track_usage_and_check_limits(
-                db=db, provider=provider, model=model_name,
+                db=db, provider=provider_name, model=model_name,
                 input_tokens=prompt_tokens, output_tokens=completion_tokens,
             )
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAppContext } from "../../../lib/AppContext";
 import { authenticatedFetch } from "../../../lib/api";
@@ -13,7 +13,9 @@ import {
   Sparkles,
   X,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  ShieldAlert,
+  Loader2
 } from "lucide-react";
 
 export default function AgentsPage() {
@@ -24,8 +26,19 @@ export default function AgentsPage() {
     isBackendOnline,
     availableModels,
     agentUsages,
-    loadBackendData
+    loadBackendData,
+    userProfile,
+    authLoading
   } = useAppContext();
+
+  // Strict role guard: only admin can access /agents
+  const isAdmin = userProfile?.role === "admin";
+
+  useEffect(() => {
+    if (!authLoading && !isAdmin) {
+      router.replace("/analytics");
+    }
+  }, [authLoading, isAdmin, router]);
 
   // Modal State for New Agent
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -154,6 +167,35 @@ export default function AgentsPage() {
       : form.provider === "gemini"
       ? availableModels.gemini || []
       : availableModels.openrouter || [];
+
+  // Prevent rendering any prompt or model data to non-admin users
+  if (authLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[50vh] p-8 text-center">
+        <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl mb-4 text-rose-400">
+          <ShieldAlert className="w-12 h-12" />
+        </div>
+        <h2 className="text-xl font-bold text-white mb-2">Acceso Restringido (403 Prohibido)</h2>
+        <p className="text-sm text-slate-400 max-w-md mb-6">
+          La creación, arquitectura y configuración técnica de modelos LLM está reservada exclusivamente para administradores. Redirigiendo al resumen...
+        </p>
+        <button
+          onClick={() => router.replace("/analytics")}
+          className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white rounded-xl text-sm font-semibold transition shadow-lg shadow-indigo-500/20 cursor-pointer"
+        >
+          Ir al Resumen
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fadeIn">

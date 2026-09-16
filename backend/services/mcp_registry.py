@@ -195,6 +195,21 @@ class MCPToolRegistry:
                     db=db,
                     agent=agent,
                 )
+            elif origin == "wasi_builtin":
+                # Ejecutar herramienta de inventario inmobiliario Wasi.co
+                result = await self._execute_wasi_tool(
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    agent=agent,
+                )
+            elif origin == "database_builtin":
+                # Ejecutar consulta en base de datos privada del agente (PreloadedContact)
+                result = await self._execute_database_tool(
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    agent_id=agent_id,
+                    db=db,
+                )
             elif origin:
                 # Ejecutar en servidor MCP externo
                 result = await mcp_client_manager.execute_tool(
@@ -499,6 +514,203 @@ class MCPToolRegistry:
         db.flush()
         return config
 
+    async def _execute_wasi_tool(
+        self,
+        tool_name: str,
+        arguments: dict,
+        agent=None,
+    ) -> dict[str, Any]:
+        """
+        Ejecuta herramientas de Wasi.co (search_wasi_properties, register_wasi_lead).
+        Manejo DEFENSIVO: si Wasi falla, retorna un mensaje útil sin romper la conversación.
+        """
+        from services import wasi_service
+
+        if agent is None or not agent.wasi_connected or not agent.wasi_token:
+            return {
+                "status": "unavailable",
+                "message": (
+                    "El inventario inmobiliario no está disponible en este momento. "
+                    "Por favor consulta directamente con el asesor."
+                ),
+            }
+
+        try:
+            from services.encryption_service import decrypt
+            raw_token = decrypt(agent.wasi_token)
+        except Exception:
+            raw_token = agent.wasi_token  # fallback sin descifrar
+
+        company_id = agent.wasi_company_id or ""
+
+        try:
+            if tool_name == "search_wasi_properties":
+                results = await wasi_service.search_wasi_properties(
+                    company_id=company_id,
+                    wasi_token=raw_token,
+                    tipo_propiedad=arguments.get("tipo_propiedad"),
+                    proposito=arguments.get("proposito"),
+                    presupuesto_min=arguments.get("presupuesto_min"),
+                    presupuesto_max=arguments.get("presupuesto_max"),
+                    zona=arguments.get("zona"),
+                    max_results=3,
+                )
+                if not results:
+                    return {
+                        "status": "no_results",
+                        "message": (
+                            "No encontramos propiedades disponibles con esos criterios en este momento. "
+                            "Te recomendamos ampliar el presupuesto o la zona de búsqueda, "
+                            "o hablar con un asesor para opciones adicionales."
+                        ),
+                        "properties": [],
+                    }
+                return {
+                    "status": "success",
+                    "total": len(results),
+                    "properties": results,
+                    "message": f"Encontré {len(results)} propiedad(es) que se ajustan a tu búsqueda.",
+                }
+
+            elif tool_name == "register_wasi_lead":
+                success = await wasi_service.create_wasi_lead(
+                    company_id=company_id,
+                    wasi_token=raw_token,
+                    lead_data=arguments,
+                )
+                return {
+                    "status": "registered" if success else "failed",
+                    "message": (
+                        "Tus datos han sido registrados exitosamente. Un asesor se pondrá en contacto contigo pronto."
+                        if success else
+                        "No pudimos registrar tus datos en este momento, pero el asesor tiene toda tu información."
+                    ),
+                }
+            else:
+                return {"error": f"Herramienta Wasi desconocida: {tool_name}"}
+
+        except Exception as e:
+            logger.error("_execute_wasi_tool '%s' error: %s", tool_name, e, exc_info=True)
+            return {
+                "status": "error",
+                "message": (
+                    "Hubo un problema temporal al consultar el inventario. "
+                    "Un asesor te ayudará con opciones personalizadas."
+                ),
+            }
+
+    async def _execute_database_tool(
+        self,
+        tool_name: str,
+        arguments: dict,
+        agent_id: str,
+        db: Session = None,
+    ) -> dict:
+        """
+        Ejecuta búsquedas en la base de datos privada precargada del agente (PreloadedContact).
+        Permite que el agente busque por nombre, teléfono, email, cédula, inmueble, canon o cualquier
+        campo guardado en custom_data.
+        """
+        close_session = False
+        if not db:
+            from database import SessionLocal
+            db = SessionLocal()
+            close_session = True
+
+        try:
+            from models.contact import PreloadedContact
+            import re
+
+            query_raw = str(arguments.get("query", "")).strip()
+            if not query_raw:
+                return {
+                    "status": "no_query",
+                    "encontrados": 0,
+                    "resultados": [],
+                    "mensaje": "No se proporcionó término de búsqueda.",
+                }
+
+            query_lower = query_raw.lower()
+            clean_digits = re.sub(r"\D", "", query_raw)
+
+            # Consultar contactos del agente
+            contacts = (
+                db.query(PreloadedContact)
+                .filter(PreloadedContact.agent_id == agent_id)
+                .all()
+            )
+
+            if not contacts:
+                return {
+                    "status": "empty_database",
+                    "encontrados": 0,
+                    "resultados": [],
+                    "mensaje": "La base de datos de este agente no tiene registros cargados aún.",
+                }
+
+            matched = []
+            for c in contacts:
+                is_match = False
+                # 1. Teléfono o números
+                if clean_digits and len(clean_digits) >= 4 and clean_digits in (c.phone or ""):
+                    is_match = True
+                # 2. Nombre
+                elif query_lower in (c.name or "").lower():
+                    is_match = True
+                # 3. Email
+                elif query_lower in (c.email or "").lower():
+                    is_match = True
+                # 4. Notas
+                elif query_lower in (c.notes or "").lower():
+                    is_match = True
+                # 5. custom_data (cédula, apartamento, canon, propietario, etc.)
+                elif c.custom_data and isinstance(c.custom_data, dict):
+                    for k, v in c.custom_data.items():
+                        if query_lower in str(k).lower() or query_lower in str(v).lower():
+                            is_match = True
+                            break
+
+                if is_match:
+                    item = {
+                        "nombre": c.name,
+                        "telefono": c.phone,
+                        "email": c.email or "No registrado",
+                        "notas": c.notes or "",
+                    }
+                    if c.custom_data and isinstance(c.custom_data, dict):
+                        item["datos_adicionales"] = c.custom_data
+                    matched.append(item)
+                    if len(matched) >= 5:  # Máximo 5 registros
+                        break
+
+            if not matched:
+                return {
+                    "status": "not_found",
+                    "encontrados": 0,
+                    "resultados": [],
+                    "mensaje": f"No se encontró ningún registro en la base de datos que coincida con '{query_raw}'.",
+                }
+
+            return {
+                "status": "success",
+                "encontrados": len(matched),
+                "resultados": matched,
+                "mensaje": f"Se encontraron {len(matched)} registro(s) coincidente(s) en la base de datos.",
+            }
+
+        except Exception as e:
+            logger.error("_execute_database_tool '%s' error para agente %s: %s", tool_name, agent_id, e, exc_info=True)
+            return {
+                "status": "error",
+                "message": f"Error defensivo consultando base de datos: {str(e)}",
+            }
+        finally:
+            if close_session and db:
+                db.close()
+
+
 # ── Instancia global del registro ────────────────────────────────────
 mcp_registry = MCPToolRegistry()
+
+
 

@@ -65,7 +65,12 @@ async def process_conversation_message(
     conversation_history = [
         {"role": m.role, "content": m.content}
         for m in history_messages
-        if m.id is not None and m.id != user_msg.id and m.content and not m.content.startswith("⚠️")
+        if m.id is not None
+        and m.id != user_msg.id
+        and m.content
+        and not m.content.startswith("⚠️")
+        and "Ocurrió un error al procesar" not in m.content
+        and "Hubo un error procesando" not in m.content
     ]
 
     # 3. Cargar todas las conversaciones históricas del agente como ejemplos de entrenamiento
@@ -192,16 +197,30 @@ async def process_conversation_message(
                             f"DEBES saludarlo directamente por su nombre de forma cálida, cercana y profesional desde tu primer mensaje de bienvenida (ejemplo: '¡Hola {preloaded.name}! Qué gusto saludarte...'). NO le preguntes su nombre de cero ya que lo conoces."
                         )
 
+                    custom_details = ""
+                    if preloaded.custom_data and isinstance(preloaded.custom_data, dict):
+                        custom_details = "\n- Datos Adicionales / Inmueble en Base de Datos:\n" + "\n".join(
+                            [f"  * {k.replace('_', ' ').title()}: {v}" for k, v in preloaded.custom_data.items() if v]
+                        )
+
                     system_prompt += (
-                        f"\n\n[CLIENTE RECONOCIDO EN BASE DE DATOS PRIVADA DE LA EMPRESA]\n"
-                        f"Este cliente ha sido reconocido automáticamente en la base de datos de clientes precargada para este agente.\n"
-                        f"- Nombre del cliente: {preloaded.name}\n"
+                        f"\n\n[REGISTRO IDENTIFICADO EN BASE DE DATOS PRIVADA DEL AGENTE]\n"
+                        f"Este usuario ha sido identificado automáticamente en la base de datos precargada de este agente.\n"
+                        f"- Nombre: {preloaded.name}\n"
                         f"- Teléfono: {preloaded.phone}\n"
                         f"- Correo: {preloaded.email or 'No registrado'}\n"
-                        f"{nickname_rule}"
+                        f"- Notas/Observaciones: {preloaded.notes or 'Ninguna'}\n"
+                        f"{custom_details}\n"
+                        f"{nickname_rule}\n"
+                        f"REGLA DE CONTEXTO: Utiliza estos datos (inmueble, canon, fechas o atributos) para atenderlo con exactitud. "
+                        f"NO le pidas datos que ya tienes aquí registrados a menos que sea para confirmación."
                     )
 
         except Exception as p_ex:
+            try:
+                db.rollback()
+            except Exception:
+                pass
             logger.error("Error silencioso al verificar contacto precargado para el agente %s: %s", agent.id, p_ex)
 
 
@@ -398,7 +417,14 @@ async def process_conversation_message(
             logger.error("Error al procesar el lead de manera incremental: %s", str(le), exc_info=True)
 
     # 12. Actualizar marca temporal de actividad y commitear cambios
-    conversation.last_message_at = datetime.now(timezone.utc)
-    db.commit()
+    try:
+        conversation.last_message_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception as commit_err:
+        logger.error("Error al commitear cambios de la conversación: %s", str(commit_err), exc_info=True)
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
     return reply

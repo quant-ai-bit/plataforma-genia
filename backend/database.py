@@ -77,7 +77,6 @@ def init_db():
         # En Vercel Serverless no ejecutamos Alembic DDL en cada invocación HTTP para evitar timeouts
         return
 
-    import os
     from alembic.config import Config
     from alembic import command
 

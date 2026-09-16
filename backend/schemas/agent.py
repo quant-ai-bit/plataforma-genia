@@ -85,6 +85,10 @@ class AgentCreate(BaseModel):
     google_calendar_client_id: str | None = Field(default=None, max_length=255, description="Client ID de Google API del cliente")
     google_calendar_client_secret: str | None = Field(default=None, description="Client Secret de Google API del cliente")
 
+    # Integración Wasi.co (Inventario Inmobiliario)
+    wasi_company_id: str | None = Field(default=None, max_length=100, description="ID de la empresa en Wasi.co")
+    wasi_token: str | None = Field(default=None, description="Token de acceso API Wasi.co")
+
     # Transcripción de voz (STT)
     stt_provider: str = Field(
         default="groq_whisper",
@@ -125,6 +129,12 @@ class AgentUpdate(BaseModel):
     google_calendar_client_id: str | None = Field(default=None, max_length=255)
     google_calendar_client_secret: str | None = Field(default=None)
 
+    # Integración Wasi.co (Inventario Inmobiliario)
+    wasi_company_id: str | None = Field(default=None, max_length=100)
+    wasi_token: str | None = Field(default=None, description="Token de acceso Wasi.co (se cifrará al guardar)")
+    wasi_connected: bool | None = Field(default=None)
+    wasi_sync_status: str | None = Field(default=None)
+
     # Transcripción de voz (STT)
     stt_provider: str | None = Field(default=None, description="Proveedor STT")
 
@@ -164,6 +174,11 @@ class AgentResponse(BaseModel):
     google_calendar_client_id: str | None = None
     google_calendar_connected: bool = False
     google_calendar_email: str | None = None
+    wasi_company_id: str | None = None
+    wasi_connected: bool = False
+    wasi_sync_status: str = "idle"
+    wasi_last_sync_at: datetime | None = None
+    wasi_properties_count: int = 0
     stt_provider: str = "groq_whisper"
     timezone: str = "America/Bogota"
     created_at: datetime
@@ -196,7 +211,7 @@ class AgentResponse(BaseModel):
             return v
         return ["web"]
 
-    @field_validator("whatsapp_connected", "whatsapp_qr_connected", "whatsapp_history_sync_enabled", "whatsapp_history_synced", "google_calendar_connected", mode="before")
+    @field_validator("whatsapp_connected", "whatsapp_qr_connected", "whatsapp_history_sync_enabled", "whatsapp_history_synced", "google_calendar_connected", "wasi_connected", mode="before")
     @classmethod
     def default_bool(cls, v):
         return v if v is not None else False
@@ -220,6 +235,16 @@ class AgentResponse(BaseModel):
     @classmethod
     def default_timezone(cls, v):
         return v if v is not None else "America/Bogota"
+
+    @field_validator("wasi_sync_status", mode="before")
+    @classmethod
+    def default_wasi_sync_status(cls, v):
+        return v if v is not None else "idle"
+
+    @field_validator("wasi_properties_count", mode="before")
+    @classmethod
+    def default_wasi_count(cls, v):
+        return v if v is not None else 0
 
 
 class AgentListItem(BaseModel):

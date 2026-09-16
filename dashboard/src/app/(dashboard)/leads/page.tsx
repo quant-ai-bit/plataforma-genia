@@ -25,12 +25,22 @@ import {
   CheckCircle2,
   Clock,
   ChevronRight,
-  Filter
+  Filter,
+  Edit2,
+  Plus,
+  Check
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-// Definición de las etapas del Pipeline CRM
-const CRM_STAGES = [
+// Definición dinámica de las etapas del Pipeline CRM
+export interface PipelineStage {
+  id: string;
+  label: string;
+  color: string;
+  dot: string;
+}
+
+const DEFAULT_STAGES: PipelineStage[] = [
   { id: "primer_contacto", label: "Primer Contacto", color: "bg-blue-500/10 text-blue-400 border-blue-500/20", dot: "bg-blue-400" },
   { id: "en_cualificacion", label: "En Cualificación", color: "bg-amber-500/10 text-amber-400 border-amber-500/20", dot: "bg-amber-400" },
   { id: "cualificado", label: "Lead Cualificado", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", dot: "bg-emerald-400" },
@@ -55,6 +65,65 @@ export default function LeadsPage() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
   const [statusUpdating, setStatusUpdating] = useState<string | null>(null);
+
+  // Estados de etapas dinámicas y editables
+  const [stages, setStages] = useState<PipelineStage[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("genia_crm_stages");
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error("Error cargando etapas guardadas:", e);
+        }
+      }
+    }
+    return DEFAULT_STAGES;
+  });
+
+  const [editingStageId, setEditingStageId] = useState<string | null>(null);
+  const [editingStageLabel, setEditingStageLabel] = useState<string>("");
+  const [showAddStageModal, setShowAddStageModal] = useState<boolean>(false);
+  const [newStageName, setNewStageName] = useState<string>("");
+
+  const saveStages = (newStages: PipelineStage[]) => {
+    setStages(newStages);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("genia_crm_stages", JSON.stringify(newStages));
+    }
+  };
+
+  const handleRenameStage = (id: string) => {
+    if (!editingStageLabel.trim()) return;
+    const updated = stages.map((s) => (s.id === id ? { ...s, label: editingStageLabel.trim() } : s));
+    saveStages(updated);
+    setEditingStageId(null);
+    setEditingStageLabel("");
+  };
+
+  const handleAddStage = () => {
+    if (!newStageName.trim()) return;
+    const id = `stage_${Date.now()}`;
+    const newStage: PipelineStage = {
+      id,
+      label: newStageName.trim(),
+      color: "bg-indigo-500/10 text-indigo-300 border-indigo-500/20",
+      dot: "bg-indigo-400"
+    };
+    saveStages([...stages, newStage]);
+    setNewStageName("");
+    setShowAddStageModal(false);
+  };
+
+  const handleDeleteStage = (id: string) => {
+    if (stages.length <= 1) {
+      alert("Debes conservar al menos una etapa en el pipeline.");
+      return;
+    }
+    if (confirm("¿Estás seguro de eliminar esta etapa del pipeline?")) {
+      saveStages(stages.filter((s) => s.id !== id));
+    }
+  };
 
   // Estados del Modal de Carga Masiva CSV/Excel
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
@@ -354,8 +423,8 @@ export default function LeadsPage() {
 
       {/* VISTA 1: PIPELINE CRM KANBAN */}
       {viewMode === "pipeline" && (
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-start">
-          {CRM_STAGES.map((stage) => {
+        <div className="flex gap-4 items-start overflow-x-auto pb-6">
+          {stages.map((stage) => {
             const stageLeads = filteredLeads.filter(
               (l) => (l.status || "primer_contacto") === stage.id
             );
@@ -363,17 +432,62 @@ export default function LeadsPage() {
             return (
               <div
                 key={stage.id}
-                className="bg-[#0c101c]/70 border border-gray-850 rounded-2xl p-3 space-y-3 min-h-[500px] flex flex-col"
+                className="bg-[#0b0f19] border border-white/[0.08] rounded-2xl p-3 space-y-3 min-w-[280px] w-[280px] flex-shrink-0 min-h-[500px] flex flex-col"
               >
                 {/* Column Header */}
                 <div className={`flex items-center justify-between p-2.5 rounded-xl border ${stage.color}`}>
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${stage.dot}`} />
-                    <span className="font-bold text-xs">{stage.label}</span>
+                  {editingStageId === stage.id ? (
+                    <div className="flex items-center gap-1.5 flex-1 mr-1">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={editingStageLabel}
+                        onChange={(e) => setEditingStageLabel(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleRenameStage(stage.id);
+                          if (e.key === "Escape") setEditingStageId(null);
+                        }}
+                        className="w-full bg-[#070a12] border border-white/20 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none"
+                      />
+                      <button
+                        onClick={() => handleRenameStage(stage.id)}
+                        className="p-1 text-emerald-400 hover:text-emerald-300 cursor-pointer"
+                        title="Guardar nombre"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 flex-1 group/header">
+                      <span className={`w-2 h-2 rounded-full ${stage.dot}`} />
+                      <span className="font-bold text-xs truncate max-w-[140px]">{stage.label}</span>
+                      <button
+                        onClick={() => {
+                          setEditingStageId(stage.id);
+                          setEditingStageLabel(stage.label);
+                        }}
+                        className="opacity-0 group-hover/header:opacity-100 p-0.5 text-slate-400 hover:text-white transition cursor-pointer"
+                        title="Editar nombre de columna"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-1">
+                    <span className="px-2 py-0.5 bg-black/30 rounded-full font-bold text-[10px]">
+                      {stageLeads.length}
+                    </span>
+                    {stages.length > 1 && (
+                      <button
+                        onClick={() => handleDeleteStage(stage.id)}
+                        className="text-slate-500 hover:text-rose-400 p-0.5 text-[10px] cursor-pointer"
+                        title="Eliminar columna"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
-                  <span className="px-2 py-0.5 bg-black/30 rounded-full font-bold text-[10px]">
-                    {stageLeads.length}
-                  </span>
                 </div>
 
                 {/* Cards Container */}
@@ -385,11 +499,11 @@ export default function LeadsPage() {
                     return (
                       <div
                         key={lead.id}
-                        className="bg-[#070b13] border border-gray-800 hover:border-purple-500/40 p-3.5 rounded-xl space-y-3 transition-all shadow-md group relative"
+                        className="bg-[#070b13] border border-white/[0.08] hover:border-indigo-500/40 p-3.5 rounded-xl space-y-3 transition-all shadow-md group relative"
                       >
                         {/* Agent & Channel Badge */}
                         <div className="flex items-center justify-between text-[10px]">
-                          <span className="text-purple-400 font-bold bg-purple-950/40 px-2 py-0.5 rounded-md border border-purple-500/10 truncate max-w-[120px]">
+                          <span className="text-indigo-300 font-bold bg-indigo-950/40 px-2 py-0.5 rounded-md border border-indigo-500/20 truncate max-w-[120px]">
                             {lead.agent_name || "Agente Genia"}
                           </span>
                           <span className={`px-2 py-0.5 rounded-md font-semibold uppercase ${
@@ -423,7 +537,7 @@ export default function LeadsPage() {
 
                         {/* Custom Data Badges */}
                         {!isCustomEmpty && (
-                          <div className="flex flex-wrap gap-1 pt-1 border-t border-gray-850/60">
+                          <div className="flex flex-wrap gap-1 pt-1 border-t border-white/[0.06]">
                             {Object.entries(lead.custom_data || {}).slice(0, 3).map(([k, v]) => (
                               <span
                                 key={k}
@@ -436,14 +550,14 @@ export default function LeadsPage() {
                         )}
 
                         {/* Stage Selector & Actions */}
-                        <div className="flex items-center justify-between pt-2 border-t border-gray-850/60 text-[10px]">
+                        <div className="flex items-center justify-between pt-2 border-t border-white/[0.06] text-[10px]">
                           <select
                             disabled={statusUpdating === lead.id}
                             value={lead.status || "primer_contacto"}
                             onChange={(e) => lead.id && handleUpdateStatus(lead.id, e.target.value)}
-                            className="bg-[#0c101c] text-gray-300 border border-gray-800 focus:border-purple-500 rounded px-1.5 py-1 focus:outline-none cursor-pointer"
+                            className="bg-[#0c101c] text-gray-300 border border-gray-800 focus:border-indigo-500 rounded px-1.5 py-1 focus:outline-none cursor-pointer"
                           >
-                            {CRM_STAGES.map((s) => (
+                            {stages.map((s) => (
                               <option key={s.id} value={s.id}>
                                 Move: {s.label}
                               </option>
@@ -453,14 +567,14 @@ export default function LeadsPage() {
                           <div className="flex items-center gap-1">
                             <button
                               onClick={() => setSelectedLead(lead)}
-                              className="p-1 hover:bg-gray-800 text-blue-400 rounded transition"
+                              className="p-1 hover:bg-gray-800 text-blue-400 rounded transition cursor-pointer"
                               title="Ver Ficha Completa"
                             >
                               <Eye className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={() => lead.id && handleDeleteLead(lead.id)}
-                              className="p-1 hover:bg-gray-800 text-red-400 rounded transition"
+                              className="p-1 hover:bg-gray-800 text-red-400 rounded transition cursor-pointer"
                               title="Eliminar Lead"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -473,7 +587,7 @@ export default function LeadsPage() {
                   })}
 
                   {stageLeads.length === 0 && (
-                    <div className="flex flex-col items-center justify-center py-12 text-gray-600 border border-dashed border-gray-850 rounded-xl">
+                    <div className="flex flex-col items-center justify-center py-12 text-gray-600 border border-dashed border-white/[0.08] rounded-xl">
                       <FolderOpen className="w-5 h-5 mb-1 text-gray-650" />
                       <span className="text-[10px]">Sin prospectos</span>
                     </div>
@@ -482,6 +596,17 @@ export default function LeadsPage() {
               </div>
             );
           })}
+
+          {/* Botón para agregar nueva etapa */}
+          <div className="min-w-[220px] flex-shrink-0">
+            <button
+              onClick={() => setShowAddStageModal(true)}
+              className="w-full py-4 px-4 rounded-2xl border border-dashed border-white/[0.15] hover:border-indigo-500/50 text-slate-400 hover:text-white bg-[#0b0f19]/40 hover:bg-[#0b0f19] flex items-center justify-center gap-2 text-xs font-semibold transition cursor-pointer"
+            >
+              <Plus className="w-4 h-4 text-indigo-400" />
+              <span>+ Agregar Etapa</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -513,7 +638,7 @@ export default function LeadsPage() {
               <tbody className="divide-y divide-gray-850/60 text-[11px]">
                 {filteredLeads.map((lead) => {
                   const cleanPhone = (lead.phone || "").replace(/\D/g, "");
-                  const stageObj = CRM_STAGES.find((s) => s.id === (lead.status || "primer_contacto"));
+                  const stageObj = stages.find((s) => s.id === (lead.status || "primer_contacto"));
 
                   return (
                     <tr key={lead.id} className="hover:bg-gray-850/30 transition-colors">
@@ -568,7 +693,7 @@ export default function LeadsPage() {
                           onChange={(e) => lead.id && handleUpdateStatus(lead.id, e.target.value)}
                           className="bg-[#070b13] text-gray-200 border border-gray-800 focus:border-purple-500 rounded px-2 py-1 text-[10px] focus:outline-none cursor-pointer"
                         >
-                          {CRM_STAGES.map((s) => (
+                          {stages.map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.label}
                             </option>
@@ -786,9 +911,62 @@ export default function LeadsPage() {
             <div className="pt-2">
               <button
                 onClick={() => setSelectedLead(null)}
-                className="w-full py-2 bg-gray-900 text-gray-400 rounded-xl font-bold border border-gray-800"
+                className="w-full py-2 bg-gray-900 text-gray-400 rounded-xl font-bold border border-gray-800 cursor-pointer"
               >
                 Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Agregar Nueva Etapa al Pipeline */}
+      {showAddStageModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-[#0b0f19] border border-white/[0.1] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Plus className="w-4 h-4 text-indigo-400" /> Nueva Etapa del Pipeline
+              </h3>
+              <button
+                onClick={() => setShowAddStageModal(false)}
+                className="text-slate-400 hover:text-white text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-200 mb-1.5">
+                  Nombre de la Nueva Columna
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Ej: Visita Agendada / Oferta Presentada / En Espera"
+                  value={newStageName}
+                  onChange={(e) => setNewStageName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleAddStage();
+                  }}
+                  className="w-full bg-[#070a12] border border-white/[0.1] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.08]">
+              <button
+                onClick={() => setShowAddStageModal(false)}
+                className="px-3.5 py-1.5 text-xs text-slate-400 hover:text-white cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleAddStage}
+                className="px-4 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-semibold rounded-xl cursor-pointer"
+              >
+                Agregar Columna
               </button>
             </div>
           </div>

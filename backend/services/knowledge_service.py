@@ -24,8 +24,11 @@ logger = logging.getLogger(__name__)
 # Persistente en el directorio configurado (solo se inicializa si es SQLite)
 chroma_client = None
 if is_sqlite:
-    import chromadb
-    chroma_client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
+    try:
+        import chromadb
+        chroma_client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
+    except Exception as e:
+        logger.warning("No se pudo inicializar ChromaDB local: %s", str(e))
 
 
 # ── Extracción de texto según formato ───────────────────────────────

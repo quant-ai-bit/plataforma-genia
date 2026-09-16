@@ -252,6 +252,41 @@ class Agent(Base):
         doc="Email de la cuenta de Google Calendar conectada",
     )
 
+    # --- Integración Wasi.co (Inventario Inmobiliario) ---
+    wasi_company_id = Column(
+        String(100),
+        nullable=True,
+        doc="ID de la empresa en Wasi.co (id_company)",
+    )
+    wasi_token = Column(
+        Text,
+        nullable=True,
+        doc="Token de acceso API Wasi.co (cifrado con Fernet)",
+    )
+    wasi_connected = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+        doc="Si las credenciales de Wasi están verificadas y conectadas",
+    )
+    wasi_sync_status = Column(
+        String(50),
+        default="idle",
+        nullable=True,
+        doc="Estado de sincronización de inventario Wasi (idle, syncing, completed, failed)",
+    )
+    wasi_last_sync_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Fecha y hora de la última sincronización exitosa del inventario Wasi",
+    )
+    wasi_properties_count = Column(
+        Integer,
+        default=0,
+        nullable=True,
+        doc="Número de propiedades activas sincronizadas desde Wasi",
+    )
+
     # --- Transcripción de voz (STT) ---
     stt_provider = Column(
         String(50),

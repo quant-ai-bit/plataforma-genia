@@ -9,16 +9,16 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "lightningcss-win32-x64-msvc": "^1.33.0",
     "lucide-react": "^0.468.0",
     "next": "16.2.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "@tailwindcss/postcss": "^4",
     "tailwindcss": "^4",
-    "typescript": "^5",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19"
-  },
-  "devDependencies": {}
+    "typescript": "^5"
+  }
 }

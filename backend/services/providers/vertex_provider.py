@@ -90,7 +90,9 @@ class VertexAIProvider(ModelProvider):
             logger.info("Vertex AI: credenciales desde GCP_SERVICE_ACCOUNT_JSON (entorno).")
             return service_account.Credentials.from_service_account_info(info)
 
-        if cred_path.strip():
+        import os
+
+        if cred_path.strip() and os.path.exists(cred_path):
             try:
                 from google.oauth2 import service_account  # import diferido
 
@@ -142,30 +144,41 @@ class VertexAIProvider(ModelProvider):
         """Construye la lista de objetos Content para la invocación nativa de Gemini en Vertex AI."""
         from vertexai.generative_models import Content, Part
 
-        contents = []
+        cleaned_turns: list[dict] = []
         for msg in req.messages:
             role = msg.get("role", "user")
             if role == "system":
-                continue  # system_instruction se pasa en GenerativeModel
+                continue
 
             content = msg.get("content", "") or ""
             if not isinstance(content, str):
                 content = str(content)
 
-            # Omitir mensajes de error del sistema previamente guardados
-            if content.startswith("⚠️"):
+            content_clean = content.strip()
+            if (
+                not content_clean
+                or content_clean.startswith("⚠️")
+                or "Ocurrió un error al procesar" in content_clean
+                or "Hubo un error procesando" in content_clean
+            ):
                 continue
 
-            content_clean = content.strip()
-            if content_clean:
-                gemini_role = "model" if role in ("assistant", "model") else "user"
-                contents.append(
-                    Content(
-                        role=gemini_role,
-                        parts=[Part.from_text(content_clean)]
-                    )
-                )
-        return contents
+            gemini_role = "model" if role in ("assistant", "model") else "user"
+
+            # Fusionar mensajes consecutivos del mismo rol
+            if cleaned_turns and cleaned_turns[-1]["role"] == gemini_role:
+                cleaned_turns[-1]["content"] += f"\n{content_clean}"
+            else:
+                cleaned_turns.append({"role": gemini_role, "content": content_clean})
+
+        # Garantizar que el primer turno sea 'user'
+        while cleaned_turns and cleaned_turns[0]["role"] == "model":
+            cleaned_turns.pop(0)
+
+        return [
+            Content(role=t["role"], parts=[Part.from_text(t["content"])])
+            for t in cleaned_turns
+        ]
 
     def _generate_sync(self, req: GenerationRequest) -> GenerationResult:
         """Invocacion sincrona de Gemini (ejecutada en un hilo)."""

@@ -13,6 +13,8 @@ from routers.google_calendar import router as google_calendar_router
 from routers.free_models import router as free_models_router
 from routers.contacts import router as contacts_router
 from routers.whatsapp_diagnostic import router as whatsapp_diagnostic_router
+from routers.wasi import router as wasi_router
+from routers.users import router as users_router
 
 __all__ = [
     "agents_router",
@@ -28,6 +30,8 @@ __all__ = [
     "free_models_router",
     "contacts_router",
     "whatsapp_diagnostic_router",
+    "wasi_router",
+    "users_router",
 ]
 
 

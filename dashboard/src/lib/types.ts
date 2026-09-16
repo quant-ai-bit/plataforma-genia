@@ -16,6 +16,12 @@ export interface Agent {
   google_calendar_client_id?: string | null;
   google_calendar_connected?: boolean;
   google_calendar_email?: string | null;
+  // Wasi.co Integration
+  wasi_company_id?: string | null;
+  wasi_connected?: boolean;
+  wasi_sync_status?: string;
+  wasi_last_sync_at?: string | null;
+  wasi_properties_count?: number;
   stt_provider?: string;
   timezone?: string;
   created_at?: string;
@@ -170,4 +176,22 @@ export interface DashboardMetrics {
   leads_history?: Array<{ date: string; leads: number }>;
   recent_leads?: Lead[];
   recent_conversations?: Conversation[];
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  role: "admin" | "user";
+  status: "pending" | "active" | "rejected";
+  assigned_agent_id?: string | null;
+  assigned_agent?: {
+    id: string;
+    name: string;
+    description?: string;
+    provider?: string;
+    model?: string;
+  } | null;
+  created_at?: string;
+  approved_at?: string;
+  approved_by?: string;
 }

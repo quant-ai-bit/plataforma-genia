@@ -33,7 +33,7 @@ class PublicAgentInfo(BaseModel):
 @router.post("/chat", response_model=PublicChatResponse)
 @limiter.limit("30/minute")
 async def public_chat(
-    req: Request,
+    request: Request,
     body: PublicChatRequest,
     db: Session = Depends(get_db),
 ):

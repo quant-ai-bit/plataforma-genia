@@ -2332,6 +2332,10 @@ async def _receive_waha_webhook_impl(agent_id: str, db: Session, data: dict):
             logger.warning("[WAHA WEBHOOK] IA devolvió respuesta vacía. Enviando fallback contextual.")
             reply = "¡Entendido! Con gusto te colaboro. ¿Te gustaría conocer las opciones de espacios o precios en la sede Pinares o Pereira Plaza?"
     except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
         err_type = type(e).__name__
         err_msg = str(e)[:200]
         print(f"[WAHA WEBHOOK IMPL] ERROR en process_conversation_message: [{err_type}] {err_msg}")

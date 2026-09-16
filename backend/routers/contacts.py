@@ -237,3 +237,74 @@ def delete_agent_contact(
     db.delete(contact)
     db.commit()
     return {"status": "success", "message": "Contacto eliminado exitosamente."}
+
+
+@router.delete("/{agent_id}/contacts/clear", status_code=status.HTTP_200_OK)
+def clear_agent_contacts(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Elimina todos los contactos precargados de la base de datos de un agente."""
+    deleted = (
+        db.query(PreloadedContact)
+        .filter(PreloadedContact.agent_id == agent_id)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {
+        "status": "success",
+        "message": f"Se eliminaron {deleted} registros de la base de datos del agente.",
+        "deleted_count": deleted,
+    }
+
+
+@router.post("/{agent_id}/contacts/search")
+def search_agent_contacts(
+    agent_id: str,
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Busca contactos/inmuebles en la base de datos del agente por texto libre
+    (nombre, teléfono, cédula, notas o cualquier campo en custom_data).
+    """
+    query_str = (payload.get("query") or "").strip().lower()
+    if not query_str:
+        contacts = (
+            db.query(PreloadedContact)
+            .filter(PreloadedContact.agent_id == agent_id)
+            .order_by(PreloadedContact.created_at.desc())
+            .limit(50)
+            .all()
+        )
+        return contacts
+
+    # Búsqueda defensiva en memoria / DB
+    all_contacts = (
+        db.query(PreloadedContact)
+        .filter(PreloadedContact.agent_id == agent_id)
+        .all()
+    )
+
+    results = []
+    for c in all_contacts:
+        match = False
+        if query_str in (c.name or "").lower():
+            match = True
+        elif query_str in (c.phone or "").lower():
+            match = True
+        elif query_str in (c.email or "").lower():
+            match = True
+        elif query_str in (c.notes or "").lower():
+            match = True
+        elif c.custom_data and isinstance(c.custom_data, dict):
+            for k, v in c.custom_data.items():
+                if query_str in str(k).lower() or query_str in str(v).lower():
+                    match = True
+                    break
+        if match:
+            results.append(c)
+
+    return results

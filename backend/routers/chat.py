@@ -28,7 +28,7 @@ router = APIRouter(prefix="/chat", tags=["Chat Sandbox"])
 
 @router.post("", response_model=ChatResponse)
 @limiter.limit("30/minute")
-async def chat_sandbox(req: Request, chat_request: ChatRequest, db: Session = Depends(get_db)):
+async def chat_sandbox(request: Request, chat_request: ChatRequest, db: Session = Depends(get_db)):
     """
     Envía un mensaje a un agente y recibe su respuesta.
 
