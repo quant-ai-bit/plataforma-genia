@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAppContext } from "../../lib/AppContext";
 import Sidebar from "../../components/Sidebar";
 import PendingVerification from "../../components/PendingVerification";
+import { checkIsAdmin } from "../../lib/types";
 import { Loader2, RefreshCw, AlertTriangle, Bell, Shield } from "lucide-react";
 
 export default function DashboardLayout({
@@ -162,7 +163,7 @@ export default function DashboardLayout({
                   <span className="text-xs text-slate-200 font-medium hidden md:inline truncate max-w-[140px]" title={user.email}>
                     {user.email?.split("@")[0]}
                   </span>
-                  {userProfile?.role === "admin" ? (
+                  {checkIsAdmin(user?.email, userProfile?.role) ? (
                     <span className="text-[9px] font-bold uppercase tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400 hidden md:inline">
                       Super Admin
                     </span>

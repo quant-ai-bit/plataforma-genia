@@ -195,3 +195,15 @@ export interface UserProfile {
   approved_at?: string;
   approved_by?: string;
 }
+
+export const ADMIN_EMAILS = [
+  "alejandr.ia.8725@gmail.com",
+  "conecta@genia.com.co",
+  "alejandro_baena@hotmail.com"
+];
+
+export function checkIsAdmin(userEmail?: string | null, role?: string | null): boolean {
+  if (role === "admin") return true;
+  if (!userEmail) return false;
+  return ADMIN_EMAILS.includes(userEmail.toLowerCase().trim());
+}

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAppContext } from "../../../lib/AppContext";
 import { authenticatedFetch } from "../../../lib/api";
-import { Agent } from "../../../lib/types";
+import { Agent, checkIsAdmin } from "../../../lib/types";
 import {
   Bot,
   Plus,
@@ -21,6 +21,7 @@ import {
 export default function AgentsPage() {
   const router = useRouter();
   const {
+    user,
     agents,
     setAgents,
     isBackendOnline,
@@ -32,7 +33,7 @@ export default function AgentsPage() {
   } = useAppContext();
 
   // Strict role guard: only admin can access /agents
-  const isAdmin = userProfile?.role === "admin";
+  const isAdmin = checkIsAdmin(user?.email, userProfile?.role);
 
   useEffect(() => {
     if (!authLoading && !isAdmin) {

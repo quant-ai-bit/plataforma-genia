@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, use } from "react";
 import { useRouter } from "next/navigation";
 import { useAppContext } from "../../../../lib/AppContext";
 import { authenticatedFetch } from "../../../../lib/api";
-import { Agent, KbImage } from "../../../../lib/types";
+import { Agent, KbImage, checkIsAdmin } from "../../../../lib/types";
 import {
   ArrowLeft,
   Bot,
@@ -48,12 +48,13 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     isBackendOnline,
     availableModels,
     loadBackendData,
+    user,
     userProfile,
     authLoading
   } = useAppContext();
 
   // Strict role guard: only admin can view or edit technical agent configuration & prompts
-  const isAdmin = userProfile?.role === "admin";
+  const isAdmin = checkIsAdmin(user?.email, userProfile?.role);
 
   useEffect(() => {
     if (!authLoading && !isAdmin) {

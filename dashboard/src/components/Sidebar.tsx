@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAppContext } from "../lib/AppContext";
+import { checkIsAdmin } from "../lib/types";
 import {
   LayoutDashboard,
   MessageSquare,
@@ -35,8 +36,8 @@ export default function Sidebar() {
     agents 
   } = useAppContext();
 
-  // Strict role security: NEVER assume admin if profile is null or undefined!
-  const isAdmin = userProfile?.role === "admin";
+  // Strict role security: Admin if role is admin OR if email is authorized super admin
+  const isAdmin = checkIsAdmin(user?.email, userProfile?.role);
 
   // Check if we are in an agent-specific route (for admin sub-navigation)
   const agentRouteMatch = pathname.match(/^\/agents\/([^\/]+)/);
