@@ -17,9 +17,9 @@ envs = dotenv_values(env_path)
 if "ENVIRONMENT" not in envs or not envs["ENVIRONMENT"]:
     envs["ENVIRONMENT"] = "production"
 if "NEXT_PUBLIC_API_URL" not in envs or not envs["NEXT_PUBLIC_API_URL"]:
-    envs["NEXT_PUBLIC_API_URL"] = "https://plataforma-genia.vercel.app"
+    envs["NEXT_PUBLIC_API_URL"] = "https://genia.com.co"
 if "FRONTEND_URL" not in envs or not envs["FRONTEND_URL"]:
-    envs["FRONTEND_URL"] = "https://plataforma-genia.vercel.app"
+    envs["FRONTEND_URL"] = "https://genia.com.co"
 
 
 scope = "alejos-projects-14de84b4"

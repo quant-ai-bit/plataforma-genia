@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     # Se carga desde la variable de entorno API_KEY_PEPPER (nunca hardcodear).
     api_key_pepper: str = ""
 
+    # URL base del frontend / dominio oficial de la plataforma
+    frontend_url: str = "https://genia.com.co"
+
     # Lista blanca de origenes permitidos para CORS (separados por comas).
     # Se carga desde ALLOWED_ORIGINS; vacio = sin origenes adicionales.
     allowed_origins: str = ""

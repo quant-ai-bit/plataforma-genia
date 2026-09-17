@@ -22,6 +22,9 @@ SMTP_USER = os.getenv("SMTP_USER", "no-responder@genia.com.co")
 SMTP_PASS = os.getenv("SMTP_PASS", "cakDYV@V4UK9*?n")
 SMTP_SENDER_NAME = "GENIA Notificaciones"
 
+# Configuración del frontend / dominio oficial
+FRONTEND_URL = (os.getenv("FRONTEND_URL") or "https://genia.com.co").strip().rstrip("/")
+
 # Destinatarios administrativos
 ADMIN_NOTIFY_EMAILS = [
     "conecta@genia.com.co",
@@ -89,7 +92,7 @@ def notify_admin_new_user_registered(user_email: str, user_id: str):
         </p>
 
         <div style="text-align: center; margin-top: 24px;">
-          <a href="https://plataforma-genia.vercel.app/users" style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-size: 13px; font-weight: bold; letter-spacing: 0.3px;">
+          <a href="{FRONTEND_URL}/users" style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-size: 13px; font-weight: bold; letter-spacing: 0.3px;">
             Gestionar y Asignar Agente →
           </a>
         </div>
@@ -160,7 +163,7 @@ def notify_user_account_approved(user_email: str, agent_name: str):
         </p>
 
         <div>
-          <a href="https://plataforma-genia.vercel.app/login" style="display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 10px; font-size: 14px; font-weight: 700; letter-spacing: 0.3px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);">
+          <a href="{FRONTEND_URL}/login" style="display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 10px; font-size: 14px; font-weight: 700; letter-spacing: 0.3px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);">
             Ingresar a la Plataforma →
           </a>
         </div>

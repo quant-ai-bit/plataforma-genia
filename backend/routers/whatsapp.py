@@ -2762,8 +2762,8 @@ async def send_agent_whatsapp_msg(db: Session, agent: Agent, to_phone: str, text
         session_name = agent.whatsapp_qr_instance_name
         if not session_name or not await verify_session_exists(session_name):
             logger.warning(f"[SEND] Sesión WAHA '{session_name}' no disponible para agente {agent.id}. Intentando auto-recuperación...")
-            from config import settings as cfg
-            wh_url = f"{cfg.waha_webhook_url or 'https://plataforma-genia.vercel.app/api/whatsapp/webhook/waha'}/{agent.id}"
+            base_url = (cfg.waha_webhook_url or cfg.frontend_url or "https://genia.com.co").rstrip("/")
+            wh_url = f"{base_url if '/api/whatsapp/webhook/waha' in base_url else base_url + '/api/whatsapp/webhook/waha'}/{agent.id}"
             ok, new_session = await ensure_session_active(agent, wh_url, db_session=db)
             if not ok or not new_session:
                 logger.error(f"[SEND] No se pudo recuperar sesión para agente {agent.id}")

@@ -18,11 +18,11 @@ npx vercel env add SUPABASE_SERVICE_KEY production --value "YOUR_SUPABASE_SERVIC
 
 Write-Host "5. FRONTEND_URL"
 npx vercel env rm FRONTEND_URL --yes --scope alejos-projects-14de84b4
-npx vercel env add FRONTEND_URL production --value "https://plataforma-genia.vercel.app" --yes --scope alejos-projects-14de84b4
+npx vercel env add FRONTEND_URL production --value "https://genia.com.co" --yes --scope alejos-projects-14de84b4
 
 Write-Host "6. NEXT_PUBLIC_API_URL"
 npx vercel env rm NEXT_PUBLIC_API_URL --yes --scope alejos-projects-14de84b4
-npx vercel env add NEXT_PUBLIC_API_URL production --value "https://plataforma-genia.vercel.app" --yes --scope alejos-projects-14de84b4
+npx vercel env add NEXT_PUBLIC_API_URL production --value "https://genia.com.co" --yes --scope alejos-projects-14de84b4
 
 Write-Host "7. NEXT_PUBLIC_SUPABASE_URL"
 npx vercel env rm NEXT_PUBLIC_SUPABASE_URL --yes --scope alejos-projects-14de84b4
