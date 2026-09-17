@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from services.model_rotation_service import ModelRotationService
 from services.auth_service import get_current_user
+from routers.users import get_user_role_and_account
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/free-models", tags=["Free Models Rotation"])
@@ -25,8 +26,15 @@ def get_free_models_status(
     """
     Retorna la lista de todos los modelos gratuitos, sus cuotas teóricas,
     su estado de cooldown actual y el potencial acumulado de tokens consumibles
-    por hora, día y mes.
+    por hora, día y mes. Exclusivo para administradores.
     """
+    is_admin, _ = get_user_role_and_account(db, current_user)
+    if not is_admin:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso restringido: Se requieren permisos de Administrador.",
+        )
     try:
         data = ModelRotationService.get_free_tier_potentials(db)
         return data
@@ -42,8 +50,15 @@ def reset_free_models_status(
 ):
     """
     Limpia de manera forzada el estado de cooldown de todos los modelos gratuitos
-    para que vuelvan a estar disponibles inmediatamente (útil para pruebas/administradores).
+    para que vuelvan a estar disponibles inmediatamente (útil para administradores).
     """
+    is_admin, _ = get_user_role_and_account(db, current_user)
+    if not is_admin:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso restringido: Se requieren permisos de Administrador.",
+        )
     try:
         ModelRotationService.reset_all_statuses(db)
         return {"status": "success", "message": "Estado de modelos gratuitos restablecido exitosamente."}

@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models.conversation import Conversation
 from schemas.conversation import ConversationDetail, ConversationResponse
+from services.auth_service import get_current_user
+from routers.users import get_user_role_and_account
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
 
@@ -30,16 +32,23 @@ def list_conversations(
     agent_id: str | None = None,
     status_filter: str | None = None,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """
-    Lista todas las conversaciones de la plataforma.
-
-    Permite filtrar opcionalmente por agente y por estado.
+    Lista las conversaciones de la plataforma.
+    Para administradores, permite ver todas o filtrar por agent_id.
+    Para usuarios estándar, filtra estrictamente al agente asignado.
     """
+    is_admin, user_acc = get_user_role_and_account(db, current_user)
     query = db.query(Conversation)
 
-    if agent_id:
+    if not is_admin:
+        if not user_acc or not user_acc.assigned_agent_id:
+            return []
+        query = query.filter(Conversation.agent_id == user_acc.assigned_agent_id)
+    elif agent_id:
         query = query.filter(Conversation.agent_id == agent_id)
+
     if status_filter:
         query = query.filter(Conversation.status == status_filter)
 
@@ -48,8 +57,13 @@ def list_conversations(
 
 
 @router.get("/{conversation_id}", response_model=ConversationDetail)
-def get_conversation(conversation_id: str, db: Session = Depends(get_db)):
+def get_conversation(
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     """Obtiene una conversación detallada con todos sus mensajes asociados."""
+    is_admin, user_acc = get_user_role_and_account(db, current_user)
     conversation = (
         db.query(Conversation).filter(Conversation.id == conversation_id).first()
     )
@@ -57,6 +71,11 @@ def get_conversation(conversation_id: str, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No se encontró ninguna conversación con el ID {conversation_id}",
+        )
+    if not is_admin and (not user_acc or conversation.agent_id != user_acc.assigned_agent_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permiso para acceder a esta conversación.",
         )
     return conversation
 
@@ -66,8 +85,10 @@ def update_conversation_status(
     conversation_id: str,
     status_in: StatusUpdate,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """Actualiza el estado de una conversación (ej. cerrar o derivar a humano)."""
+    is_admin, user_acc = get_user_role_and_account(db, current_user)
     conversation = (
         db.query(Conversation).filter(Conversation.id == conversation_id).first()
     )
@@ -75,6 +96,11 @@ def update_conversation_status(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No se encontró ninguna conversación con el ID {conversation_id}",
+        )
+    if not is_admin and (not user_acc or conversation.agent_id != user_acc.assigned_agent_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permiso para modificar esta conversación.",
         )
 
     valid_statuses = ["active", "closed", "handoff"]
@@ -94,8 +120,13 @@ def update_conversation_status(
 
 
 @router.delete("/{conversation_id}", status_code=status.HTTP_200_OK)
-def delete_conversation(conversation_id: str, db: Session = Depends(get_db)):
+def delete_conversation(
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     """Elimina una conversación y sus mensajes asociados."""
+    is_admin, user_acc = get_user_role_and_account(db, current_user)
     conversation = (
         db.query(Conversation).filter(Conversation.id == conversation_id).first()
     )
@@ -103,6 +134,11 @@ def delete_conversation(conversation_id: str, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No se encontró ninguna conversación con el ID {conversation_id}",
+        )
+    if not is_admin and (not user_acc or conversation.agent_id != user_acc.assigned_agent_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permiso para eliminar esta conversación.",
         )
 
     db.delete(conversation)
@@ -123,11 +159,13 @@ async def supervisor_send_message(
     conversation_id: str,
     message_in: SupervisorMessageIn,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Envía un mensaje de toma de control (supervisor humano) al cliente.
     Si el canal es whatsapp, envía el mensaje por WhatsApp Cloud API.
     """
+    is_admin, user_acc = get_user_role_and_account(db, current_user)
     conversation = (
         db.query(Conversation).filter(Conversation.id == conversation_id).first()
     )
@@ -135,6 +173,11 @@ async def supervisor_send_message(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No se encontró ninguna conversación con el ID {conversation_id}",
+        )
+    if not is_admin and (not user_acc or conversation.agent_id != user_acc.assigned_agent_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permiso para enviar mensajes en esta conversación.",
         )
 
     # 1. Si es canal WhatsApp, enviar vía Meta API

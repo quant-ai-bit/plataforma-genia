@@ -15,56 +15,90 @@ from database import get_db
 from models.agent import Agent
 from models.conversation import Conversation, Message
 from models.lead import Lead
+from services.auth_service import get_current_user
+from routers.users import get_user_role_and_account
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard Analytics"])
 
 
 @router.get("/metrics")
-def get_dashboard_metrics(db: Session = Depends(get_db)):
+def get_dashboard_metrics(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Retorna métricas consolidadas sobre el estado de la plataforma.
-
-    Incluye conteos totales, distribución por estados/canales,
-    leads recientes y actividad diaria.
+    Para administradores, muestra métricas globales agregadas.
+    Para usuarios estándar (rol 'user'), filtra todas las métricas exclusivamente
+    al agente de IA asignado a su cuenta.
     """
+    is_admin, user_acc = get_user_role_and_account(db, current_user)
+    agent_id_filter = None
+
+    if not is_admin:
+        if not user_acc or not user_acc.assigned_agent_id:
+            return {
+                "total_agents": 0,
+                "total_conversations": 0,
+                "total_leads": 0,
+                "conversations_by_status": {"active": 0, "closed": 0, "handoff": 0},
+                "conversations_by_channel": {},
+                "leads_by_channel": {},
+                "leads_history": [],
+                "recent_leads": [],
+                "recent_conversations": [],
+                "messages_per_agent": {},
+            }
+        agent_id_filter = user_acc.assigned_agent_id
+
     # ── Conteo general de entidades ──────────────────────────────────
-    total_agents = db.query(func.count(Agent.id)).scalar() or 0
-    total_conversations = db.query(func.count(Conversation.id)).scalar() or 0
-    total_leads = db.query(func.count(Lead.id)).scalar() or 0
+    if agent_id_filter:
+        total_agents = 1
+        total_conversations = (
+            db.query(func.count(Conversation.id))
+            .filter(Conversation.agent_id == agent_id_filter)
+            .scalar() or 0
+        )
+        total_leads = (
+            db.query(func.count(Lead.id))
+            .filter(Lead.agent_id == agent_id_filter)
+            .scalar() or 0
+        )
+    else:
+        total_agents = db.query(func.count(Agent.id)).scalar() or 0
+        total_conversations = db.query(func.count(Conversation.id)).scalar() or 0
+        total_leads = db.query(func.count(Lead.id)).scalar() or 0
 
     # ── Conversaciones por estado ───────────────────────────────────
-    status_counts = (
-        db.query(Conversation.status, func.count(Conversation.id))
-        .group_by(Conversation.status)
-        .all()
-    )
+    conv_status_q = db.query(Conversation.status, func.count(Conversation.id))
+    if agent_id_filter:
+        conv_status_q = conv_status_q.filter(Conversation.agent_id == agent_id_filter)
+    status_counts = conv_status_q.group_by(Conversation.status).all()
+
     conversations_by_status = {
         "active": 0,
         "closed": 0,
         "handoff": 0,
     }
     for stat, count in status_counts:
-        if stat in conversations_by_status:
-            conversations_by_status[stat] = count
-        else:
-            conversations_by_status[stat] = count
+        conversations_by_status[stat] = count
 
     # ── Conversaciones por canal ────────────────────────────────────
-    channel_counts = (
-        db.query(Conversation.channel, func.count(Conversation.id))
-        .group_by(Conversation.channel)
-        .all()
-    )
+    conv_chan_q = db.query(Conversation.channel, func.count(Conversation.id))
+    if agent_id_filter:
+        conv_chan_q = conv_chan_q.filter(Conversation.agent_id == agent_id_filter)
+    channel_counts = conv_chan_q.group_by(Conversation.channel).all()
+
     conversations_by_channel = {}
     for chan, count in channel_counts:
         conversations_by_channel[chan or "desconocido"] = count
 
     # ── Leads por canal de origen ───────────────────────────────────
-    lead_channel_counts = (
-        db.query(Lead.source_channel, func.count(Lead.id))
-        .group_by(Lead.source_channel)
-        .all()
-    )
+    lead_chan_q = db.query(Lead.source_channel, func.count(Lead.id))
+    if agent_id_filter:
+        lead_chan_q = lead_chan_q.filter(Lead.agent_id == agent_id_filter)
+    lead_channel_counts = lead_chan_q.group_by(Lead.source_channel).all()
+
     leads_by_channel = {}
     for chan, count in lead_channel_counts:
         leads_by_channel[chan or "desconocido"] = count
@@ -78,15 +112,15 @@ def get_dashboard_metrics(db: Session = Depends(get_db)):
 
     # Query leads captured in the last 7 days
     start_date = datetime.now(timezone.utc) - timedelta(days=7)
-    recent_leads_query = (
+    recent_leads_query_builder = (
         db.query(func.date(Lead.captured_at).label("day"), func.count(Lead.id))
         .filter(Lead.captured_at >= start_date)
-        .group_by(func.date(Lead.captured_at))
-        .all()
     )
+    if agent_id_filter:
+        recent_leads_query_builder = recent_leads_query_builder.filter(Lead.agent_id == agent_id_filter)
+    recent_leads_query = recent_leads_query_builder.group_by(func.date(Lead.captured_at)).all()
 
     for day_obj, count in recent_leads_query:
-        # En SQLite, func.date retorna un string 'YYYY-MM-DD' o un objeto date según driver
         day_str = day_obj if isinstance(day_obj, str) else day_obj.isoformat()
         if day_str in leads_last_7_days:
             leads_last_7_days[day_str] = count
@@ -98,12 +132,11 @@ def get_dashboard_metrics(db: Session = Depends(get_db)):
 
     # ── Leads recientes (últimos 5) ───────────────────────────────
     recent_leads = []
-    db_recent_leads = (
-        db.query(Lead)
-        .order_by(Lead.captured_at.desc())
-        .limit(5)
-        .all()
-    )
+    leads_q = db.query(Lead)
+    if agent_id_filter:
+        leads_q = leads_q.filter(Lead.agent_id == agent_id_filter)
+    db_recent_leads = leads_q.order_by(Lead.captured_at.desc()).limit(5).all()
+
     for lead in db_recent_leads:
         recent_leads.append(
             {
@@ -119,17 +152,14 @@ def get_dashboard_metrics(db: Session = Depends(get_db)):
 
     # ── Conversaciones recientes (últimas 5 activas) ────────────────
     recent_conversations = []
-    db_recent_convs = (
-        db.query(Conversation)
-        .order_by(Conversation.last_message_at.desc())
-        .limit(5)
-        .all()
-    )
+    convs_q = db.query(Conversation)
+    if agent_id_filter:
+        convs_q = convs_q.filter(Conversation.agent_id == agent_id_filter)
+    db_recent_convs = convs_q.order_by(Conversation.last_message_at.desc()).limit(5).all()
+
     for conv in db_recent_convs:
-        # Obtener el último mensaje
         last_msg_text = ""
         if conv.messages:
-            # Dado que están ordenadas por sent_at, el último es el final
             last_msg = conv.messages[-1]
             last_msg_text = last_msg.content
 
@@ -147,12 +177,14 @@ def get_dashboard_metrics(db: Session = Depends(get_db)):
         )
 
     # ── Mensajes por agente ───────────────────────────────────────────
-    messages_per_agent_query = (
+    msg_q = (
         db.query(Conversation.agent_id, func.count(Message.id))
         .join(Message, Message.conversation_id == Conversation.id)
-        .group_by(Conversation.agent_id)
-        .all()
     )
+    if agent_id_filter:
+        msg_q = msg_q.filter(Conversation.agent_id == agent_id_filter)
+    messages_per_agent_query = msg_q.group_by(Conversation.agent_id).all()
+
     messages_per_agent = {}
     for agent_id, count in messages_per_agent_query:
         messages_per_agent[agent_id] = count

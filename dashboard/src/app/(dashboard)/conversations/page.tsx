@@ -251,17 +251,20 @@ export default function ConversationsPage() {
 
       {/* Filters Pane */}
       <div className="flex flex-wrap gap-4 bg-[#0c101c]/45 p-4 rounded-2xl border border-gray-850">
-        <div className="flex-1 min-w-[200px]">
-          <label className="block text-[10px] text-gray-500 font-bold mb-1">Filtrar por Agente</label>
-          <select
-            value={filterAgent}
-            onChange={e => setFilterAgent(e.target.value)}
-            className="w-full bg-[#070b13] border border-gray-850 text-xs text-gray-300 rounded-xl px-3 py-2 focus:outline-none"
-          >
-            <option value="">Todos los agentes</option>
-            {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-        </div>
+        {/* Filtro por agente solo si tiene más de 1 agente */}
+        {agents.length > 1 && (
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-[10px] text-gray-500 font-bold mb-1">Filtrar por Agente</label>
+            <select
+              value={filterAgent}
+              onChange={e => setFilterAgent(e.target.value)}
+              className="w-full bg-[#070b13] border border-gray-850 text-xs text-gray-300 rounded-xl px-3 py-2 focus:outline-none"
+            >
+              <option value="">Todos los agentes</option>
+              {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+        )}
 
         <div className="flex-1 min-w-[200px]">
           <label className="block text-[10px] text-gray-500 font-bold mb-1">Filtrar por Estado</label>

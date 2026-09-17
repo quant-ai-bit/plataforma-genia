@@ -14,30 +14,11 @@ from models.agent import Agent
 from models.user_account import UserAccount
 from schemas import AgentCreate, AgentListItem, AgentResponse, AgentUpdate, AgentUsageResponse
 from services.auth_service import get_current_user
-from routers.users import get_admin_emails
+from routers.users import get_admin_emails, get_user_role_and_account
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["Agents"])
-
-
-def get_user_role_and_account(db: Session, current_user: dict) -> tuple[bool, Optional[UserAccount]]:
-    """Determina si el usuario es administrador y retorna su cuenta si existe."""
-    user_id = current_user.get("id")
-    email = (current_user.get("email") or "").strip().lower()
-    admins = get_admin_emails()
-
-    if email in admins or user_id == "local_dev_user":
-        return True, None
-
-    user_acc = db.query(UserAccount).filter(
-        (UserAccount.id == user_id) | (UserAccount.email == email)
-    ).first()
-
-    if user_acc and user_acc.role == "admin":
-        return True, user_acc
-
-    return False, user_acc
 
 
 @router.get("", response_model=list[AgentResponse])

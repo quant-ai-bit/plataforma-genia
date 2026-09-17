@@ -111,6 +111,25 @@ def require_admin(
     return user_acc
 
 
+def get_user_role_and_account(db: Session, current_user: dict) -> tuple[bool, Optional[UserAccount]]:
+    """Determina si el usuario es administrador y retorna su cuenta si existe."""
+    user_id = current_user.get("id")
+    email = (current_user.get("email") or "").strip().lower()
+    admin_emails = get_admin_emails()
+
+    user_acc = db.query(UserAccount).filter(
+        (UserAccount.id == user_id) | (UserAccount.email == email)
+    ).first()
+
+    if email in admin_emails or user_id == "local_dev_user":
+        return True, user_acc
+
+    if user_acc and user_acc.role == "admin":
+        return True, user_acc
+
+    return False, user_acc
+
+
 # --- Endpoints ---
 
 @router.get("/me", response_model=UserAccountResponse)

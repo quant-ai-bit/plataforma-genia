@@ -363,22 +363,24 @@ export default function LeadsPage() {
             />
           </div>
 
-          {/* Filter Agent */}
-          <div className="flex items-center gap-1.5 bg-[#0c101c] border border-gray-800 rounded-xl px-3 py-1.5">
-            <Filter className="w-3.5 h-3.5 text-gray-500" />
-            <select
-              value={selectedAgentId}
-              onChange={(e) => setSelectedAgentId(e.target.value)}
-              className="bg-transparent text-gray-300 text-xs focus:outline-none cursor-pointer"
-            >
-              <option value="all">Todos los Agentes</option>
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Filter Agent (solo si hay más de 1 agente disponible) */}
+          {agents.length > 1 && (
+            <div className="flex items-center gap-1.5 bg-[#0c101c] border border-gray-800 rounded-xl px-3 py-1.5">
+              <Filter className="w-3.5 h-3.5 text-gray-500" />
+              <select
+                value={selectedAgentId}
+                onChange={(e) => setSelectedAgentId(e.target.value)}
+                className="bg-transparent text-gray-300 text-xs focus:outline-none cursor-pointer"
+              >
+                <option value="all">Todos los Agentes</option>
+                {agents.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Filter Channel */}
           <div className="flex items-center gap-1.5 bg-[#0c101c] border border-gray-800 rounded-xl px-3 py-1.5">
