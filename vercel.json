@@ -4,6 +4,11 @@
   "outputDirectory": "dashboard/.next",
   "framework": "nextjs",
   "rewrites": [
+    { "source": "/planes", "destination": "/planes.html" },
+    { "source": "/cotizador", "destination": "/cotizador.html" },
+    { "source": "/privacidad", "destination": "/privacidad.html" },
+    { "source": "/terminos", "destination": "/terminos.html" },
+    { "source": "/preonboarding", "destination": "/infopreonboarding.html" },
     { "source": "/api/:path*", "destination": "/api/index.py" }
   ],
   "functions": {

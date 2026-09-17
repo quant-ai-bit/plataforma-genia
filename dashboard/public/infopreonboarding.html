@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GENIA — Formulario de Onboarding</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="imagenes/favicon_circular.png">
+  <style>
+    :root {
+      --bg: #0a0a14;
+      --surface: #12121f;
+      --card: #1a1a2e;
+      --border: #2a2a45;
+      --primary: #6c63ff;
+      --primary-glow: rgba(108, 99, 255, 0.15);
+      --accent: #00d4ff;
+      --green: #00c97b;
+      --text: #e8e8f0;
+      --text-muted: #888;
+      --radius: 12px;
+      --transition: all 0.3s ease;
+    }
+
+    html.light-mode {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --primary: #4f46e5;
+      --primary-glow: rgba(79, 70, 229, 0.1);
+      --accent: #0891b2;
+      --text: #1e293b;
+      --text-muted: #64748b;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .header {
+      background: linear-gradient(135deg, var(--card) 0%, #1e1e3a 100%);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 40px;
+      text-align: center;
+      margin-bottom: 30px;
+      position: relative;
+      overflow: hidden;
+      transition: var(--transition);
+    }
+
+    html.light-mode .header {
+      background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+    }
+
+    .header::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, var(--primary-glow) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    .logo {
+      font-size: 2.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -1px;
+    }
+
+    .logo span {
+      -webkit-text-fill-color: var(--accent);
+    }
+
+    .header p {
+      color: var(--text-muted);
+      margin-top: 8px;
+      font-size: 0.95rem;
+    }
+
+    .badge {
+      display: inline-block;
+      background: var(--primary-glow);
+      border: 1px solid var(--primary);
+      color: var(--primary);
+      font-size: 0.75rem;
+      padding: 4px 16px;
+      border-radius: 20px;
+      margin-top: 12px;
+      font-weight: 500;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .alert {
+      background: rgba(0, 201, 123, 0.08);
+      border: 1px solid rgba(0, 201, 123, 0.3);
+      border-radius: var(--radius);
+      padding: 14px 20px;
+      margin-bottom: 24px;
+      font-size: 0.88rem;
+      color: var(--green);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      margin-bottom: 20px;
+      transition: border-color 0.2s;
+    }
+
+    .section:hover {
+      border-color: var(--primary);
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 22px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--primary-glow);
+      border: 1px solid var(--primary);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    .section-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .section-subtitle {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .form-grid.single {
+      grid-template-columns: 1fr;
+    }
+
+    .form-grid.triple {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    .full-width {
+      grid-column: 1 / -1;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    label {
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    label .required {
+      color: #ff6b6b;
+      margin-left: 2px;
+    }
+
+    label .optional {
+      color: #555;
+      font-size: 0.7rem;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    input[type="url"],
+    textarea,
+    select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9rem;
+      padding: 10px 14px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      width: 100%;
+    }
+
+    input:focus,
+    textarea:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-glow);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    select option {
+      background: var(--surface);
+    }
+
+    .radio-group,
+    .checkbox-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .radio-option,
+    .checkbox-option {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.15s;
+    }
+
+    .radio-option:hover,
+    .checkbox-option:hover {
+      border-color: var(--primary);
+      background: var(--primary-glow);
+    }
+
+    input[type="radio"],
+    input[type="checkbox"] {
+      accent-color: var(--primary);
+      width: 15px;
+      height: 15px;
+    }
+
+    .sub-section {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      margin-top: 16px;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .sub-section-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tab-selector {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      padding: 8px 18px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .tab-btn.active,
+    .tab-btn:hover {
+      border-color: var(--primary);
+      background: var(--primary-glow);
+      color: var(--text);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .cronograma {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-top: 8px;
+    }
+
+    .crono-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .crono-item:last-child {
+      border-bottom: none;
+    }
+
+    .crono-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+    }
+
+    .crono-icon.blue {
+      background: rgba(0, 212, 255, 0.1);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+    }
+
+    .crono-icon.purple {
+      background: var(--primary-glow);
+      border: 1px solid var(--primary);
+    }
+
+    .crono-icon.green {
+      background: rgba(0, 201, 123, 0.1);
+      border: 1px solid rgba(0, 201, 123, 0.2);
+    }
+
+    .crono-label {
+      flex: 1;
+      font-size: 0.88rem;
+    }
+
+    .crono-time {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      background: var(--border);
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+
+    .submit-area {
+      background: linear-gradient(135deg, var(--card), #1e1e3a);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px;
+      text-align: center;
+      margin-top: 24px;
+      transition: var(--transition);
+    }
+
+    html.light-mode .submit-area {
+      background: linear-gradient(135deg, #ffffff, #f8fafc);
+    }
+
+    /* Theme Toggle Button */
+    .theme-toggle {
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: white;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+      z-index: 1000;
+      transition: var(--transition);
+    }
+
+    .theme-toggle:hover {
+      transform: scale(1.1);
+    }
+
+    /* Logo Filter for Light Mode */
+    .onboarding-logo {
+      transition: var(--transition);
+      filter: brightness(0) invert(1);
+    }
+
+    html.light-mode .onboarding-logo {
+      filter: none !important;
+    }
+
+    .submit-btn {
+      background: linear-gradient(135deg, var(--primary), #8b5cf6);
+      color: white;
+      border: none;
+      padding: 14px 40px;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      transition: all 0.2s;
+      box-shadow: 0 4px 20px rgba(108, 99, 255, 0.3);
+      letter-spacing: 0.5px;
+    }
+
+    .submit-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 30px rgba(108, 99, 255, 0.5);
+    }
+
+    .submit-note {
+      margin-top: 12px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .progress-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 0%;
+      height: 3px;
+      background: linear-gradient(90deg, var(--primary), var(--accent));
+      transition: width 0.3s;
+      z-index: 100;
+    }
+
+    .section-number {
+      position: absolute;
+      top: -8px;
+      right: 16px;
+      background: var(--primary);
+      color: white;
+      font-size: 0.7rem;
+      padding: 2px 10px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+
+    .section {
+      position: relative;
+    }
+
+    @media (max-width: 768px) {
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .form-grid.triple {
+        grid-template-columns: 1fr;
+      }
+
+      .header {
+        padding: 24px;
+      }
+
+      .logo {
+        font-size: 1.8rem;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="progress-bar" id="progressBar"></div>
+
+  <button class="theme-toggle" id="themeToggle" title="Cambiar tema">🌓</button>
+
+  <div class="header">
+    <img src="imagenes/LOGO VIVO.png?v=2" alt="GENIA" class="onboarding-logo"
+      style="height: 55px; width: auto; display: block; margin: 0 auto 8px; border-radius: 15px;">
+    <p>genia.com.co &nbsp;|&nbsp; Agencia de Inteligencia Artificial</p>
+    <div class="badge">📋 Formulario de Onboarding</div>
+  </div>
+
+  <div class="alert">
+    ✅ &nbsp; Completar este formulario <strong>antes de la primera sesión</strong>. Tiempo estimado: 15–20 minutos. La
+    información que nos compartas determinará la calidad y personalizacion de tu agente de IA.
+  </div>
+
+  <form id="onboardingForm" onsubmit="handleSubmit(event)">
+
+    <!-- SECCIÓN 1 -->
+    <div class="section">
+      <div class="section-number">1 / 7</div>
+      <div class="section-header">
+        <div class="section-icon">🏢</div>
+        <div>
+          <div class="section-title">Identidad del Negocio</div>
+          <div class="section-subtitle">Información básica de tu empresa</div>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Nombre del negocio <span class="required">*</span></label>
+          <input type="text" name="nombre_negocio" placeholder="Ej: Restaurante La Fogata" required>
+        </div>
+        <div class="field">
+          <label>Nombre del agente de IA <span class="required">*</span></label>
+          <input type="text" name="nombre_agente" placeholder="Ej: Sofía, Max, Luna..." required>
+        </div>
+        <div class="field full-width">
+          <label>Descripción del negocio <span class="required">*</span></label>
+          <textarea name="descripcion" placeholder="¿Qué hace tu empresa? ¿A quién atiende? (2-3 líneas)"
+            required></textarea>
+        </div>
+        <div class="field">
+          <label>Ciudad / País <span class="required">*</span></label>
+          <input type="text" name="ciudad" placeholder="Ej: Pereira, Colombia" required>
+        </div>
+        <div class="field">
+          <label>Sitio web <span class="optional">(Opcional)</span></label>
+          <input type="url" name="sitio_web" placeholder="https://tunegocio.com">
+        </div>
+        <div class="field full-width">
+          <label>Logo del negocio <span class="optional">(Recomendado — enviar por WhatsApp)</span></label>
+          <input type="text" name="logo_nota" placeholder="Ej: 'Lo envío por WhatsApp' o 'No tengo logo aún'">
+        </div>
+      </div>
+    </div>
+
+    <!-- SECCIÓN 2 -->
+    <div class="section">
+      <div class="section-number">2 / 7</div>
+      <div class="section-header">
+        <div class="section-icon">📱</div>
+        <div>
+          <div class="section-title">Canales de Comunicación</div>
+          <div class="section-subtitle">¿Dónde estará activo tu agente?</div>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="field full-width">
+          <label>WhatsApp Business <span class="required">*</span></label>
+          <input type="tel" name="whatsapp" placeholder="+57 300 000 0000" required>
+        </div>
+        <div class="field full-width">
+          <label>¿Tienes acceso a Meta Business Manager? <span class="required">*</span></label>
+          <div class="radio-group">
+            <label class="radio-option"><input type="radio" name="meta_bm" value="si" required> ✅ Sí, tengo
+              acceso</label>
+            <label class="radio-option"><input type="radio" name="meta_bm" value="no"> ❌ No, necesito ayuda</label>
+            <label class="radio-option"><input type="radio" name="meta_bm" value="no_se"> 🤷 No sé qué es eso</label>
+          </div>
+        </div>
+        <div class="field">
+          <label>Instagram <span class="optional">(Si aplica)</span></label>
+          <input type="text" name="instagram" placeholder="@tu_negocio">
+        </div>
+        <div class="field">
+          <label>Facebook <span class="optional">(Si aplica)</span></label>
+          <input type="text" name="facebook" placeholder="Nombre de la página">
+        </div>
+        <div class="field full-width">
+          <label>¿Quieres el agente en tu sitio web? <span class="optional">(Chat widget)</span></label>
+          <div class="radio-group">
+            <label class="radio-option"><input type="radio" name="widget_web" value="si"> ✅ Sí</label>
+            <label class="radio-option"><input type="radio" name="widget_web" value="no"> ❌ No</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECCIÓN 3 -->
+    <div class="section">
+      <div class="section-number">3 / 7</div>
+      <div class="section-header">
+        <div class="section-icon">🤖</div>
+        <div>
+          <div class="section-title">Personalidad del Agente</div>
+          <div class="section-subtitle">Cómo debe comunicarse tu agente</div>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="field full-width">
+          <label>Tono de comunicación <span class="required">*</span></label>
+          <div class="radio-group">
+            <label class="radio-option"><input type="radio" name="tono" value="formal" required> 👔 Formal</label>
+            <label class="radio-option"><input type="radio" name="tono" value="amigable"> 😊 Amigable</label>
+            <label class="radio-option"><input type="radio" name="tono" value="mixto"> 🤝 Mixto</label>
+            <label class="radio-option"><input type="radio" name="tono" value="humor"> 😄 Con humor</label>
+          </div>
+        </div>
+        <div class="field">
+          <label>Género del agente <span class="required">*</span></label>
+          <div class="radio-group">
+            <label class="radio-option"><input type="radio" name="genero" value="femenino" required> 👩 Femenino</label>
+            <label class="radio-option"><input type="radio" name="genero" value="masculino"> 👨 Masculino</label>
+            <label class="radio-option"><input type="radio" name="genero" value="neutro"> 🤖 Neutro</label>
+          </div>
+        </div>
+        <div class="field">
+          <label>Idioma principal <span class="required">*</span></label>
+          <div class="radio-group">
+            <label class="radio-option"><input type="radio" name="idioma" value="espanol" required> 🇨🇴 Español</label>
+            <label class="radio-option"><input type="radio" name="idioma" value="ingles"> 🇺🇸 Inglés</label>
+            <label class="radio-option"><input type="radio" name="idioma" value="bilingue"> 🌐 Bilingüe</label>
+          </div>
+        </div>
+        <div class="field full-width">
+          <label>Palabras clave de tu marca <span class="optional">(3 a 5 palabras)</span></label>
+          <input type="text" name="palabras_clave" placeholder="Ej: artesanal, cálido, rápido, confiable, familiar">
+        </div>
+        <div class="field full-width">
+          <label>Cosas que el agente NO debe decir <span class="required">*</span></label>
+          <textarea name="prohibiciones"
+            placeholder="Ej: No mencionar precios de la competencia, no ofrecer descuentos sin autorización, no hablar de política..."
+            required></textarea>
+        </div>
+        <div class="field full-width">
+          <label>Mensaje de bienvenida sugerido <span class="optional">(Opcional)</span></label>
+          <textarea name="bienvenida"
+            placeholder="Ej: '¡Hola! Soy Sofía, tu asistente virtual de La Fogata 🍽️. ¿En qué te puedo ayudar hoy?'"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECCIÓN 4 -->
+    <div class="section">
+      <div class="section-number">4 / 7</div>
+      <div class="section-header">
+        <div class="section-icon">📚</div>
+        <div>
+          <div class="section-title">Base de Conocimiento</div>
+          <div class="section-subtitle">Documentos con los que aprenderá tu agente</div>
+        </div>
+      </div>
+      <div class="form-grid single">
+        <div class="field">
+          <label>¿Qué documentos puedes enviar? <span class="required">*</span></label>
+          <div class="checkbox-group">
+            <label class="checkbox-option"><input type="checkbox" name="kb_menu"> 🍽️ Menú / Catálogo con
+              precios</label>
+            <label class="checkbox-option"><input type="checkbox" name="kb_faq"> ❓ Preguntas frecuentes (FAQ)</label>
+            <label class="checkbox-option"><input type="checkbox" name="kb_politicas"> 📜 Políticas de pago y
+              cancelación</label>
+            <label class="checkbox-option"><input type="checkbox" name="kb_portafolio"> 🏘️ Portafolio de propiedades /
+              servicios</label>
+            <label class="checkbox-option"><input type="checkbox" name="kb_artistas"> 🎨 Info de artistas /
+              profesionales</label>
+            <label class="checkbox-option"><input type="checkbox" name="kb_otro"> 📎 Otro (especificar abajo)</label>
+          </div>
+        </div>
+        <div class="field">
+          <label>Información adicional / documentos que enviará</label>
+          <textarea name="kb_adicional"
+            placeholder="Describe los documentos que nos enviarás y en qué formato (PDF, Excel, foto, Google Drive, etc.)"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECCIÓN 5 -->
+    <div class="section">
+      <div class="section-number">5 / 7</div>
+      <div class="section-header">
+        <div class="section-icon">🗣️</div>
+        <div>
+          <div class="section-title">Flujos de Conversación</div>
+          <div class="section-subtitle">Selecciona tu tipo de negocio y completa la información</div>
+        </div>
+      </div>
+
+      <div class="tab-selector">
+        <button type="button" class="tab-btn active" onclick="showTab('restaurante')">🍽️ Restaurante</button>
+        <button type="button" class="tab-btn" onclick="showTab('tatuajes')">💉 Tatuajes</button>
+        <button type="button" class="tab-btn" onclick="showTab('inmobiliaria')">🏘️ Inmobiliaria</button>
+        <button type="button" class="tab-btn" onclick="showTab('otro')">📦 Otro</button>
+      </div>
+
+      <div id="tab-restaurante" class="tab-content active">
+        <div class="form-grid">
+          <div class="field full-width">
+            <label>Zonas de cobertura de domicilio</label>
+            <textarea name="rest_zonas"
+              placeholder="Ej: Barrios Cuba, El Centro, Pinares. No hacemos domicilio a Dosquebradas."></textarea>
+          </div>
+          <div class="field">
+            <label>Costo de envío por zona</label>
+            <input type="text" name="rest_costo_envio" placeholder="Ej: $3.000 Centro, $5.000 Pinares">
+          </div>
+          <div class="field">
+            <label>Tiempo estimado de entrega</label>
+            <input type="text" name="rest_tiempo" placeholder="Ej: 30-45 minutos">
+          </div>
+          <div class="field full-width">
+            <label>Métodos de pago aceptados</label>
+            <div class="checkbox-group">
+              <label class="checkbox-option"><input type="checkbox" name="rest_pago_nequi"> Nequi</label>
+              <label class="checkbox-option"><input type="checkbox" name="rest_pago_daviplata"> Daviplata</label>
+              <label class="checkbox-option"><input type="checkbox" name="rest_pago_efectivo"> Efectivo</label>
+              <label class="checkbox-option"><input type="checkbox" name="rest_pago_tarjeta"> Tarjeta</label>
+              <label class="checkbox-option"><input type="checkbox" name="rest_pago_otro"> Otro</label>
+            </div>
+          </div>
+          <div class="field">
+            <label>¿Qué hacer si un plato está agotado?</label>
+            <input type="text" name="rest_agotado" placeholder="Ej: Avisar al cliente y ofrecer alternativa">
+          </div>
+          <div class="field">
+            <label>¿Qué hacer fuera del horario?</label>
+            <input type="text" name="rest_horario_fuera"
+              placeholder="Ej: Informar horario y tomar pedido para el día siguiente">
+          </div>
+          <div class="field full-width">
+            <label>Email / WhatsApp para notificaciones de pedidos <span class="required">*</span></label>
+            <input type="text" name="rest_notificaciones" placeholder="Ej: +57 300 xxx xxxx o cocina@restaurante.com">
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-tatuajes" class="tab-content">
+        <div class="form-grid">
+          <div class="field full-width">
+            <label>Nombre y especialidad de cada artista</label>
+            <textarea name="tat_artistas"
+              placeholder="Ej: Juan - Realismo, María - Blackwork, Carlos - Acuarela"></textarea>
+          </div>
+          <div class="field full-width">
+            <label>Horario de cada artista</label>
+            <textarea name="tat_horarios" placeholder="Ej: Juan: Lun-Vie 10am-6pm, María: Mié-Dom 11am-7pm"></textarea>
+          </div>
+          <div class="field">
+            <label>Duración promedio de sesiones</label>
+            <input type="text" name="tat_duracion" placeholder="Ej: Pequeño: 1h, Mediano: 3h, Grande: 6h+">
+          </div>
+          <div class="field">
+            <label>Política de precios</label>
+            <input type="text" name="tat_precios" placeholder="Ej: Desde $100.000, cotización personalizada">
+          </div>
+          <div class="field">
+            <label>¿Requiere depósito/seña?</label>
+            <div class="radio-group">
+              <label class="radio-option"><input type="radio" name="tat_deposito" value="si"> ✅ Sí</label>
+              <label class="radio-option"><input type="radio" name="tat_deposito" value="no"> ❌ No</label>
+            </div>
+          </div>
+          <div class="field">
+            <label>Monto y método del depósito</label>
+            <input type="text" name="tat_deposito_detalle" placeholder="Ej: $50.000 por Nequi antes de confirmar">
+          </div>
+          <div class="field full-width">
+            <label>Política de cancelación</label>
+            <textarea name="tat_cancelacion"
+              placeholder="Ej: Cancelar con 48h de anticipación. Sin reembolso del depósito si cancela con menos tiempo."></textarea>
+          </div>
+          <div class="field full-width">
+            <label>Plataforma de calendario</label>
+            <div class="radio-group">
+              <label class="radio-option"><input type="radio" name="tat_calendario" value="google"> Google
+                Calendar</label>
+              <label class="radio-option"><input type="radio" name="tat_calendario" value="calendly"> Calendly</label>
+              <label class="radio-option"><input type="radio" name="tat_calendario" value="papel"> Agenda física</label>
+              <label class="radio-option"><input type="radio" name="tat_calendario" value="otro"> Otro</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-inmobiliaria" class="tab-content">
+        <div class="form-grid">
+          <div class="field full-width">
+            <label>Perfil del cliente ideal</label>
+            <textarea name="inm_perfil"
+              placeholder="Ej: Familias buscando comprar en Pereira, presupuesto $200M-$400M, 3 habitaciones, barrios: Álamos, El Jardín."></textarea>
+          </div>
+          <div class="field full-width">
+            <label>Preguntas clave para calificar un lead (mínimo 5)</label>
+            <textarea name="inm_preguntas"
+              placeholder="Ej: &#10;1. ¿Busca comprar o arrendar?&#10;2. ¿Cuál es su presupuesto?&#10;3. ¿En qué zona o barrio prefiere?&#10;4. ¿Necesita parqueadero?&#10;5. ¿Con qué urgencia necesita el inmueble?"></textarea>
+          </div>
+          <div class="field full-width">
+            <label>¿Qué hace a un lead "caliente"? (criterio para escalar)</label>
+            <textarea name="inm_criterio_escalar"
+              placeholder="Ej: Cliente que ya vio una propiedad y pregunta por precio, o que tiene el dinero listo, o que quiere cita esta semana."></textarea>
+          </div>
+          <div class="field">
+            <label>Nombre del agente humano que recibe leads</label>
+            <input type="text" name="inm_agente_nombre" placeholder="Ej: Carlos Martínez">
+          </div>
+          <div class="field">
+            <label>Contacto del agente (WA o email)</label>
+            <input type="text" name="inm_agente_contacto" placeholder="+57 300 xxx xxxx">
+          </div>
+          <div class="field">
+            <label>¿Usa CRM?</label>
+            <div class="radio-group">
+              <label class="radio-option"><input type="radio" name="inm_crm" value="wasi"> Wasi</label>
+              <label class="radio-option"><input type="radio" name="inm_crm" value="hubspot"> HubSpot</label>
+              <label class="radio-option"><input type="radio" name="inm_crm" value="otro"> Otro</label>
+              <label class="radio-option"><input type="radio" name="inm_crm" value="no"> No usa CRM</label>
+            </div>
+          </div>
+          <div class="field">
+            <label>Horario para agendar citas/llamadas</label>
+            <input type="text" name="inm_horario" placeholder="Ej: Lun-Vie 9am-6pm, Sáb 9am-1pm">
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-otro" class="tab-content">
+        <div class="form-grid single">
+          <div class="field">
+            <label>Tipo de negocio</label>
+            <input type="text" name="otro_tipo" placeholder="Describe tu tipo de negocio">
+          </div>
+          <div class="field">
+            <label>¿Qué debe hacer principalmente el agente?</label>
+            <textarea name="otro_funcion"
+              placeholder="Ej: Responder preguntas sobre mis servicios, agendar llamadas, tomar pedidos, etc."></textarea>
+          </div>
+          <div class="field">
+            <label>Información adicional relevante para el flujo</label>
+            <textarea name="otro_adicional"
+              placeholder="Describe los pasos que debería seguir el agente para atender a un cliente típico..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECCIÓN 6 -->
+    <div class="section">
+      <div class="section-number">6 / 7</div>
+      <div class="section-header">
+        <div class="section-icon">🔗</div>
+        <div>
+          <div class="section-title">Integraciones</div>
+          <div class="section-subtitle">Conexiones con otras herramientas</div>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="field full-width">
+          <label>¿Qué integraciones necesitas?</label>
+          <div class="checkbox-group">
+            <label class="checkbox-option"><input type="checkbox" name="int_gcal"> 📅 Google Calendar</label>
+            <label class="checkbox-option"><input type="checkbox" name="int_zapier"> ⚡ Zapier / Make</label>
+            <label class="checkbox-option"><input type="checkbox" name="int_crm"> 🗂️ CRM (Wasi, HubSpot)</label>
+            <label class="checkbox-option"><input type="checkbox" name="int_pagos"> 💳 Pagos online</label>
+            <label class="checkbox-option"><input type="checkbox" name="int_ninguna"> ❌ Ninguna por ahora</label>
+          </div>
+        </div>
+        <div class="field full-width">
+          <label>Email de notificaciones del administrador <span class="required">*</span></label>
+          <input type="email" name="email_admin" placeholder="admin@tunegocio.com" required>
+        </div>
+        <div class="field full-width">
+          <label>Notas sobre integraciones <span class="optional">(Opcional)</span></label>
+          <textarea name="int_notas"
+            placeholder="Ej: Usamos Google Calendar con la cuenta gerencia@negocio.com, podemos compartir acceso."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECCIÓN 7 -->
+    <div class="section">
+      <div class="section-number">7 / 7</div>
+      <div class="section-header">
+        <div class="section-icon">👤</div>
+        <div>
+          <div class="section-title">Contactos del Proyecto</div>
+          <div class="section-subtitle">¿Con quién nos comunicamos?</div>
+        </div>
+      </div>
+      <div class="sub-section">
+        <div class="sub-section-title">👑 Dueño / Decision Maker</div>
+        <div class="form-grid triple">
+          <div class="field"><label>Nombre <span class="required">*</span></label><input type="text" name="dm_nombre"
+              required placeholder="Nombre completo"></div>
+          <div class="field"><label>WhatsApp <span class="required">*</span></label><input type="tel" name="dm_whatsapp"
+              required placeholder="+57 300 000 0000"></div>
+          <div class="field"><label>Email <span class="required">*</span></label><input type="email" name="dm_email"
+              required placeholder="correo@negocio.com"></div>
+        </div>
+      </div>
+      <div class="sub-section">
+        <div class="sub-section-title">🛠️ Contacto Técnico <span style="font-weight:400; color: var(--text-muted)">(si
+            aplica)</span></div>
+        <div class="form-grid triple">
+          <div class="field"><label>Nombre</label><input type="text" name="tec_nombre" placeholder="Nombre completo">
+          </div>
+          <div class="field"><label>WhatsApp</label><input type="tel" name="tec_whatsapp"
+              placeholder="+57 300 000 0000"></div>
+          <div class="field"><label>Email</label><input type="email" name="tec_email" placeholder="correo@negocio.com">
+          </div>
+        </div>
+      </div>
+      <div class="sub-section">
+        <div class="sub-section-title">👀 Persona que revisará el agente</div>
+        <div class="form-grid triple">
+          <div class="field"><label>Nombre</label><input type="text" name="rev_nombre" placeholder="Nombre completo">
+          </div>
+          <div class="field"><label>WhatsApp</label><input type="tel" name="rev_whatsapp"
+              placeholder="+57 300 000 0000"></div>
+          <div class="field"><label>Email</label><input type="email" name="rev_email" placeholder="correo@negocio.com">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CRONOGRAMA -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">⏱️</div>
+        <div>
+          <div class="section-title">Tu Cronograma de Onboarding</div>
+          <div class="section-subtitle">Lo que pasará después de enviar este formulario</div>
+        </div>
+      </div>
+      <div class="cronograma">
+        <div class="crono-item">
+          <div class="crono-icon blue">📥</div>
+          <div class="crono-label"><strong>Pre-onboarding</strong> — Tú envías esta información</div>
+          <div class="crono-time">2-3 días</div>
+        </div>
+        <div class="crono-item">
+          <div class="crono-icon purple">⚙️</div>
+          <div class="crono-label"><strong>Configuración</strong> — Genia configura tu agente</div>
+          <div class="crono-time">2-3 días</div>
+        </div>
+        <div class="crono-item">
+          <div class="crono-icon blue">🧪</div>
+          <div class="crono-label"><strong>Pruebas</strong> — Revisión conjunta y ajustes</div>
+          <div class="crono-time">1 día</div>
+        </div>
+        <div class="crono-item">
+          <div class="crono-icon green">🚀</div>
+          <div class="crono-label"><strong>Go Live</strong> — Tu agente entra en operación</div>
+          <div class="crono-time">1 día</div>
+        </div>
+        <div class="crono-item">
+          <div class="crono-icon green">📊</div>
+          <div class="crono-label"><strong>Seguimiento</strong> — Revisión 7 días post-lanzamiento</div>
+          <div class="crono-time">30 min</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="submit-area">
+      <h3 style="margin-bottom: 8px; font-size: 1.1rem;">¡Listo para enviar!</h3>
+      <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 20px;">
+        Revisa que todos los campos obligatorios estén completos antes de enviar.
+      </p>
+      <button type="submit" class="submit-btn">🚀 Enviar Formulario a Genia</button>
+      <div class="submit-note">
+        También puedes enviarnos tus documentos directamente por WhatsApp después de completar este formulario.<br>
+        <a href="https://genia.com.co" style="color: var(--primary); text-decoration: none;">genia.com.co</a>
+        <br><br>
+        <div style="display: flex; gap: 15px; justify-content: center; font-size: 0.8rem;">
+            <a href="privacidad.html" style="color: var(--text-muted); text-decoration: none;">Política de Privacidad</a>
+            <a href="terminos.html" style="color: var(--text-muted); text-decoration: none;">Términos y Condiciones</a>
+        </div>
+      </div>
+    </div>
+
+  </form>
+
+  <script>
+    // Tab switching
+    function showTab(tab) {
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + tab).classList.add('active');
+      event.target.classList.add('active');
+    }
+
+    // Progress bar
+    window.addEventListener('scroll', () => {
+      const scrollTop = document.documentElement.scrollTop;
+      const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+      const progress = (scrollTop / scrollHeight) * 100;
+      document.getElementById('progressBar').style.width = progress + '%';
+    });
+
+    // Form submission
+    async function handleSubmit(e) {
+      e.preventDefault();
+      const btn = e.target.querySelector('.submit-btn');
+      const originalBtnText = btn.innerHTML;
+
+      // Mostrar estado de carga
+      btn.disabled = true;
+      btn.innerHTML = '⌛ Enviando información...';
+
+      const data = new FormData(e.target);
+      const obj = {};
+
+      // Convertir FormData a objeto simple manejando checkboxes múltiples
+      data.forEach((v, k) => {
+        if (obj[k]) {
+          obj[k] = obj[k] + ", " + v;
+        } else {
+          obj[k] = v;
+        }
+      });
+
+      // AGREGA TU URL DE APPS SCRIPT AQUÍ: // Asegúrate de usar la última URL generada
+      const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyBq204GFGyKPl3uXdiupqnFuCMiHB6GkRltA87Rzmi_4kfaCWWG-Z5ebV6DRekS9WuDQ/exec';
+
+      try {
+        // Enviamos como texto plano para evitar el bloqueo de seguridad (CORS Preflight)
+        await fetch(SCRIPT_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: {
+            'Content-Type': 'text/plain'
+          },
+          body: JSON.stringify({
+            ...obj,
+            fecha_registro: new Date().toLocaleString() // Añadimos fecha automáticamente
+          })
+        });
+
+        // Con no-cors no podemos leer la respuesta, pero si llega hasta aquí sin error de red, funcionó
+        const nombre = obj['nombre_negocio'] || 'tu negocio';
+        alert(`🚀 ¡Éxito! La información de ${nombre} ha sido registrada. Nos contactaremos en menos de 24 horas.`);
+        e.target.reset();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      } catch (error) {
+        console.error('Error:', error);
+        alert('❌ Hubo un problema al enviar el formulario. Por favor, intenta de nuevo o contáctanos por WhatsApp.');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalBtnText;
+      }
+    }
+
+    // Theme Toggle Logic
+    const themeToggle = document.getElementById('themeToggle');
+    const htmlElement = document.documentElement;
+
+    // Check saved theme
+    if (localStorage.getItem('theme') === 'light') {
+      htmlElement.classList.add('light-mode');
+    }
+
+    themeToggle.addEventListener('click', () => {
+      htmlElement.classList.toggle('light-mode');
+      const isLight = htmlElement.classList.contains('light-mode');
+      localStorage.setItem('theme', isLight ? 'light' : 'dark');
+    });
+  </script>
+</body>
+
+</html>

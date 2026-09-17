@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="es" class="scroll-smooth">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GENIA | Planes y Precios</title>
+    <meta name="description" content="Conoce los planes de GENIA: Agentes IA para tu negocio. Chat, Voz e integraciones con precios claros y sin sorpresas.">
+    <meta property="og:title" content="GENIA | Planes y Precios">
+    <meta property="og:description" content="Automatiza la atención de tu negocio con Agentes IA. Planes desde $99/mes.">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="imagenes/favicon_circular.png">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="styles.css">
+
+    <style>
+        /* ── Hero ── */
+        .hero-planes {
+            padding: 180px 20px 80px;
+            position: relative;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            min-height: 50vh;
+        }
+
+        /* ── Pricing Cards Grid ── */
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .pricing-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 2.5rem 2rem;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        [data-theme="light"] .pricing-card {
+            background: rgba(0, 0, 0, 0.02);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .pricing-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 20px 40px rgba(59, 130, 246, 0.1);
+        }
+
+        .pricing-card.featured {
+            border-color: rgba(59, 130, 246, 0.4);
+            box-shadow: 0 0 30px rgba(59, 130, 246, 0.08);
+        }
+
+        .pricing-card.featured::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 4px;
+            background: linear-gradient(to right, #3B82F6, #8B5CF6);
+        }
+
+        .pricing-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #3B82F6, #8B5CF6);
+            color: #fff;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 4px 14px;
+            border-radius: 20px;
+            margin-bottom: 1rem;
+            width: fit-content;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .pricing-tier {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .pricing-price {
+            font-size: 2.8rem;
+            font-weight: 800;
+            margin-bottom: 0.25rem;
+            line-height: 1.1;
+        }
+
+        .pricing-price span {
+            font-size: 1rem;
+            font-weight: 400;
+            opacity: 0.6;
+        }
+
+        .pricing-desc {
+            opacity: 0.7;
+            font-size: 0.95rem;
+            margin-bottom: 1.5rem;
+            line-height: 1.5;
+        }
+
+        .pricing-features {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 2rem 0;
+            flex: 1;
+        }
+
+        .pricing-features li {
+            padding: 0.5rem 0;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.6rem;
+            line-height: 1.4;
+        }
+
+        .pricing-features li::before {
+            content: '✓';
+            color: #3B82F6;
+            font-weight: 700;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+
+        .pricing-cta {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 14px 28px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 1rem;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            width: 100%;
+            text-align: center;
+        }
+
+        .pricing-cta.primary {
+            background: linear-gradient(135deg, #3B82F6, #8B5CF6);
+            color: #fff;
+        }
+
+        .pricing-cta.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.35);
+        }
+
+        .pricing-cta.outline {
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: var(--text-color);
+            background: transparent;
+        }
+
+        [data-theme="light"] .pricing-cta.outline {
+            border-color: rgba(0, 0, 0, 0.2);
+        }
+
+        .pricing-cta.outline:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(59, 130, 246, 0.5);
+        }
+
+        [data-theme="light"] .pricing-cta.outline:hover {
+            background: rgba(0, 0, 0, 0.03);
+        }
+
+        /* ── Tables ── */
+        .table-responsive {
+            overflow-x: auto;
+            width: 100%;
+        }
+
+        table.planes-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 2rem;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        [data-theme="light"] table.planes-table {
+            background: rgba(0, 0, 0, 0.02);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        table.planes-table th, table.planes-table td {
+            padding: 1.25rem 1.5rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        [data-theme="light"] table.planes-table th,
+        [data-theme="light"] table.planes-table td {
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        }
+
+        table.planes-table th {
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--text-color);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        [data-theme="light"] table.planes-table th {
+            background: rgba(0, 0, 0, 0.03);
+        }
+
+        table.planes-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        table.planes-table tr:hover td {
+            background: rgba(59, 130, 246, 0.03);
+        }
+
+        /* ── Info Card ── */
+        .info-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-top: 2.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        [data-theme="light"] .info-card {
+            background: rgba(0, 0, 0, 0.02);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .info-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 4px;
+            background: linear-gradient(to right, #3B82F6, #8B5CF6);
+        }
+
+        /* ── Section sub-headings ── */
+        .sub-heading {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            margin-top: 3rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .sub-heading .num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #3B82F6, #8B5CF6);
+            color: #fff;
+            font-size: 0.9rem;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        @media (max-width: 768px) {
+            .pricing-grid {
+                grid-template-columns: 1fr;
+            }
+            .pricing-price {
+                font-size: 2.2rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Mouse Glow Effect -->
+    <div id="mouse-glow" class="mouse-glow"></div>
+
+    <!-- Background Grid -->
+    <div class="bg-grid"></div>
+
+    <!-- ═══════════════════════════════ NAVBAR ═══════════════════════════════ -->
+    <nav id="navbar" class="navbar glass">
+        <div class="nav-inner">
+            <a href="index.html#inicio" class="logo-link">
+                <img src="imagenes/LOGO VIVO.png?v=2" alt="GENIA" class="filtered-logo">
+            </a>
+            <div class="nav-links">
+                <a href="index.html#inicio" class="nav-link">Inicio</a>
+                <a href="index.html#problema" class="nav-link">El Problema</a>
+                <a href="index.html#servicios" class="nav-link">Soluciones</a>
+                <a href="index.html#nosotros" class="nav-link">Nosotros</a>
+                <a href="index.html#faq" class="nav-link">FAQ</a>
+                <a href="planes.html" class="nav-link">Planes</a>
+
+                <button id="theme-toggle" class="theme-toggle" aria-label="Cambiar tema">
+                    <svg class="sun-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                    <svg class="moon-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
+                </button>
+                <a href="/login" class="btn-nav">INGRESA</a>
+            </div>
+            <button id="menu-btn" class="menu-btn" aria-label="Abrir menú">
+                <span></span><span></span><span></span>
+            </button>
+        </div>
+        <div id="mobile-menu" class="mobile-menu">
+            <a href="index.html#inicio" class="mobile-link">Inicio</a>
+            <a href="index.html#problema" class="mobile-link">El Problema</a>
+            <a href="index.html#servicios" class="mobile-link">Soluciones</a>
+            <a href="index.html#nosotros" class="mobile-link">Nosotros</a>
+            <a href="index.html#faq" class="mobile-link">FAQ</a>
+            <a href="planes.html" class="mobile-link">Planes</a>
+
+            <div style="display: flex; justify-content: center; margin: 20px 0;">
+                <button class="theme-toggle" aria-label="Cambiar tema">
+                    <svg class="sun-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                    <svg class="moon-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
+                </button>
+            </div>
+            <a href="/login" class="mobile-link cta">INGRESA &rarr;</a>
+        </div>
+    </nav>
+
+    <!-- ═══════════════════════════════ HERO ═══════════════════════════════ -->
+    <section class="hero-planes">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+
+        <div class="hero-inner">
+            <div class="hero-badge reveal" data-delay="0">
+                <span class="badge-dot"></span>
+                <span>PLANES & PRECIOS</span>
+            </div>
+            <h1 class="hero-title reveal" data-delay="100">
+                El plan perfecto para <span class="gradient-text">tu negocio</span>
+            </h1>
+            <p class="hero-sub reveal" data-delay="200">
+                Elige el plan que se adapte a tus necesidades. Sin contratos a largo plazo, sin sorpresas y con soporte humano incluido.
+            </p>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════ PRICING CARDS ═══════════════════════════════ -->
+    <section class="section">
+        <div class="container">
+            <div class="pricing-grid">
+
+                <!-- Plan Starter -->
+                <div class="pricing-card reveal" data-delay="0">
+                    <div class="pricing-tier">Starter</div>
+                    <div class="pricing-price">$250.000 <span>COP/mes</span></div>
+                    <p class="pricing-desc">Ideal para negocios que quieren empezar a automatizar su atención por chat.</p>
+                    <ul class="pricing-features">
+                        <li>1 Agente de Chat IA</li>
+                        <li>Integración con WhatsApp o Instagram</li>
+                        <li>Base de conocimiento (1M caracteres)</li>
+                        <li>Respuestas 24/7 con tono natural</li>
+                        <li>Panel de control con métricas</li>
+                        <li>Soporte por correo</li>
+                    </ul>
+                    <a href="https://wa.me/573046242299?text=Hola%20GENIA,%20me%20interesa%20el%20plan%20Starter" class="pricing-cta outline" target="_blank">
+                        Comenzar →
+                    </a>
+                </div>
+
+                <!-- Plan Profesional (Featured) -->
+                <div class="pricing-card featured reveal" data-delay="100">
+                    <div class="pricing-badge">Más Popular</div>
+                    <div class="pricing-tier">Profesional</div>
+                    <div class="pricing-price">$700.000 <span>COP/mes</span></div>
+                    <p class="pricing-desc">Para negocios en crecimiento que necesitan atención multicanal y automatización avanzada.</p>
+                    <ul class="pricing-features">
+                        <li>3 Agentes IA (Chat y/o Voz)</li>
+                        <li>WhatsApp + Instagram + Messenger</li>
+                        <li>Base de conocimiento expandida</li>
+                        <li>Agendamiento autónomo de citas</li>
+                        <li>Calificación automática de leads</li>
+                        <li>Integración con CRM</li>
+                        <li>Human Handoff (traspaso a humano)</li>
+                        <li>Soporte prioritario</li>
+                    </ul>
+                    <a href="https://wa.me/573046242299?text=Hola%20GENIA,%20me%20interesa%20el%20plan%20Profesional" class="pricing-cta primary" target="_blank">
+                        Elegir Profesional →
+                    </a>
+                </div>
+
+                <!-- Plan Empresarial -->
+                <div class="pricing-card reveal" data-delay="200">
+                    <div class="pricing-tier">Empresarial</div>
+                    <div class="pricing-price">A medida</div>
+                    <p class="pricing-desc">Soluciones personalizadas con agentes ilimitados, integraciones custom y soporte dedicado.</p>
+                    <ul class="pricing-features">
+                        <li>Agentes IA ilimitados (Chat + Voz)</li>
+                        <li>Todos los canales simultáneos</li>
+                        <li>Integraciones custom (CRM, ERP, etc.)</li>
+                        <li>Automatizaciones con Make / Zapier / n8n</li>
+                        <li>Llamadas de voz con IA</li>
+                        <li>Analytics avanzados</li>
+                        <li>Onboarding personalizado</li>
+                        <li>Soporte dedicado con gerente de cuenta</li>
+                    </ul>
+                    <a href="https://wa.me/573046242299?text=Hola%20GENIA,%20necesito%20una%20solución%20empresarial%20a%20la%20medida" class="pricing-cta outline" target="_blank">
+                        Hablar con un Experto →
+                    </a>
+                </div>
+
+            </div>
+
+
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════ SETUP & IMPLEMENTACIÓN ═══════════════════════════════ -->
+    <section class="section section-alt">
+        <div class="container">
+            <div class="section-header reveal">
+                <p class="section-label">Implementación</p>
+                <h2 class="section-title">Servicios de <span class="gradient-text">configuración</span></h2>
+                <p class="section-desc">Tu agente IA necesita ser entrenado con la información de tu negocio. Nosotros nos encargamos de todo.</p>
+            </div>
+
+            <div class="table-responsive reveal" data-delay="100">
+                <table class="planes-table">
+                    <thead>
+                        <tr>
+                            <th>Servicio</th>
+                            <th>Inversión</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Configuración básica de chatbot (1 canal, información estándar)</td>
+                            <td><strong>$1.500.000 – $4.000.000 COP</strong></td>
+                        </tr>
+                        <tr>
+                            <td>Integración con CRM u otras plataformas (GoHighLevel, Zapier, etc.)</td>
+                            <td><strong>$4.000.000 – $15.000.000 COP</strong></td>
+                        </tr>
+                        <tr>
+                            <td>Setup empresarial con flujos custom e integraciones avanzadas</td>
+                            <td><strong>$15.000.000 COP en adelante</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════ ADD-ONS ═══════════════════════════════ -->
+    <section class="section">
+        <div class="container">
+            <div class="section-header reveal">
+                <p class="section-label">Complementos</p>
+                <h2 class="section-title">Recursos <span class="gradient-text">adicionales</span></h2>
+                <p class="section-desc">Escala tu solución agregando lo que necesites a tu plan actual.</p>
+            </div>
+
+            <div class="table-responsive reveal" data-delay="100">
+                <table class="planes-table">
+                    <thead>
+                        <tr>
+                            <th>Recurso adicional</th>
+                            <th>Precio</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Almacenamiento extra de conocimiento (1M caracteres)</td>
+                            <td><strong>$60.000 COP/mes</strong></td>
+                        </tr>
+                        <tr>
+                            <td>Llamadas simultáneas adicionales</td>
+                            <td><strong>$250.000 COP/mes</strong></td>
+                        </tr>
+                        <tr>
+                            <td>Mensajes de chat adicionales (por 3000 msg)</td>
+                            <td><strong>$40.000 COP</strong></td>
+                        </tr>
+                        <tr>
+                            <td>Minutos de voz adicionales</td>
+                            <td><strong>$900 COP/minuto</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════ CTA ═══════════════════════════════ -->
+    <section class="section section-alt">
+        <div class="container">
+            <div class="contact-box reveal">
+                <div class="contact-glow"></div>
+                <div class="contact-top-bar"></div>
+
+                <p class="section-label" style="text-align:center">¿Listo para empezar?</p>
+                <h2 class="contact-title">Automatiza tu atención.<br><span class="gradient-text">Deja de perder clientes hoy.</span></h2>
+                <p class="contact-desc">Agenda una llamada con nuestro equipo y te ayudamos a encontrar el plan ideal para tu negocio.</p>
+
+                <div class="contact-btns">
+                    <a href="https://wa.me/573046242299?text=Hola%20GENIA,%20quiero%20conocer%20el%20plan%20ideal%20para%20mi%20negocio"
+                        class="btn-primary btn-lg" target="_blank" rel="noopener">
+                        <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.867-2.03-.967-.272-.099-.47-.149-.669.198-.198.347-.768.967-.941 1.165-.173.198-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51z" />
+                        </svg>
+                        Hablar con un Experto
+                    </a>
+                    <a href="infopreonboarding.html" class="btn-ghost btn-lg">
+                        Pre Onboarding
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════ FOOTER ═══════════════════════════════ -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <div class="logo-link" style="pointer-events:none">
+                        <img src="imagenes/LOGO VIVO.png?v=2" alt="GENIA" class="filtered-logo">
+                    </div>
+                    <p>Tecnología inteligente que trabaja para ti.<br>Colombia · genia.com.co</p>
+                    <div class="footer-social">
+                        <a href="#" aria-label="Instagram">
+                            <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z" />
+                            </svg>
+                        </a>
+                        <a href="#" aria-label="LinkedIn">
+                            <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+
+                <div class="footer-links">
+                    <h4>Navegación</h4>
+                    <a href="index.html#inicio">Inicio</a>
+                    <a href="index.html#problema">El Problema</a>
+                    <a href="index.html#servicios">Soluciones</a>
+                    <a href="index.html#nosotros">Quienes Somos</a>
+                    <a href="planes.html">Planes</a>
+                </div>
+
+                <div class="footer-links">
+                    <h4>Legales</h4>
+                    <a href="privacidad.html">Política de Privacidad</a>
+                    <a href="terminos.html">Términos y Condiciones</a>
+                </div>
+
+                <div class="footer-links">
+                    <h4>Contacto</h4>
+                    <a href="mailto:info@genia.com.co">info@genia.com.co</a>
+                    <a href="https://wa.me/573046242299" target="_blank">WhatsApp Directo</a>
+                    <a href="infopreonboarding.html">Pre Onboarding</a>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>© 2026 GENIA – Tecnología inteligente que trabaja para ti.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- WhatsApp Floating Button -->
+    <a href="https://wa.me/573046242299" class="whatsapp-float" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 32 32" fill="currentColor">
+            <path d="M16 2.001c-7.72 0-14 6.28-14 14.001 0 2.457.635 4.843 1.848 6.945L2 30l7.153-1.874c2.046 1.127 4.36 1.761 6.697 1.761 7.72 0 14-6.28 14-14.001S23.72 2.001 16 2.001zm0 25.617c-2.091 0-4.142-.56-5.942-1.625l-.426-.253-4.417 1.157 1.176-4.305-.278-.442A11.593 11.593 0 014.39 16.002C4.39 9.61 9.6 4.402 16 4.402c3.1 0 6.012 1.208 8.204 3.4 2.193 2.193 3.402 5.105 3.402 8.2 0 6.391-5.21 11.601-11.606 11.616zm6.362-8.683c-.348-.175-2.062-1.018-2.382-1.134-.32-.116-.553-.175-.785.174-.233.349-.901 1.133-1.104 1.365-.204.233-.408.262-.756.087-1.424-.712-2.584-1.39-3.664-3.232-.276-.473.272-.437.95-1.785.116-.233.058-.437-.029-.611-.087-.175-.785-1.892-1.076-2.592-.284-.68-.57-.582-.785-.582-.204 0-.437-.015-.67-.015-.233 0-.611.087-.931.437-.32.349-1.222 1.193-1.222 2.91 0 1.717 1.251 3.376 1.425 3.608.175.233 2.457 4.015 6.096 5.4 2.378.905 3.29 1.042 4.39 8.87.581-.132 1.788-.727 2.035-1.438.247-.712.247-1.32.175-1.438-.073-.116-.306-.189-.655-.363z"/>
+        </svg>
+    </a>
+
+    <script src="main.js"></script>
+</body>
+
+</html>

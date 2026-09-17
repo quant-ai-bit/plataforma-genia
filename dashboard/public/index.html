@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="es" class="scroll-smooth">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GENIA | Tecnología inteligente que trabaja para ti</title>
+    <meta name="description"
+        content="GENIA: Automatizamos tu empresa con Agentes IA, flujos personalizados y soluciones con LLM. Deja de perder mensajes y empieza a responder siempre.">
+    <meta property="og:title" content="GENIA | Agencia de Inteligencia Artificial">
+    <meta property="og:description"
+        content="Transformamos negocios con Agentes de Inteligencia Artificial. Automatización real, resultados tangibles.">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="imagenes/favicon_circular.png">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+    <!-- Mouse Glow Effect -->
+    <div id="mouse-glow" class="mouse-glow"></div>
+
+    <!-- Background Grid -->
+    <div class="bg-grid"></div>
+
+    <!-- ═══════════════════════════════ NAVBAR ═══════════════════════════════ -->
+    <nav id="navbar" class="navbar glass">
+        <div class="nav-inner">
+            <!-- Logo -->
+            <a href="#inicio" class="logo-link">
+                <img src="imagenes/LOGO VIVO.png?v=2" alt="GENIA" class="filtered-logo">
+            </a>
+
+            <!-- Desktop Nav -->
+            <div class="nav-links">
+                <a href="#inicio" class="nav-link">Inicio</a>
+                <a href="#problema" class="nav-link">El Problema</a>
+                <a href="#servicios" class="nav-link">Soluciones</a>
+                <a href="#nosotros" class="nav-link">Nosotros</a>
+                <a href="#faq" class="nav-link">FAQ</a>
+                <a href="planes.html" class="nav-link">Planes</a>
+
+                <button id="theme-toggle" class="theme-toggle" aria-label="Cambiar tema">
+                    <svg class="sun-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                    <svg class="moon-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
+                </button>
+                <a href="/login" class="btn-nav">INGRESA</a>
+            </div>
+
+            <!-- Mobile Menu Button -->
+            <button id="menu-btn" class="menu-btn" aria-label="Abrir menú">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+        </div>
+
+        <!-- Mobile Menu -->
+        <div id="mobile-menu" class="mobile-menu">
+            <a href="#inicio" class="mobile-link">Inicio</a>
+            <a href="#problema" class="mobile-link">El Problema</a>
+            <a href="#servicios" class="mobile-link">Soluciones</a>
+            <a href="#nosotros" class="mobile-link">Nosotros</a>
+            <a href="#faq" class="mobile-link">FAQ</a>
+            <a href="planes.html" class="mobile-link">Planes</a>
+
+            <div style="display: flex; justify-content: center; margin: 20px 0;">
+                <button class="theme-toggle" aria-label="Cambiar tema">
+                    <svg class="sun-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                    <svg class="moon-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
+                </button>
+            </div>
+            <a href="/login" class="mobile-link cta">INGRESA &rarr;</a>
+        </div>
+
+        <!-- Scroll Progress Bar -->
+        <div class="scroll-progress-container">
+            <div id="scroll-progress" class="scroll-progress-bar"></div>
+        </div>
+    </nav>
+
+    <!-- ═══════════════════════════════ HERO ═══════════════════════════════ -->
+    <section id="inicio" class="hero">
+        <!-- Ambient orbs -->
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+
+        <div class="hero-inner">
+            <!-- Badge -->
+            <div class="hero-badge reveal" data-delay="0">
+                <span class="badge-dot"></span>
+                <span>IA EMPRESARIAL · COLOMBIA</span>
+            </div>
+
+            <!-- Headline -->
+            <h1 class="hero-title reveal" data-delay="100">
+                Tecnología inteligente <br>
+                <span class="gradient-text">que trabaja para ti.</span>
+            </h1>
+
+            <!-- Subtitle -->
+            <p class="hero-sub reveal" data-delay="200">
+                Tu cliente no espera. Si no le respondes en 5 minutos, ya le está escribiendo a otro negocio. En GENIA
+                desarrollamos agentes 24/7 que responden al instante con una conversación natural y humana, convirtiendo
+                mensajes en ventas mientras tú duermes.
+            </p>
+
+            <!-- CTAs -->
+            <div class="hero-ctas reveal" data-delay="300">
+                <a href="#contacto" class="btn-primary">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                        <path
+                            d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.867-2.03-.967-.272-.099-.47-.149-.669.198-.198.347-.768.967-.941 1.165-.173.198-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51z" />
+                    </svg>
+                    Deja de perder clientes
+                </a>
+                <a href="#servicios" class="btn-ghost">
+                    Conocer cómo funciona
+                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                </a>
+            </div>
+
+            <!-- Social proof pill -->
+            <div class="social-proof reveal" data-delay="400">
+                <div class="sp-avatars">
+                    <div class="sp-avatar" style="background: linear-gradient(135deg,#3B82F6,#8B5CF6)">C</div>
+                    <div class="sp-avatar" style="background: linear-gradient(135deg,#8B5CF6,#06b6d4)">M</div>
+                    <div class="sp-avatar" style="background: linear-gradient(135deg,#06b6d4,#3B82F6)">R</div>
+                </div>
+                <div class="sp-text">
+                    <span class="sp-stars">★★★★★</span>
+                    <span>Empresas que ya no pierden ventas</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scroll Indicator -->
+        <div class="scroll-indicator">
+            <div class="scroll-mouse">
+                <div class="scroll-wheel"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════ MARQUEE STATS ═══════════════════════════════ -->
+    <div class="marquee-wrapper">
+        <div class="marquee-track">
+            <div class="marquee-item"><span class="marquee-num">Respuestas</span> Instántaneas</div>
+            <div class="marquee-sep">◆</div>
+            <div class="marquee-item"><span class="marquee-num">24/7</span> Agentes activos sin descanso</div>
+            <div class="marquee-sep">◆</div>
+            <div class="marquee-item"><span class="marquee-num">100%</span> Natural, como un humano</div>
+            <div class="marquee-sep">◆</div>
+            <div class="marquee-item"><span class="marquee-num">Integración</span> WhatsApp e IG</div>
+            <div class="marquee-sep">◆</div>
+            <div class="marquee-item"><span class="marquee-num">Agendas</span> llenas en automático</div>
+            <div class="marquee-sep">◆</div>
+            <!-- Loop -->
+            <div class="marquee-item"><span class="marquee-num">Respuestas</span> Instántaneas</div>
+            <div class="marquee-sep">◆</div>
+            <div class="marquee-item"><span class="marquee-num">24/7</span> Agentes activos sin descanso</div>
+            <div class="marquee-sep">◆</div>
+            <div class="marquee-item"><span class="marquee-num">100%</span> Natural, como un humano</div>
+            <div class="marquee-sep">◆</div>
+            <div class="marquee-item"><span class="marquee-num">Integración</span> WhatsApp e IG</div>
+            <div class="marquee-sep">◆</div>
+            <div class="marquee-item"><span class="marquee-num">Agendas</span> llenas en automático</div>
+            <div class="marquee-sep">◆</div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════ EL PROBLEMA ═══════════════════════════════ -->
+    <section id="problema" class="section section-alt">
+        <div class="container">
+            <div class="section-header reveal">
+                <p class="section-label">¿Te Suena Familiar?</p>
+                <h2 class="section-title">Cada mensaje sin responder es <span class="gradient-text">dinero que se va a
+                        tu competencia</span></h2>
+                <p class="section-desc">Esto es lo que te está costando dinero todos los días en tu negocio.</p>
+            </div>
+
+            <div class="process-grid">
+                <div class="process-card reveal" style="border-left: 3px solid #ef4444" data-delay="0">
+                    <div class="process-num" style="color:#ef4444">01</div>
+                    <h3>"Te escribí hace horas..."</h3>
+                    <p>Mientras no contestas porque estás ocupado, el cliente no te espera, tu competencia ya cerró la
+                        venta y el cliente se fue frustrado a otro lado.</p>
+                </div>
+
+                <div class="process-card reveal" style="border-left: 3px solid #ef4444" data-delay="150">
+                    <div class="process-num" style="color:#ef4444">02</div>
+                    <h3>Mensajes a las 11:00 PM</h3>
+                    <p>Tu cliente ideal te contacta por fuera de tu horario laboral, pero como nadie responde, mañana ya
+                        contrató con otra empresa. Pierdes ventas mientras duermes.</p>
+                </div>
+
+                <div class="process-card reveal" style="border-left: 3px solid #ef4444" data-delay="300">
+                    <div class="process-num" style="color:#ef4444">03</div>
+                    <h3>Equipo saturado de lo mismo</h3>
+                    <p>"¿Cuánto vale?", "¿A qué hora abren?", "¿Dónde están ubicados?". Tu equipo perdiendo horas
+                        valiosas respondiendo lo mismo 50 veces al día.</p>
+                </div>
+
+                <div class="process-card reveal" style="border-left: 3px solid #ef4444" data-delay="450">
+                    <div class="process-num" style="color:#ef4444">04</div>
+                    <h3>Mucha pauta, poco cierre</h3>
+                    <p>Gastas buena plata en anuncios de Meta (Facebook/Instagram), llegan los leads, pero si la
+                        respuesta es demorada, esa misma inversión se va a la basura.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════ COMPARATIVA ═══════════════════════════════ -->
+    <section id="comparativa" class="section">
+        <div class="container">
+            <div class="section-header reveal">
+                <p class="section-label">La Diferencia</p>
+                <h2 class="section-title">El verdadero impacto de un <span class="gradient-text">Agente IA</span></h2>
+            </div>
+            <div class="table-container reveal">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 25%;">Característica</th>
+                            <th style="width: 30%;">Proceso Tradicional</th>
+                            <th style="width: 45%;">Agente GENIA.COM.CO</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Tiempo de Respuesta</td>
+                            <td>30 minutos a horas</td>
+                            <td class="highlight-cell blue-text">En pocos segundos como un humano (&lt;5 seg)</td>
+                        </tr>
+                        <tr>
+                            <td>Disponibilidad</td>
+                            <td>Horario Laboral</td>
+                            <td class="highlight-cell blue-text">24/7 sin interrupciones</td>
+                        </tr>
+                        <tr>
+                            <td>Escalabilidad</td>
+                            <td>Requiere contratar más personal</td>
+                            <td class="highlight-cell blue-text">Ilimitada al instante</td>
+                        </tr>
+                        <tr>
+                            <td>Costo Operativo</td>
+                            <td class="red-text">Alto (Sueldos y Prestaciones)</td>
+                            <td class="highlight-cell green-text">Reducción del 70%</td>
+                        </tr>
+                        <tr>
+                            <td>Actitud de Servicio</td>
+                            <td>Depende de cómo se encuentre la persona en el momento</td>
+                            <td class="highlight-cell blue-text">Actitud de servicio 100% garantizada</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════ SERVICES ═══════════════════════════════ -->
+    <section id="servicios" class="section">
+        <div class="container">
+            <div class="section-header reveal">
+                <p class="section-label">Lo que logras con GENIA</p>
+                <h2 class="section-title">Soluciones que se <span class="gradient-text">sienten humanas</span></h2>
+                <p class="section-desc">Olvídate del típico bot robótico del "Presiona 1 para ventas". Implementamos
+                    Inteligencia pura.</p>
+            </div>
+
+            <div class="services-grid">
+                <!-- Service 1 -->
+                <div class="service-card highlight reveal" data-delay="0">
+                    <div class="service-badge">WhatsApp + IG</div>
+                    <div class="service-icon" style="--c1: #3B82F6; --c2: #06b6d4">
+                        <svg width="26" height="26" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                            stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        </svg>
+                    </div>
+                    <h3>Atiendes en Todos Lados a la Vez</h3>
+                    <p>Ya no dejas mensajes en visto en WhatsApp, Facebook o Instagram. Nuestro Agente atiende los 3
+                        canales en simultáneo de forma inmediata y 24/7.</p>
+                    <div class="service-tags">
+                        <span>WhatsApp</span><span>Instagram</span><span>Messenger</span>
+                    </div>
+                </div>
+
+                <!-- Service 2 -->
+                <div class="service-card reveal" data-delay="100">
+                    <div class="service-icon" style="--c1: #8B5CF6; --c2: #ec4899">
+                        <svg width="26" height="26" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                            stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+                    <h3>Agendamiento Autónomo</h3>
+                    <p>¿Tus clientes olvidan las citas? El agente envía recordatorios, la gente separa espacio sola, y
+                        tú literalmente encuentras la agenda llena sin perder tiempo confirmando.</p>
+                    <div class="service-tags">
+                        <span>Citas Automáticas</span><span>Recordatorios</span>
+                    </div>
+                </div>
+
+                <!-- Service 3 -->
+                <div class="service-card reveal" data-delay="200">
+                    <div class="service-icon" style="--c1: #f59e0b; --c2: #ef4444">
+                        <svg width="26" height="26" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                            stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                        </svg>
+                    </div>
+                    <h3>Sabes Quién Vale La Pena</h3>
+                    <p>Filtramos mirones y curiosos. La IA los califica mientras conversan, y te pasa el contacto solo
+                        cuando hay un interés fuerte de compra o consulta seria.</p>
+                    <div class="service-tags">
+                        <span>Lead Scoring</span><span>Cualificación</span>
+                    </div>
+                </div>
+
+                <!-- Service 4 -->
+                <div class="service-card reveal" data-delay="0">
+                    <div class="service-icon" style="--c1: #06b6d4; --c2: #3B82F6">
+                        <svg width="26" height="26" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                            stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                        </svg>
+                    </div>
+                    <h3>IA Generativa (Tono Propio)</h3>
+                    <p>Entrenamos al asistente para hablar con el lenguaje de tu negocio, con estilo colombiano o
+                        corporativo, respondiendo como una persona, bromeando si es el caso y mostrando total empatía.
+                    </p>
+                    <div class="service-tags">
+                        <span>LLM Personalizado</span><span>RAG</span>
+                    </div>
+                </div>
+
+                <!-- Service 5 -->
+                <div class="service-card reveal" data-delay="100">
+                    <div class="service-icon" style="--c1: #10b981; --c2: #06b6d4">
+                        <svg width="26" height="26" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                            stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                    </div>
+                    <h3>Tu Equipo En Lo Que Importa</h3>
+                    <p>Despídete del copy-paste eterno. Tu equipo de ventas ya no contesta banalidades; el agente
+                        resuelve toda la gestión base, dejando tiempo libre a tu equipo comercial para sellar el
+                        negocio.</p>
+                    <div class="service-tags">
+                        <span>Productividad Real</span>
+                    </div>
+                </div>
+
+                <!-- Service 6 -->
+                <div class="service-card reveal" data-delay="200">
+                    <div class="service-icon" style="--c1: #8B5CF6; --c2: #3B82F6">
+                        <svg width="26" height="26" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                            stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                        </svg>
+                    </div>
+                    <h3>Automatización Estructural</h3>
+                    <p>No son solo chats. Usamos Make, Zapier y n8n para conectar los agentes con tus CRMs, hojas de
+                        cálculo o software contable. Tus apps hablando solas.</p>
+                    <div class="service-tags">
+                        <span>Make</span><span>Zapier</span><span>Integraciones</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════ ABOUT ═══════════════════════════════ -->
+    <section id="nosotros" class="section section-alt">
+        <div class="container">
+            <div class="about-grid">
+                <!-- Visual side -->
+                <div class="about-visual reveal" data-delay="0">
+                    <div class="about-glow-border">
+                        <div class="about-card-inner">
+                            <div class="about-orb"></div>
+                            <div class="about-text-center">
+                                <div class="logo-icon large">
+                                    <img src="imagenes/LOGO VIVO.png?v=2" alt="GENIA" class="filtered-logo logo-large">
+                                </div>
+                                <h3 style="margin-top: 10px; font-weight: 500; letter-spacing: 1px; opacity: 0.9;">
+                                    Tecnología Inteligente</h3>
+                            </div>
+                            <!-- Floating badges -->
+                            <div class="floating-badge fb-1">🇨🇴 100% Colombiano</div>
+                            <div class="floating-badge fb-2">⚡ Automatizando...</div>
+                            <div class="floating-badge fb-3">📈 +300% leads</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Content side -->
+                <div class="about-content reveal" data-delay="100">
+                    <p class="section-label">Acerca de GENIA</p>
+                    <h2 class="section-title" style="text-align:left">Orgullo y <span
+                            class="gradient-text">Precisión.</span></h2>
+                    <p class="about-text">Entendemos que el crecimiento de una empresa en Colombia exige innovación
+                        pura. Nacimos para que los negocios locales no se queden atrás, armados de Inteligencia
+                        Artificial que trabaja por ellos, 24 horas al día, 7 días a la semana.</p>
+                    <p class="about-text">Nuestra plataforma no es solo un asistente; es un puente estratégico para tu
+                        escalamiento, fusionando las herramientas IA más robustas del mercado global, con total enfoque
+                        en resultados medibles y concretos.</p>
+
+                    <div class="reasons-grid mt-4">
+                        <div class="reason-item">
+                            <div class="reason-icon">🇨🇴</div>
+                            <div>
+                                <strong>Operación Colombiana</strong>
+                                <p>Tono y entendimiento local</p>
+                            </div>
+                        </div>
+                        <div class="reason-item">
+                            <div class="reason-icon">🔒</div>
+                            <div>
+                                <strong>Seguridad Vital</strong>
+                                <p>Datos de tus clientes protegidos</p>
+                            </div>
+                        </div>
+                        <div class="reason-item">
+                            <div class="reason-icon">⚡</div>
+                            <div>
+                                <strong>Sin Vueltas</strong>
+                                <p>Lista operativa en tiempo récord</p>
+                            </div>
+                        </div>
+                        <div class="reason-item">
+                            <div class="reason-icon">📈</div>
+                            <div>
+                                <strong>Socio en el Crecimiento</strong>
+                                <p>Evolucionamos la IA contigo</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════ FAQ ═══════════════════════════════ -->
+    <section id="faq" class="section">
+        <div class="container">
+            <div class="section-header reveal">
+                <p class="section-label">Preguntas Frecuentes</p>
+                <h2 class="section-title">Claridad de <span class="gradient-text">principio a fin</span></h2>
+            </div>
+
+            <div class="faq-list">
+                <div class="faq-item reveal" data-delay="0">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>¿De verdad no parece un bot robótico?</span>
+                        <span class="faq-icon">+</span>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Totalmente. Entrenamos modelos de lenguaje para que dominen el contexto del servicio,
+                            manejando saludos súper naturales, respondiendo a objeciones y entendiendo si el prospecto
+                            escribe con modismos. Tus clientes sentirán fluidez humana.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item reveal" data-delay="50">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>¿Cuánto tiempo tarda implementar un agente de GENIA?</span>
+                        <span class="faq-icon">+</span>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Los sistemas enfocados como asistentes de WhatsApp y agendamientos suelen quedar configurados
+                            entre 2 y 5 días. Depende de la complejidad de la información (horarios, base de datos) que
+                            haya que integrar.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item reveal" data-delay="100">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>Tengo una Clínica (o E-commerce, Salón)... ¿Eso aplica para mí?</span>
+                        <span class="faq-icon">+</span>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Si recibes más de 10-15 mensajes diarios con preguntas similares o reservas, te urge. Las
+                            empresas pequeñas y medianas que necesitan escalar son quienes más de benefician de no tener
+                            "tiempos muertos" de espera que le cuestan dinero en ventas.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item reveal" data-delay="150">
+                    <button class="faq-question" aria-expanded="false">
+                        <span>¿Qué pasa si el robot se estrella o la duda es muy compleja?</span>
+                        <span class="faq-icon">+</span>
+                    </button>
+                    <div class="faq-answer">
+                        <p>El Agente tiene un filtro inteligente. En el instante que detecta algo crítico o que se sale
+                            estrictamente de su alcance, le transfiere el control a tu equipo humano por WhatsApp o el
+                            canal que hayamos pactado. Cero riesgos.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════ CONTACT / CTA ═══════════════════════════════ -->
+    <section id="contacto" class="section section-alt">
+        <div class="container">
+            <div class="contact-box reveal">
+                <div class="contact-glow"></div>
+                <div class="contact-top-bar"></div>
+
+                <p class="section-label" style="text-align:center">La Decisión Es Tuya</p>
+                <h2 class="contact-title">Deja de Perder Clientes.<br><span class="gradient-text">Empieza a Responder
+                        SIEMPRE.</span></h2>
+                <p class="contact-desc">No le regales más plata a tu competencia. Solicita una prueba y agenda para
+                    conocer el potencial de la tecnología trabajando a tu favor.</p>
+
+                <div class="contact-btns">
+                    <a href="https://wa.me/573046242299?text=Hola%20GENIA,%20quiero%20dejar%20de%20perder%20clientes%20con%20IA"
+                        class="btn-primary btn-lg" target="_blank" rel="noopener">
+                        <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+                            <path
+                                d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.867-2.03-.967-.272-.099-.47-.149-.669.198-.198.347-.768.967-.941 1.165-.173.198-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51z" />
+                        </svg>
+                        Hablar con un Experto
+                    </a>
+                    <a href="infopreonboarding.html" class="btn-ghost btn-lg">
+                        Pre Onboarding
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════ FOOTER ═══════════════════════════════ -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <div class="logo-link" style="pointer-events:none">
+                        <img src="imagenes/LOGO VIVO.png?v=2" alt="GENIA" class="filtered-logo">
+                    </div>
+                    <p>Tecnología inteligente que trabaja para ti.<br>Colombia · genia.com.co</p>
+                    <div class="footer-social">
+                        <a href="#" aria-label="Instagram">
+                            <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24">
+                                <path
+                                    d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z" />
+                            </svg>
+                        </a>
+                        <a href="#" aria-label="LinkedIn">
+                            <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24">
+                                <path
+                                    d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+
+                <div class="footer-links">
+                    <h4>Navegación</h4>
+                    <a href="#inicio">Inicio</a>
+                    <a href="#problema">El Problema</a>
+                    <a href="#servicios">Soluciones</a>
+                    <a href="#nosotros">Quienes Somos</a>
+                    <a href="planes.html">Planes</a>
+                </div>
+
+                <div class="footer-links">
+                    <h4>Legales</h4>
+                    <a href="privacidad.html">Política de Privacidad</a>
+                    <a href="terminos.html">Términos y Condiciones</a>
+                </div>
+
+                <div class="footer-links">
+                    <h4>Contacto</h4>
+                    <a href="mailto:info@genia.com.co">info@genia.com.co</a>
+                    <a href="https://wa.me/573046242299" target="_blank">WhatsApp Directo</a>
+                    <a href="infopreonboarding.html">Pre Onboarding</a>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>© 2026 GENIA – Tecnología inteligente que trabaja para ti.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- WhatsApp Floating Button -->
+    <a href="https://wa.me/573046242299" class="whatsapp-float" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 32 32" fill="currentColor">
+            <path d="M16 2.001c-7.72 0-14 6.28-14 14.001 0 2.457.635 4.843 1.848 6.945L2 30l7.153-1.874c2.046 1.127 4.36 1.761 6.697 1.761 7.72 0 14-6.28 14-14.001S23.72 2.001 16 2.001zm0 25.617c-2.091 0-4.142-.56-5.942-1.625l-.426-.253-4.417 1.157 1.176-4.305-.278-.442A11.593 11.593 0 014.39 16.002C4.39 9.61 9.6 4.402 16 4.402c3.1 0 6.012 1.208 8.204 3.4 2.193 2.193 3.402 5.105 3.402 8.2 0 6.391-5.21 11.601-11.606 11.616zm6.362-8.683c-.348-.175-2.062-1.018-2.382-1.134-.32-.116-.553-.175-.785.174-.233.349-.901 1.133-1.104 1.365-.204.233-.408.262-.756.087-1.424-.712-2.584-1.39-3.664-3.232-.276-.473.272-.437.95-1.785.116-.233.058-.437-.029-.611-.087-.175-.785-1.892-1.076-2.592-.284-.68-.57-.582-.785-.582-.204 0-.437-.015-.67-.015-.233 0-.611.087-.931.437-.32.349-1.222 1.193-1.222 2.91 0 1.717 1.251 3.376 1.425 3.608.175.233 2.457 4.015 6.096 5.4 2.378.905 3.29 1.042 4.39 8.87.581-.132 1.788-.727 2.035-1.438.247-.712.247-1.32.175-1.438-.073-.116-.306-.189-.655-.363z"/>
+        </svg>
+    </a>
+
+    <script src="main.js"></script>
+</body>
+
+</html>
