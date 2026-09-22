@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useAppContext } from "../../../lib/AppContext";
+import { authenticatedFetch } from "../../../lib/api";
+import { checkIsAdmin } from "../../../lib/types";
 import {
   MessageSquare,
   Send,
@@ -20,7 +23,9 @@ import {
   Key,
   HelpCircle,
   Sparkles,
-  Sliders
+  Sliders,
+  Lock,
+  ArrowRight
 } from "lucide-react";
 
 interface IntegrationCardProps {
@@ -37,8 +42,14 @@ interface IntegrationCardProps {
 }
 
 export default function IntegrationsPage() {
-  const { agents } = useAppContext();
-  const activeAgent = agents.length > 0 ? agents[0] : null;
+  const { agents, userProfile, user } = useAppContext();
+  const isAdmin = checkIsAdmin(user?.email, userProfile?.role);
+
+  // Obtener estrictamente el agente asignado a este usuario (o el primero disponible si es admin)
+  const activeAgent =
+    (userProfile?.assigned_agent_id
+      ? agents.find((a) => a.id === userProfile.assigned_agent_id)
+      : null) || (agents.length > 0 ? agents[0] : null);
 
   const [activeTab, setActiveTab] = useState<"all" | "canales" | "productividad" | "negocio">("all");
   const [selectedIntegration, setSelectedIntegration] = useState<string | null>(null);
@@ -48,10 +59,34 @@ export default function IntegrationsPage() {
   const [telegramConnected, setTelegramConnected] = useState(false);
   const [copiedWidget, setCopiedWidget] = useState(false);
 
+  // Conteo real y privado del catálogo del agente
+  const [catalogCount, setCatalogCount] = useState<number>(0);
+  const [loadingCatalog, setLoadingCatalog] = useState<boolean>(false);
+
   // Estados de WASI
   const [wasiCompanyId, setWasiCompanyId] = useState(activeAgent?.wasi_company_id || "");
   const [wasiToken, setWasiToken] = useState("");
   const [wasiSaved, setWasiSaved] = useState(Boolean(activeAgent?.wasi_connected));
+
+  // Cargar el conteo real y privado de items del catálogo para el agente activo
+  useEffect(() => {
+    if (!activeAgent?.id) return;
+    const loadCatalogCount = async () => {
+      setLoadingCatalog(true);
+      try {
+        const res = await authenticatedFetch(`/api/agents/${activeAgent.id}/contacts`);
+        if (res.ok) {
+          const data = await res.json();
+          setCatalogCount(Array.isArray(data) ? data.length : 0);
+        }
+      } catch (err) {
+        console.warn("No se pudieron cargar los contactos del agente:", err);
+      } finally {
+        setLoadingCatalog(false);
+      }
+    };
+    loadCatalogCount();
+  }, [activeAgent?.id]);
 
   const handleCopyWidgetCode = () => {
     const code = `<script src="https://app.genia.com.co/widget.js" data-agent-id="${activeAgent?.id || "demo-agent"}" async></script>`;
@@ -60,7 +95,17 @@ export default function IntegrationsPage() {
     setTimeout(() => setCopiedWidget(false), 2500);
   };
 
-  const integrationsList: IntegrationCardProps[] = [
+  // --- Estados de Integración 100% Dinámicos por Agente ---
+  const isWaConnected = Boolean(activeAgent?.whatsapp_connected || (activeAgent as any)?.whatsapp_qr_connected);
+  const isCalConnected = Boolean(activeAgent?.google_calendar_connected);
+  const isWasiConnected = Boolean(activeAgent?.wasi_connected);
+  const isWidgetConnected = Boolean(activeAgent?.id);
+  // Email solo está activo si el agente tiene explícitamente configurado un correo de notificaciones o SMTP dedicado
+  const isEmailConnected = Boolean(
+    activeAgent?.notification_phone?.includes("@") || (activeAgent as any)?.email_connected
+  );
+
+  const allIntegrations: IntegrationCardProps[] = [
     {
       id: "whatsapp",
       title: "WhatsApp Business",
@@ -68,10 +113,55 @@ export default function IntegrationsPage() {
       description: "Atiende clientes 24/7 por WhatsApp oficial (Meta Cloud API) o conexión rápida mediante código QR.",
       icon: MessageSquare,
       color: "from-emerald-500/20 via-emerald-500/10 to-transparent text-emerald-400 border-emerald-500/30",
-      status: "connected",
-      statusText: "🟢 Conectado y Activo",
+      status: isWaConnected ? "connected" : "disconnected",
+      statusText: isWaConnected ? "🟢 Conectado y Activo" : "⚪ No vinculado",
       badge: "Canal Principal",
       onConfigure: () => setSelectedIntegration("whatsapp")
+    },
+    {
+      id: "webchat",
+      title: "Widget Web (Live Chat)",
+      category: "canales",
+      description: "Incrusta el asistente virtual de GENIA en tu sitio web con un simple script de 1 línea.",
+      icon: Globe,
+      color: "from-cyan-500/20 via-cyan-500/10 to-transparent text-cyan-400 border-cyan-500/30",
+      status: isWidgetConnected ? "connected" : "disconnected",
+      statusText: isWidgetConnected ? "🟢 Widget Disponible" : "⚪ Sin Agente",
+      onConfigure: () => setSelectedIntegration("webchat")
+    },
+    {
+      id: "catalog",
+      title: "Catálogo Propio (Excel / CSV)",
+      category: "negocio",
+      description: "Carga tu inventario o menú de servicios desde un archivo de Excel para que el agente consulte precios.",
+      icon: Package,
+      color: "from-indigo-500/20 via-indigo-500/10 to-transparent text-indigo-400 border-indigo-500/30",
+      status: catalogCount > 0 ? "connected" : "disconnected",
+      statusText: catalogCount > 0 ? `🟢 ${catalogCount} items disponibles` : "⚪ Sin catálogo cargado (0 items)",
+      badge: "Búsqueda con IA",
+      onConfigure: () => setSelectedIntegration("catalog")
+    },
+    {
+      id: "calendar",
+      title: "Google Calendar",
+      category: "productividad",
+      description: "Permite al agente consultar tu disponibilidad en tiempo real, agendar citas y enviar confirmaciones.",
+      icon: Calendar,
+      color: "from-blue-500/20 via-blue-500/10 to-transparent text-blue-400 border-blue-500/30",
+      status: isCalConnected ? "connected" : "disconnected",
+      statusText: isCalConnected ? `🟢 Sincronizado (${activeAgent?.google_calendar_email || "Google"})` : "⚪ No sincronizado",
+      onConfigure: () => setSelectedIntegration("calendar")
+    },
+    {
+      id: "email",
+      title: "Email del Agente (Gmail / SMTP)",
+      category: "productividad",
+      description: "Envía cotizaciones, confirmaciones de reserva y resúmenes de visitas por correo electrónico.",
+      icon: Mail,
+      color: "from-violet-500/20 via-violet-500/10 to-transparent text-violet-400 border-violet-500/30",
+      status: isEmailConnected ? "connected" : "disconnected",
+      statusText: isEmailConnected ? "🟢 Envíos Habilitados" : "⚪ No configurado",
+      onConfigure: () => setSelectedIntegration("email")
     },
     {
       id: "telegram",
@@ -86,65 +176,46 @@ export default function IntegrationsPage() {
       onConfigure: () => setSelectedIntegration("telegram")
     },
     {
-      id: "calendar",
-      title: "Google Calendar",
-      category: "productividad",
-      description: "Permite al agente consultar tu disponibilidad en tiempo real, agendar citas y enviar confirmaciones.",
-      icon: Calendar,
-      color: "from-blue-500/20 via-blue-500/10 to-transparent text-blue-400 border-blue-500/30",
-      status: "connected",
-      statusText: "🟢 Agenda Sincronizada",
-      onConfigure: () => setSelectedIntegration("calendar")
-    },
-    {
-      id: "email",
-      title: "Email del Agente (Gmail / SMTP)",
-      category: "productividad",
-      description: "Envía cotizaciones, confirmaciones de reserva y resúmenes de visitas por correo electrónico.",
-      icon: Mail,
-      color: "from-violet-500/20 via-violet-500/10 to-transparent text-violet-400 border-violet-500/30",
-      status: "connected",
-      statusText: "🟢 Envíos Habilitados (Spacemail)",
-      onConfigure: () => setSelectedIntegration("email")
-    },
-    {
       id: "wasi",
       title: "WASI (CRM Inmobiliario)",
       category: "negocio",
       description: "Sincroniza inventario de propiedades en tiempo real y registra leads calificados directo en WASI.",
       icon: Building2,
       color: "from-purple-500/20 via-purple-500/10 to-transparent text-purple-400 border-purple-500/30",
-      status: wasiSaved ? "connected" : "disconnected",
-      statusText: wasiSaved ? "🟢 Inventario Sincronizado" : "⚪ Requiere Token",
+      status: isWasiConnected ? "connected" : "disconnected",
+      statusText: isWasiConnected ? `🟢 Inventario Sincronizado (${activeAgent?.wasi_properties_count || 0} inmuebles)` : "⚪ Requiere Token",
       badge: "Vertical Inmobiliario",
       onConfigure: () => setSelectedIntegration("wasi")
-    },
-    {
-      id: "catalog",
-      title: "Catálogo Propio (Excel / CSV)",
-      category: "negocio",
-      description: "Carga tu inventario o menú de servicios desde un archivo de Excel para que el agente consulte precios.",
-      icon: Package,
-      color: "from-indigo-500/20 via-indigo-500/10 to-transparent text-indigo-400 border-indigo-500/30",
-      status: "connected",
-      statusText: "🟢 120 items disponibles",
-      badge: "Búsqueda con IA",
-      onConfigure: () => setSelectedIntegration("catalog")
-    },
-    {
-      id: "webchat",
-      title: "Widget Web (Live Chat)",
-      category: "canales",
-      description: "Incrusta el asistente virtual de GENIA en tu sitio web con un simple script de 1 línea.",
-      icon: Globe,
-      color: "from-cyan-500/20 via-cyan-500/10 to-transparent text-cyan-400 border-cyan-500/30",
-      status: "connected",
-      statusText: "🟢 Widget Disponible",
-      onConfigure: () => setSelectedIntegration("webchat")
     }
   ];
 
-  const filteredIntegrations = integrationsList.filter(
+  // FILTRADO ESTRICTO DE PRIVACIDAD:
+  // En el rol de usuario común ('user'), solo se visualiza lo que pertenece estrictamente a su agente:
+  // 1. Se ocultan herramientas de otros nichos/verticales (como WASI inmobiliario si no está conectado).
+  // 2. Se ocultan integraciones no configuradas que no aplican a su agente (como Email no configurado).
+  // 3. El Super Admin sí puede ver todas las opciones para configurar el ecosistema completo.
+  const visibleIntegrations = allIntegrations.filter((item) => {
+    if (isAdmin) return true;
+
+    // Regla de aislamiento: WASI solo es visible si este agente específico tiene WASI activo
+    if (item.id === "wasi" && !isWasiConnected) {
+      return false;
+    }
+
+    // Regla de aislamiento: Email solo se muestra si este agente lo tiene habilitado
+    if (item.id === "email" && !isEmailConnected) {
+      return false;
+    }
+
+    // Regla de aislamiento: Telegram no configurado se oculta al usuario común
+    if (item.id === "telegram" && !telegramConnected) {
+      return false;
+    }
+
+    return true;
+  });
+
+  const filteredIntegrations = visibleIntegrations.filter(
     (item) => activeTab === "all" || item.category === activeTab
   );
 
@@ -157,12 +228,19 @@ export default function IntegrationsPage() {
             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-500/10 border border-indigo-500/20 text-cyan-300 flex items-center gap-1">
               <Sparkles className="w-3 h-3" /> Ecosistema Nativo
             </span>
+            {!isAdmin && activeAgent && (
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center gap-1">
+                <Lock className="w-3 h-3" /> Privado: {activeAgent.name}
+              </span>
+            )}
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight text-white">
             Hub de <span className="bg-gradient-to-r from-[#4f46e5] via-[#6366f1] to-[#38bdf8] bg-clip-text text-transparent">Integraciones</span>
           </h1>
           <p className="text-slate-400 text-sm mt-1">
-            Conecta tus canales de comunicación, calendarios y bases de datos para operar de forma 100% autónoma.
+            {!isAdmin && activeAgent
+              ? `Canales y servicios conectados exclusivamente a tu agente ${activeAgent.name}.`
+              : "Conecta tus canales de comunicación, calendarios y bases de datos para operar de forma 100% autónoma."}
           </p>
         </div>
 
@@ -402,8 +480,8 @@ export default function IntegrationsPage() {
                   <Globe className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-white">Widget para tu Sitio Web</h3>
-                  <p className="text-xs text-slate-400">Instálalo en WordPress, Webflow o HTML</p>
+                  <h3 className="text-lg font-bold text-white">Widget Web para {activeAgent?.name || "tu Asistente"}</h3>
+                  <p className="text-xs text-slate-400">Instálalo en WordPress, Webflow o cualquier web</p>
                 </div>
               </div>
               <button
@@ -416,7 +494,7 @@ export default function IntegrationsPage() {
 
             <div className="space-y-3">
               <p className="text-xs text-slate-300">
-                Pega este código antes del cierre de la etiqueta <code className="text-cyan-300">&lt;/body&gt;</code> en tu página web:
+                Pega este script antes del cierre de la etiqueta <code className="text-cyan-300">&lt;/body&gt;</code> en tu página web:
               </p>
 
               <div className="relative">
@@ -449,27 +527,155 @@ export default function IntegrationsPage() {
         </div>
       )}
 
-      {/* Modal Genérico para WhatsApp / Calendar / Email / Catalog */}
-      {["whatsapp", "calendar", "email", "catalog"].includes(selectedIntegration || "") && (
+      {/* Modal Específico y Real: WhatsApp */}
+      {selectedIntegration === "whatsapp" && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
           <div className="bg-[#0b0f19] border border-white/[0.1] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <h3 className="text-lg font-bold text-white capitalize">
-              Estado de {selectedIntegration}
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-emerald-400" />
+              <span>WhatsApp de {activeAgent?.name || "tu Agente"}</span>
             </h3>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Este módulo se encuentra vinculado y operativo de forma nativa por el motor de GENIA. 
-              Los eventos y respuestas se procesan automáticamente 24/7 sin intermediarios.
-            </p>
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span>Conexión saludable y activa.</span>
-            </div>
+            {isWaConnected ? (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Tu agente se encuentra conectado y respondiendo mensajes de forma autónoma las 24 horas del día.
+                </p>
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>Línea vinculada y operativa en producción.</span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Este agente aún no tiene una línea de WhatsApp vinculada en producción.
+                </p>
+                <div className="p-3 bg-slate-900 border border-white/[0.08] rounded-xl text-xs text-slate-400 space-y-1">
+                  <p className="font-semibold text-slate-200">¿Cómo activarlo?</p>
+                  <p>Adquiere una SIM dedicada para tu negocio y contacta al administrador para el registro en Meta Cloud API o enlace QR.</p>
+                </div>
+              </div>
+            )}
             <div className="flex justify-end pt-2">
               <button
                 onClick={() => setSelectedIntegration(null)}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium rounded-xl cursor-pointer"
               >
-                Entendido
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Específico y Real: Google Calendar */}
+      {selectedIntegration === "calendar" && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-[#0b0f19] border border-white/[0.1] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-blue-400" />
+              <span>Google Calendar ({activeAgent?.name})</span>
+            </h3>
+            {isCalConnected ? (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  La agenda de {activeAgent?.name} está sincronizada en tiempo real con Google Calendar.
+                </p>
+                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs text-blue-300 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-blue-400" />
+                  <span>Cuenta conectada: {activeAgent?.google_calendar_email || "Google Calendar"}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Tu agente aún no tiene un calendario vinculado para agendamiento automatizado.
+                </p>
+                <div className="p-3 bg-slate-900 border border-white/[0.08] rounded-xl text-xs text-slate-400">
+                  <span>Contacta al administrador para autorizar el acceso OAuth 2.0 a tu cuenta de Google Calendar.</span>
+                </div>
+              </div>
+            )}
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setSelectedIntegration(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium rounded-xl cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Específico y Real: Email */}
+      {selectedIntegration === "email" && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-[#0b0f19] border border-white/[0.1] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <Mail className="w-5 h-5 text-violet-400" />
+              <span>Email de {activeAgent?.name}</span>
+            </h3>
+            {isEmailConnected ? (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Los envíos de correo automatizados están habilitados para {activeAgent?.name}.
+                </p>
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>Servicio de correo SMTP activo.</span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  El servicio de envío de correos directos no está configurado para este agente.
+                </p>
+                <div className="p-3 bg-slate-900 border border-white/[0.08] rounded-xl text-xs text-slate-400">
+                  <span>Los resúmenes y alertas se envían a través de WhatsApp o mediante la bandeja omnicanal de la plataforma.</span>
+                </div>
+              </div>
+            )}
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setSelectedIntegration(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium rounded-xl cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Específico y Real: Catálogo Propio */}
+      {selectedIntegration === "catalog" && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-[#0b0f19] border border-white/[0.1] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <Package className="w-5 h-5 text-indigo-400" />
+              <span>Catálogo Privado ({activeAgent?.name})</span>
+            </h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Base de datos privada y estructurada que consulta la IA exclusivamente para tu negocio.
+            </p>
+            <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-xs text-indigo-300 flex items-center justify-between">
+              <span>Registros disponibles:</span>
+              <strong className="text-white text-sm">{catalogCount} items</strong>
+            </div>
+            <div className="flex items-center justify-between pt-2">
+              <Link
+                href="/catalog"
+                className="inline-flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 font-medium"
+              >
+                <span>Ir al gestor de Catálogo</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+              <button
+                onClick={() => setSelectedIntegration(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium rounded-xl cursor-pointer"
+              >
+                Cerrar
               </button>
             </div>
           </div>

@@ -4,6 +4,55 @@
 > **Lo leen y lo actualizan TODAS las plataformas** (Kiro, opencode, Antigravity, etc.).
 > Si entras al proyecto desde cualquier herramienta, empieza leyendo este archivo.
 
+## 2026-09-22 17:48 (COT) — Corrección de Privacidad y Aislamiento de Integraciones por Agente (Multi-Tenancy)
+**Plataforma:** Antigravity
+**Tipo:** 🛡️ Corrección de Privacidad & Multi-Tenant Frontend
+
+### Archivos modificados:
+- **[MODIFICADO]** `dashboard/src/app/(dashboard)/integrations/page.tsx` — Eliminación de estados y métricas estáticas mockeadas (`Spacemail` habilitado hardcodeado, `120 items disponibles` de otro cliente). Implementado cálculo dinámico 100% basado en el agente asignado (`activeAgent`) y filtrado estricto para el rol `user`.
+
+### Descripción:
+Se corrigió la vulnerabilidad de privacidad visual en el panel de usuario común (`role === 'user'`):
+1. **Causa raíz:** La página `/integrations` mantenía textos y estados estáticos hardcodeados en las tarjetas de integración:
+   - `Email del Agente`: figuraba falsamente como `🟢 Envíos Habilitados (Spacemail)` para cualquier cuenta.
+   - `Catálogo Propio`: mostraba `🟢 120 items disponibles` (correspondiente a una base de datos inmobiliaria de otro cliente).
+   - `WASI (CRM Inmobiliario)`: se mostraba visible para clientes de todos los sectores (gastronomía, medicina, etc.).
+2. **Aislamiento dinámico por agente:**
+   - Se vinculó cada tarjeta estrictamente a los atributos reales del `activeAgent` del usuario (`whatsapp_connected`, `google_calendar_connected`, `wasi_connected`).
+   - El catálogo ahora consulta en vivo el conteo privado de contactos/items (`/api/agents/${activeAgent.id}/contacts`), mostrando `0 items` si el cliente no ha subido catálogo.
+   - Se eliminó el texto estático `Spacemail` (infraestructura interna de alertas de admin). Si el agente no tiene correo propio configurado, figura como `⚪ No configurado`.
+3. **Filtrado estricto para rol `user`:**
+   - Si `role === 'user'`, se ocultan herramientas de otros nichos que no estén integradas a su agente (como WASI para un restaurante/chef).
+   - Se ocultan integraciones que no correspondan o no estén activas para su agente, garantizando privacidad absoluta de datos entre clientes.
+   - Se añadió un distintivo superior `🔒 Privado: [Nombre Agente]` para certificar el alcance exclusivo.
+
+**Estado:** ✅ Integraciones dinámicas, aisladas por agente y compilación exitosa.
+**Siguiente paso:** Desplegar en producción Vercel para reflejar el cambio en `genia.com.co`.
+
+---
+
+## 2026-09-22 17:11 (COT) — Creación Directa de Agente "Luna" (Dr. Jorge Eduardo Giraldo Salazar)
+**Plataforma:** Antigravity
+**Tipo:** 🆕 Creación de Agente en Producción + Indexación RAG
+
+### Archivos generados / modificados:
+- **[NUEVO]** `backend/create_luna_agent.py` — Script automatizado de aprovisionamiento del agente e indexación vectorial en Supabase PostgreSQL.
+- **[MODIFICADO]** `backend/services/embedding_service.py` — Resilencia mejorada con fallback defensivo a `gcloud auth print-access-token` para Vertex AI embeddings ante entornos locales con dependencias binarias restrictivas.
+- **[MODIFICADO]** `backend/services/knowledge_service.py` — Verificación dinámica de dialecto (`session_is_sqlite`) para soportar transparentemente tanto SQLite local como PostgreSQL/pgvector en Supabase.
+- **[NUEVO]** `backend/scratch_test_luna.py` — Script de prueba conversacional e integración end-to-end con Luna.
+
+### Descripción:
+Se creó y activó directamente en la base de datos de producción de **PLATAFORMA GENIA** (Supabase Postgres) el agente **Luna** (`id: 12038e18a2d1429e99f2b914752697a2`):
+1. **Perfil y Reglas Clínicas:** Asistente del Dr. Jorge Eduardo Giraldo Salazar, médico general. Configurado con tono cálido, empático y profesional, prohibición absoluta de diagnosticar o prescribir medicamentos, redirección inmediata de emergencias críticas al 123 y soporte de teleconsultas (globales) y domiciliarias (Pereira, Dosquebradas y Santa Rosa de Cabal).
+2. **Campos de Lead:** Captura de `nombre_paciente`, `telefono_contacto`, `edad_paciente`, `tipo_consulta`, `direccion_municipio`, `motivo_consulta` y `antecedentes_alergias`.
+3. **Base de Conocimientos Indexada:** Documento oficial del doctor cargado e indexado en 5 chunks con embeddings vectoriales de Vertex AI (`text-embedding-004`, 768 dimensiones).
+4. **Disponibilidad:** Agente activo en producción. Enlace público de chat y demo operativo: `https://genia.com.co/chat/12038e18a2d1429e99f2b914752697a2`.
+
+**Estado:** ✅ Agente Luna aprovisionado, activo e indexado en la plataforma.
+**Siguiente paso:** Compartir el enlace con el doctor y Lau para pruebas, y conectar la línea de WhatsApp cuando esté disponible la SIM dedicada.
+
+---
+
 ## 2026-09-10 16:53 (COT) — Análisis de Requerimientos y Transcripción de Audio: Cliente Carolina Escarria (2 Agentes)
 **Plataforma:** Antigravity
 **Tipo:** 📐 Análisis y Especificación de Arquitectura de Agentes

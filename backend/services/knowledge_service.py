@@ -160,7 +160,10 @@ def process_and_index_document(
             # Generar embeddings para todos los chunks
             embeddings = get_embeddings(chunks, task_type="retrieval_document")
 
-            if is_sqlite:
+            # Determinar si la conexión actual es SQLite o PostgreSQL/pgvector
+            session_is_sqlite = (db.bind.dialect.name == "sqlite") if (db and db.bind) else is_sqlite
+
+            if session_is_sqlite and chroma_client is not None:
                 # Obtener colección de ChromaDB (per tenant si está configurado, o fallback por agente)
                 if tenant_id:
                     collection_name = f"tenant_{tenant_id.replace('-', '_')}"
@@ -308,7 +311,8 @@ def retrieve_context(agent_id: str, query: str, k: int = 4, db: Session = None) 
         should_close = True
 
     try:
-        if is_sqlite:
+        session_is_sqlite = (db_session.bind.dialect.name == "sqlite") if (db_session and db_session.bind) else is_sqlite
+        if session_is_sqlite and chroma_client is not None:
             # Obtener IDs de documentos activos en la base de datos SQL para este agente
             active_doc_ids = [
                 row[0] for row in db_session.query(KnowledgeDocument.id)

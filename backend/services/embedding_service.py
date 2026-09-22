@@ -25,44 +25,56 @@ def _get_vertex_embeddings(
     Resuelve credenciales desde GCP_SERVICE_ACCOUNT_JSON, GOOGLE_APPLICATION_CREDENTIALS
     o Application Default Credentials (ADC).
     """
-    import google.auth
-    from google.auth.transport.requests import Request
-
     import os
     raw_json = getattr(settings, "gcp_service_account_json", "") or ""
     cred_path = getattr(settings, "google_application_credentials", "") or ""
     project = getattr(settings, "google_cloud_project", "") or ""
     location = getattr(settings, "google_cloud_location", "") or "us-central1"
 
-    creds = None
-    if raw_json.strip():
-        from google.oauth2 import service_account
+    token = None
+    try:
+        import google.auth
+        from google.auth.transport.requests import Request
 
-        info = json.loads(raw_json)
-        if isinstance(info, dict) and "private_key" in info:
-            info["private_key"] = info["private_key"].replace("\\n", "\n")
-        creds = service_account.Credentials.from_service_account_info(
-            info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
-        )
-        if not project and "project_id" in info:
-            project = info["project_id"]
-    elif cred_path.strip() and os.path.exists(cred_path):
-        from google.oauth2 import service_account
+        creds = None
+        if raw_json.strip():
+            from google.oauth2 import service_account
 
-        creds = service_account.Credentials.from_service_account_file(
-            cred_path, scopes=["https://www.googleapis.com/auth/cloud-platform"]
-        )
-    else:
-        creds, default_proj = google.auth.default(
-            scopes=["https://www.googleapis.com/auth/cloud-platform"]
-        )
-        project = project or default_proj
+            info = json.loads(raw_json)
+            if isinstance(info, dict) and "private_key" in info:
+                info["private_key"] = info["private_key"].replace("\\n", "\n")
+            creds = service_account.Credentials.from_service_account_info(
+                info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+            if not project and "project_id" in info:
+                project = info["project_id"]
+        elif cred_path.strip() and os.path.exists(cred_path):
+            from google.oauth2 import service_account
 
-    if not creds:
+            creds = service_account.Credentials.from_service_account_file(
+                cred_path, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+        else:
+            creds, default_proj = google.auth.default(
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+            project = project or default_proj
+
+        if creds:
+            creds.refresh(Request())
+            token = creds.token
+    except Exception as e_auth:
+        logger.warning("Fallo al resolver credenciales via google.auth: %s", str(e_auth))
+        try:
+            import subprocess
+            token = subprocess.check_output("gcloud auth print-access-token", shell=True).decode().strip()
+            if not project:
+                project = "gen-lang-client-0111526550"
+        except Exception as e_gcloud:
+            logger.warning("Fallo en fallback gcloud: %s", str(e_gcloud))
+
+    if not token:
         raise ValueError("No se pudieron resolver credenciales de GCP / Vertex AI.")
-
-    creds.refresh(Request())
-    token = creds.token
 
     if not project:
         raise ValueError("GOOGLE_CLOUD_PROJECT no configurado para Vertex AI.")
