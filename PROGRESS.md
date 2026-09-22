@@ -4,6 +4,26 @@
 > **Lo leen y lo actualizan TODAS las plataformas** (Kiro, opencode, Antigravity, etc.).
 > Si entras al proyecto desde cualquier herramienta, empieza leyendo este archivo.
 
+## 2026-09-22 18:52 (COT) — Activación Total en Producción: Google Calendar OAuth 2.0 (1-Clic)
+**Plataforma:** Antigravity
+**Tipo:** 🚀 Despliegue de Producción & Activación de Credenciales
+
+### Acciones ejecutadas:
+- **[VARIABLES DE ENTORNO]** Registradas las credenciales maestras de Google Cloud en `backend/.env` y en el entorno de producción de Vercel (`GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_REDIRECT_URI`).
+- **[VERCEL CLI]** Despliegue de producción ejecutado con éxito y alias oficiales `genia.com.co` y `www.genia.com.co` promovidos a la última compilación.
+- **[VERIFICACIÓN EN VIVO]** Endpoint de callback universal `https://genia.com.co/api/calendar/callback` validado en vivo con respuesta 422 HTTP (validación de parámetros de FastAPI activa y respondiendo).
+
+### Descripción:
+La integración de Google Calendar para la plataforma GENIA quedó 100% activa en producción:
+1. Cualquier agente (como Luna para el Dr. Jorge Eduardo) puede ahora pulsar el botón **"Conectar mi Google Calendar"** en `https://genia.com.co/agents/12038e18a2d1429e99f2b914752697a2` o en `/integrations`.
+2. Se abre el flujo de consentimiento seguro de Google con la aplicación autorizada `Plataforma genia`.
+3. Al dar clic en "Permitir", el callback universal recibe el código OAuth, lo intercambia por refresh tokens, los cifra con Fernet AES-256 y activa la sincronización del calendario en la base de datos de Supabase.
+
+**Estado:** ✅ Google Calendar 1-Clic activo y en producción en `genia.com.co`.
+**Siguiente paso:** Realizar la primera conexión de prueba con la cuenta del doctor.
+
+---
+
 ## 2026-09-22 18:06 (COT) — Implementación de Arquitectura SaaS "1-Clic" para Google Calendar OAuth
 **Plataforma:** Antigravity
 **Tipo:** 🚀 Arquitectura SaaS & Experiencia de Usuario (OAuth 2.0)
