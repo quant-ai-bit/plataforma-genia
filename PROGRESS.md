@@ -4,6 +4,27 @@
 > **Lo leen y lo actualizan TODAS las plataformas** (Kiro, opencode, Antigravity, etc.).
 > Si entras al proyecto desde cualquier herramienta, empieza leyendo este archivo.
 
+## 2026-09-22 17:50 (COT) — Corrección de Desbordamiento de Descripción en Tarjetas de Agentes
+**Plataforma:** Antigravity
+**Tipo:** 🎨 Corrección de Layout UI & Responsividad
+
+### Archivos modificados:
+- **[MODIFICADO]** `dashboard/src/app/(dashboard)/agents/page.tsx` — Corrección de desbordamiento horizontal (`overflow-hidden`, `min-w-0`, `line-clamp-2` con `break-words` y `title` tooltip) en las tarjetas de agentes en `/agents`.
+
+### Descripción:
+Se solucionó el problema visual donde las descripciones largas de los agentes excedían los límites de las tarjetas y se solapaban horizontalmente con las tarjetas adyacentes:
+1. **Causa raíz:** En Flexbox (`display: flex`), los elementos hijos (`<div className="flex-1">`) tienen por defecto `min-width: auto`. Al aplicar la clase `truncate` (`white-space: nowrap;`), el navegador calculaba el ancho intrínseco de toda la línea de texto completa, expandiendo el contenedor más allá del ancho de la columna de la cuadrícula CSS y desbordando la tarjeta.
+2. **Solución aplicada:**
+   - Se añadió `min-w-0` y `overflow-hidden` a la tarjeta contenedora y a la cabecera flex.
+   - Se reemplazó `truncate` por `line-clamp-2 mt-1 leading-relaxed break-words` en el párrafo de la descripción, permitiendo hasta 2 líneas ordenadas de lectura sin romper la altura de la tarjeta ni salirse de los límites.
+   - Se agregó el atributo accesible `title` con la descripción completa para visualización mediante tooltip al pasar el cursor.
+3. **Verificación:** Compilación exitosa con Next.js 16 (Turbopack) sin errores.
+
+**Estado:** ✅ Desbordamiento resuelto y verificado.
+**Siguiente paso:** Desplegar en producción.
+
+---
+
 ## 2026-09-22 17:48 (COT) — Corrección de Privacidad y Aislamiento de Integraciones por Agente (Multi-Tenancy)
 **Plataforma:** Antigravity
 **Tipo:** 🛡️ Corrección de Privacidad & Multi-Tenant Frontend

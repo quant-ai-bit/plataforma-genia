@@ -275,16 +275,19 @@ export default function AgentsPage() {
             <div
               key={agent.id}
               onClick={() => router.push(`/agents/${agent.id}`)}
-              className="glow-card rounded-2xl p-6 flex flex-col justify-between border border-gray-800 hover:border-blue-500/20 cursor-pointer hover:shadow-[0_0_20px_rgba(59,130,246,0.15)] transition duration-300 relative group"
+              className="glow-card rounded-2xl p-6 flex flex-col justify-between border border-gray-800 hover:border-blue-500/20 cursor-pointer hover:shadow-[0_0_20px_rgba(59,130,246,0.15)] transition duration-300 relative group min-w-0 overflow-hidden"
             >
-              <div>
+              <div className="min-w-0">
                 {/* Header card info */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1">
-                    <h4 className="font-bold text-white group-hover:text-blue-400 transition-colors text-sm truncate">
+                <div className="flex items-start justify-between gap-3 min-w-0">
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-white group-hover:text-blue-400 transition-colors text-sm truncate" title={agent.name}>
                       {agent.name}
                     </h4>
-                    <p className="text-[11px] text-gray-550 truncate mt-0.5">
+                    <p
+                      className="text-[11px] text-gray-400 line-clamp-2 mt-1 leading-relaxed break-words"
+                      title={agent.description || "Sin descripción"}
+                    >
                       {agent.description || "Sin descripción"}
                     </p>
                   </div>
