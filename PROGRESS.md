@@ -4,6 +4,29 @@
 > **Lo leen y lo actualizan TODAS las plataformas** (Kiro, opencode, Antigravity, etc.).
 > Si entras al proyecto desde cualquier herramienta, empieza leyendo este archivo.
 
+## 2026-09-22 18:06 (COT) — Implementación de Arquitectura SaaS "1-Clic" para Google Calendar OAuth
+**Plataforma:** Antigravity
+**Tipo:** 🚀 Arquitectura SaaS & Experiencia de Usuario (OAuth 2.0)
+
+### Archivos modificados / servicios habilitados:
+- **[GCP]** `calendar-json.googleapis.com` — API de Google Calendar habilitada exitosamente en el proyecto de Google Cloud `gen-lang-client-0111526550` mediante CLI.
+- **[MODIFICADO]** `backend/routers/google_calendar.py` — Implementado endpoint de callback universal SaaS `@router.get("/callback")`. Permite registrar una sola URI de redireccionamiento (`https://genia.com.co/api/calendar/callback`) en Google Cloud Console para toda la plataforma, asociando el agente mediante el parámetro de seguridad `state`.
+- **[MODIFICADO]** `backend/services/google_calendar_service.py` — Soporte nativo para credenciales maestras de plataforma (`GOOGLE_CALENDAR_CLIENT_ID` y `GOOGLE_CALENDAR_CLIENT_SECRET`), resolución automática de URI de callback universal y resolución dinámica de tokens.
+- **[MODIFICADO]** `dashboard/src/app/(dashboard)/agents/[id]/page.tsx` — Eliminado el formulario técnico intrusivo de 6 pasos para usuarios y clientes. Reemplazado por una tarjeta moderna SaaS de "1 Solo Clic" con botón `[ 📅 Conectar mi Google Calendar ]`. Las credenciales personalizadas quedaron como un acordeón opcional colapsado exclusivamente para Super Admins.
+- **[MODIFICADO]** `dashboard/src/app/(dashboard)/integrations/page.tsx` — El modal de Google Calendar en el Hub de Integraciones ahora permite conectar o desconectar la cuenta de Google directamente en 1 clic sin salir de la vista.
+
+### Descripción:
+Se eliminó la fricción técnica para clientes finales (médicos, chefs, inmobiliarias):
+1. **API habilitada:** Se ejecutó `gcloud services enable calendar-json.googleapis.com` en el proyecto GCP activo.
+2. **Callback Universal SaaS:** En lugar de requerir que cada agente configure URLs individuales en Google Cloud Console, Google Cloud solo requiere una URI universal: `https://genia.com.co/api/calendar/callback`.
+3. **Frontend 100% 1-Clic:** El usuario solo hace clic en "Conectar mi Google Calendar" y autoriza con Google. No requiere ver ni manipular Client IDs ni Secrets.
+4. **Verificación:** Compilación verificada con Next.js 16 Turbopack y sintaxis Python validada al 100%.
+
+**Estado:** ✅ Código backend y frontend adaptado a 1-Clic SaaS, API habilitada y listo para recibir las credenciales maestras.
+**Siguiente paso:** Generar el Client ID y Client Secret en Google Cloud Console e ingresarlos en las variables de entorno de Genia.
+
+---
+
 ## 2026-09-22 17:50 (COT) — Corrección de Desbordamiento de Descripción en Tarjetas de Agentes
 **Plataforma:** Antigravity
 **Tipo:** 🎨 Corrección de Layout UI & Responsividad

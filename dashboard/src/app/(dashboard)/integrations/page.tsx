@@ -42,7 +42,7 @@ interface IntegrationCardProps {
 }
 
 export default function IntegrationsPage() {
-  const { agents, userProfile, user } = useAppContext();
+  const { agents, userProfile, user, loadBackendData } = useAppContext();
   const isAdmin = checkIsAdmin(user?.email, userProfile?.role);
 
   // Obtener estrictamente el agente asignado a este usuario (o el primero disponible si es admin)
@@ -53,6 +53,10 @@ export default function IntegrationsPage() {
 
   const [activeTab, setActiveTab] = useState<"all" | "canales" | "productividad" | "negocio">("all");
   const [selectedIntegration, setSelectedIntegration] = useState<string | null>(null);
+
+  // Estados de conexión Google Calendar
+  const [calConnecting, setCalConnecting] = useState<boolean>(false);
+  const [calDisconnecting, setCalDisconnecting] = useState<boolean>(false);
 
   // Estados de formularios de configuración
   const [telegramToken, setTelegramToken] = useState("");
@@ -93,6 +97,61 @@ export default function IntegrationsPage() {
     navigator.clipboard.writeText(code);
     setCopiedWidget(true);
     setTimeout(() => setCopiedWidget(false), 2500);
+  };
+
+  const handleConnectCalendar = async () => {
+    if (!activeAgent?.id) return;
+    setCalConnecting(true);
+    try {
+      const origin = window.location.origin;
+      const res = await authenticatedFetch(`/api/calendar/${activeAgent.id}/auth-url?base_url=${encodeURIComponent(origin)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const width = 600, height = 650;
+        const left = (window.innerWidth - width) / 2;
+        const top = (window.innerHeight - height) / 2;
+        window.open(
+          data.auth_url,
+          "Google Calendar Authorization",
+          `width=${width},height=${height},left=${left},top=${top}`
+        );
+
+        const handleMessage = async (event: MessageEvent) => {
+          if (event.data && event.data.type === 'calendar_connected') {
+            alert(`📅 Calendario conectado con éxito: ${event.data.email}`);
+            await loadBackendData();
+            window.removeEventListener('message', handleMessage);
+          }
+        };
+        window.addEventListener('message', handleMessage);
+      } else {
+        const data = await res.json();
+        alert(`Error al iniciar conexión con Google Calendar: ${data.detail || "Verifica la configuración."}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de conexión al conectar con Google Calendar.");
+    } finally {
+      setCalConnecting(false);
+    }
+  };
+
+  const handleDisconnectCalendar = async () => {
+    if (!activeAgent?.id) return;
+    if (!confirm("¿Deseas desconectar Google Calendar de este agente?")) return;
+    setCalDisconnecting(true);
+    try {
+      const res = await authenticatedFetch(`/api/calendar/${activeAgent.id}/disconnect`, { method: "POST" });
+      if (res.ok) {
+        await loadBackendData();
+      } else {
+        alert("No se pudo desconectar Google Calendar.");
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCalDisconnecting(false);
+    }
   };
 
   // --- Estados de Integración 100% Dinámicos por Agente ---
@@ -572,38 +631,83 @@ export default function IntegrationsPage() {
       {selectedIntegration === "calendar" && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
           <div className="bg-[#0b0f19] border border-white/[0.1] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-blue-400" />
-              <span>Google Calendar ({activeAgent?.name})</span>
-            </h3>
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-blue-400" />
+                <span>Google Calendar ({activeAgent?.name})</span>
+              </h3>
+              <button
+                onClick={() => setSelectedIntegration(null)}
+                className="text-slate-400 hover:text-white text-sm p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
             {isCalConnected ? (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  La agenda de {activeAgent?.name} está sincronizada en tiempo real con Google Calendar.
+                  La agenda de {activeAgent?.name} está sincronizada en tiempo real con Google Calendar para verificar citas y evitar cruces de horario.
                 </p>
                 <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs text-blue-300 flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-blue-400" />
-                  <span>Cuenta conectada: {activeAgent?.google_calendar_email || "Google Calendar"}</span>
+                  <CheckCircle2 className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[10px] text-blue-400 font-semibold uppercase">Cuenta Vinculada</span>
+                    <span className="font-mono text-white text-xs truncate block">{activeAgent?.google_calendar_email || "Google Calendar"}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <button
+                    type="button"
+                    disabled={calDisconnecting}
+                    onClick={handleDisconnectCalendar}
+                    className="px-3.5 py-1.5 border border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/15 text-xs font-semibold rounded-xl transition cursor-pointer"
+                  >
+                    {calDisconnecting ? "Desconectando..." : "Desconectar Calendario"}
+                  </button>
+                  <button
+                    onClick={() => setSelectedIntegration(null)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium rounded-xl cursor-pointer"
+                  >
+                    Cerrar
+                  </button>
                 </div>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Tu agente aún no tiene un calendario vinculado para agendamiento automatizado.
+                  Conecta tu calendario de Google para que tu agente pueda agendar consultas o reuniones automáticamente en tiempo real.
                 </p>
-                <div className="p-3 bg-slate-900 border border-white/[0.08] rounded-xl text-xs text-slate-400">
-                  <span>Contacta al administrador para autorizar el acceso OAuth 2.0 a tu cuenta de Google Calendar.</span>
+                <div className="p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl text-xs text-slate-300 space-y-1">
+                  <div className="flex items-center gap-2 text-emerald-400 font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span>Conexión 1-Clic mediante Google OAuth</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Solo debes iniciar sesión con tu cuenta de Google y otorgar el permiso de calendario.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <button
+                    type="button"
+                    disabled={calConnecting}
+                    onClick={handleConnectCalendar}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-500/20 cursor-pointer disabled:opacity-50"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    {calConnecting ? "Abriendo Google..." : "Conectar mi Google Calendar"}
+                  </button>
+                  <button
+                    onClick={() => setSelectedIntegration(null)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium rounded-xl cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
                 </div>
               </div>
             )}
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setSelectedIntegration(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium rounded-xl cursor-pointer"
-              >
-                Cerrar
-              </button>
-            </div>
           </div>
         </div>
       )}

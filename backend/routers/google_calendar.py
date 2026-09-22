@@ -95,6 +95,37 @@ async def get_calendar_auth_url(
         )
 
 
+@router.get("/callback")
+async def unified_calendar_oauth_callback(
+    code: str = Query(..., description="Código de autorización de Google OAuth"),
+    state: str = Query("", description="Estado de seguridad (agent_id)"),
+    db: Session = Depends(get_db),
+):
+    """
+    Callback universal SaaS de Google OAuth 2.0.
+    Permite registrar un solo URI de redirección en Google Cloud Console:
+    https://genia.com.co/api/calendar/callback
+    El agent_id viaja en el parámetro state.
+    """
+    if not state:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Falta el parámetro de estado de seguridad (agent_id).",
+        )
+    result = google_calendar_service.handle_callback(
+        agent_id=state,
+        auth_code=code,
+        db=db,
+    )
+    if result["connected"]:
+        return _build_success_html(state, result["email"])
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error conectando Google Calendar: {result['error']}",
+        )
+
+
 @router.get("/{agent_id}/callback")
 async def calendar_oauth_callback(
     agent_id: str,

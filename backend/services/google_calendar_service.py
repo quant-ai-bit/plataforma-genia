@@ -32,7 +32,15 @@ CALENDAR_SCOPES = [
 ]
 
 
-def _get_client_config(agent) -> dict:
+def _resolve_redirect_uri(base_url: str = "", agent_id: str = "") -> str:
+    """Calcula la URI de callback adecuada (universal SaaS o per-agente)."""
+    if settings.google_calendar_redirect_uri:
+        return settings.google_calendar_redirect_uri
+    origin = base_url.rstrip("/") if base_url else (settings.frontend_url.rstrip("/") if settings.frontend_url else "https://genia.com.co")
+    return f"{origin}/api/calendar/callback"
+
+
+def _get_client_config(agent, redirect_uri: str = "") -> dict:
     """Construye la configuración de cliente OAuth para el agente."""
     client_id = agent.google_calendar_client_id or settings.google_calendar_client_id
     
@@ -44,16 +52,23 @@ def _get_client_config(agent) -> dict:
 
     if not client_id or not client_secret:
         raise ValueError(
-            "Google Calendar Client ID y Client Secret no están configurados para este agente. "
-            "Por favor, ingrésalos en la configuración de la integración."
+            "Las credenciales de Google Calendar (Client ID / Client Secret) no están configuradas "
+            "en las variables de entorno de la plataforma ni en el agente."
         )
+
+    uris = [redirect_uri] if redirect_uri else []
+    if settings.google_calendar_redirect_uri and settings.google_calendar_redirect_uri not in uris:
+        uris.append(settings.google_calendar_redirect_uri)
+    if "https://genia.com.co/api/calendar/callback" not in uris:
+        uris.append("https://genia.com.co/api/calendar/callback")
+
     return {
         "web": {
             "client_id": client_id,
             "client_secret": client_secret,
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": [settings.google_calendar_redirect_uri],
+            "redirect_uris": uris,
         }
     }
 
@@ -75,12 +90,10 @@ def get_auth_url(agent_id: str, db, base_url: str = "") -> str:
     if not agent:
         raise ValueError("Agente no encontrado.")
 
-    redirect_uri = settings.google_calendar_redirect_uri
-    if not redirect_uri and base_url:
-        redirect_uri = f"{base_url}/api/calendar/{agent_id}/callback"
+    redirect_uri = _resolve_redirect_uri(base_url, agent_id)
 
     flow = Flow.from_client_config(
-        _get_client_config(agent),
+        _get_client_config(agent, redirect_uri),
         scopes=CALENDAR_SCOPES,
         redirect_uri=redirect_uri,
     )
@@ -95,7 +108,7 @@ def get_auth_url(agent_id: str, db, base_url: str = "") -> str:
     return auth_url
 
 
-def handle_callback(agent_id: str, auth_code: str, db) -> dict:
+def handle_callback(agent_id: str, auth_code: str, db, redirect_uri: str = "") -> dict:
     """
     Intercambia el código de autorización por tokens OAuth y los almacena cifrados.
 
@@ -103,6 +116,7 @@ def handle_callback(agent_id: str, auth_code: str, db) -> dict:
         agent_id: ID del agente.
         auth_code: Código de autorización recibido de Google.
         db: Sesión de base de datos.
+        redirect_uri: URI de redirección usada originalmente (opcional).
 
     Returns:
         dict con claves: connected, email, error.
@@ -112,11 +126,13 @@ def handle_callback(agent_id: str, auth_code: str, db) -> dict:
     if not agent:
         return {"connected": False, "email": None, "error": "Agente no encontrado."}
 
+    target_redirect_uri = redirect_uri or _resolve_redirect_uri("", agent_id)
+
     try:
         flow = Flow.from_client_config(
-            _get_client_config(agent),
+            _get_client_config(agent, target_redirect_uri),
             scopes=CALENDAR_SCOPES,
-            redirect_uri=settings.google_calendar_redirect_uri,
+            redirect_uri=target_redirect_uri,
         )
 
         flow.fetch_token(code=auth_code)

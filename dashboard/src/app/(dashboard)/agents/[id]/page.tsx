@@ -109,6 +109,8 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
   const [calEvents, setCalEvents] = useState<any[]>([]);
   const [calEventsLoading, setCalEventsLoading] = useState<boolean>(false);
   const [showCalSecrets, setShowCalSecrets] = useState<boolean>(false);
+  const [showAdvancedCal, setShowAdvancedCal] = useState<boolean>(false);
+  const [calConnecting, setCalConnecting] = useState<boolean>(false);
 
   // Wasi.co Integration State
   const [wasiStatus, setWasiStatus] = useState<{
@@ -382,48 +384,35 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
   };
 
   const handleConnectCalendar = async () => {
-    if (!form.google_calendar_client_id.trim()) {
-      alert("Por favor, ingresa el Client ID de Google para iniciar la conexión.");
-      return;
-    }
-    
-    setSaveLoading(true);
-    try {
-      const payload = {
-        name: form.name,
-        description: form.description || null,
-        system_prompt: form.system_prompt,
-        provider: form.provider,
-        model: form.model,
-        temperature: form.temperature,
-        max_tokens: form.max_tokens,
-        custom_fields: form.custom_fields,
-        channels: form.channels,
-        notification_phone: form.notification_phone || null,
-        stt_provider: form.stt_provider,
-        timezone: form.timezone,
-        google_calendar_client_id: form.google_calendar_client_id,
-        google_calendar_client_secret: form.google_calendar_client_secret || null
-      };
+    setCalConnecting(true);
+    // Si el usuario especificó credenciales personalizadas, las guardamos primero
+    if (form.google_calendar_client_id.trim()) {
+      try {
+        const payload = {
+          name: form.name,
+          description: form.description || null,
+          system_prompt: form.system_prompt,
+          provider: form.provider,
+          model: form.model,
+          temperature: form.temperature,
+          max_tokens: form.max_tokens,
+          custom_fields: form.custom_fields,
+          channels: form.channels,
+          notification_phone: form.notification_phone || null,
+          stt_provider: form.stt_provider,
+          timezone: form.timezone,
+          google_calendar_client_id: form.google_calendar_client_id,
+          google_calendar_client_secret: form.google_calendar_client_secret || null
+        };
 
-      const res = await authenticatedFetch(`/api/agents/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      
-      if (!res.ok) {
-        alert("Error al guardar credenciales antes de conectar.");
-        setSaveLoading(false);
-        return;
+        await authenticatedFetch(`/api/agents/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      } catch (err) {
+        console.error("Error guardando credenciales personalizadas:", err);
       }
-    } catch (err) {
-      console.error(err);
-      alert("Error guardando credenciales.");
-      setSaveLoading(false);
-      return;
-    } finally {
-      setSaveLoading(false);
     }
 
     try {
@@ -451,11 +440,13 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
         window.addEventListener('message', handleMessage);
       } else {
         const data = await res.json();
-        alert(`Error al iniciar conexión: ${data.detail || "Verifica las credenciales."}`);
+        alert(`Error al conectar con Google Calendar: ${data.detail || "Verifica la configuración."}`);
       }
     } catch (err) {
       console.error(err);
-      alert("Error al intentar conectar.");
+      alert("Error de red al intentar conectar con Google Calendar.");
+    } finally {
+      setCalConnecting(false);
     }
   };
 
@@ -2440,29 +2431,18 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
 
           {expandedSections.calendar && (
             <div className="px-6 pb-6 border-t border-gray-800/50 pt-4 space-y-4">
-              <div className="p-4 bg-blue-500/5 border border-blue-500/10 rounded-xl space-y-2">
-                <span className="text-xs font-bold text-blue-300 block">¿Cómo obtener tus credenciales de Google Calendar?</span>
-                <ol className="list-decimal pl-4 text-[10px] text-gray-400 space-y-1 leading-relaxed">
-                  <li>Ve a la <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">Google Cloud Console</a> y crea o selecciona un proyecto.</li>
-                  <li>Habilita la <strong>Google Calendar API</strong> desde la biblioteca de APIs.</li>
-                  <li>Ve a <strong>APIs & Services &gt; Credentials</strong> y configura la pantalla de consentimiento OAuth.</li>
-                  <li>Crea credenciales de tipo <strong>OAuth Client ID</strong> (Application type: Web application).</li>
-                  <li>Añade como URI de redirección autorizado (Authorized redirect URIs): <br/>
-                    <code className="bg-[#070b13] px-1.5 py-0.5 rounded font-mono text-[9px] text-gray-300">
-                      {typeof window !== "undefined" ? `${window.location.origin}/api/calendar/${id}/callback` : `https://plataforma.genia.com.co/api/calendar/${id}/callback`}
-                    </code>
-                  </li>
-                  <li>Copia el <strong>Client ID</strong> y el <strong>Client Secret</strong> e ingrésalos abajo.</li>
-                </ol>
-              </div>
-
               {calStatus?.connected ? (
                 <div className="space-y-4 animate-fadeIn">
                   {/* Connected Status Card */}
-                  <div className="p-4 bg-emerald-500/[0.02] border border-emerald-500/10 rounded-xl flex items-center justify-between">
-                    <div>
-                      <span className="text-gray-400 text-[10px] block">Cuenta conectada</span>
-                      <span className="text-white text-xs font-bold font-mono">{calStatus.email}</span>
+                  <div className="p-4 bg-emerald-500/[0.04] border border-emerald-500/20 rounded-xl flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                        <Calendar className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="text-gray-400 text-[10px] block font-medium">Cuenta de Google Calendar vinculada</span>
+                        <span className="text-emerald-300 text-xs font-bold font-mono">{calStatus.email}</span>
+                      </div>
                     </div>
                     <button
                       type="button"
@@ -2477,7 +2457,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
 
                   {/* Upcoming events preview */}
                   <div className="space-y-2">
-                    <span className="text-gray-300 font-bold text-xs block">Próximos Eventos (7 días)</span>
+                    <span className="text-gray-300 font-bold text-xs block">Próximos Eventos en Agenda (7 días)</span>
                     {calEventsLoading ? (
                       <div className="flex justify-center py-6">
                         <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
@@ -2512,49 +2492,99 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                   </div>
                 </div>
               ) : (
-                <div className="space-y-3 animate-fadeIn">
-                  {/* Credentials Fields */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Client ID de Google *</label>
-                      <input
-                        type="text"
-                        placeholder="Ingresa tu Google Client ID"
-                        value={form.google_calendar_client_id}
-                        onChange={e => setForm(prev => ({ ...prev, google_calendar_client_id: e.target.value }))}
-                        className="w-full bg-[#0c101c] border border-gray-850 focus:border-emerald-500 rounded-xl px-4 py-2 text-white focus:outline-none text-xs transition-all font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Client Secret de Google *</label>
-                      <div className="relative">
-                        <input
-                          type={showCalSecrets ? "text" : "password"}
-                          placeholder={agent.google_calendar_client_id ? "•••••••••••••••• (Cifrado - dejar en blanco para no modificar)" : "Ingresa tu Google Client Secret"}
-                          value={form.google_calendar_client_secret}
-                          onChange={e => setForm(prev => ({ ...prev, google_calendar_client_secret: e.target.value }))}
-                          className="w-full bg-[#0c101c] border border-gray-850 focus:border-emerald-500 rounded-xl pl-4 pr-10 py-2 text-white focus:outline-none text-xs transition-all font-mono"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowCalSecrets(!showCalSecrets)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition"
-                        >
-                          {showCalSecrets ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
+                <div className="space-y-4 animate-fadeIn">
+                  {/* SaaS 1-Click Connection Card */}
+                  <div className="p-6 bg-gradient-to-br from-emerald-950/20 via-[#0c101c] to-[#070b13] border border-emerald-500/20 rounded-2xl space-y-4">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                        <Calendar className="w-6 h-6 text-emerald-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h5 className="text-white text-sm font-bold">Sincronización Automática de Agenda</h5>
+                        <p className="text-gray-400 text-xs mt-1 leading-relaxed">
+                          Conecta tu Google Calendar para que el asistente consulte disponibilidad en tiempo real y agende citas o reservas automáticamente sin cruces de horario.
+                        </p>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex justify-end pt-2">
-                    <button
-                      type="button"
-                      onClick={handleConnectCalendar}
-                      className="flex items-center gap-1.5 px-5 py-2 border border-emerald-500/25 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 rounded-xl transition text-xs font-semibold cursor-pointer"
-                    >
-                      <Calendar className="w-3.5 h-3.5" />
-                      Guardar y Conectar Google Calendar
-                    </button>
+                    <div className="pt-3 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-gray-800/60">
+                      <div className="flex items-center gap-2 text-[11px] text-emerald-400/80">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>Conexión instantánea y segura con Google OAuth</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={calConnecting}
+                        onClick={handleConnectCalendar}
+                        className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-500/20 cursor-pointer disabled:opacity-50"
+                      >
+                        {calConnecting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Abriendo Google...
+                          </>
+                        ) : (
+                          <>
+                            <Calendar className="w-4 h-4" />
+                            Conectar mi Google Calendar
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Advanced optional credentials for platform admin */}
+                    {isAdmin && (
+                      <div className="pt-2 border-t border-gray-800/40">
+                        <button
+                          type="button"
+                          onClick={() => setShowAdvancedCal(!showAdvancedCal)}
+                          className="text-[11px] text-gray-500 hover:text-gray-300 flex items-center gap-1.5 transition cursor-pointer"
+                        >
+                          <Settings className="w-3 h-3" />
+                          <span>{showAdvancedCal ? "Ocultar credenciales avanzadas" : "⚙️ Credenciales personalizadas de Google (Opcional / Super Admin)"}</span>
+                        </button>
+
+                        {showAdvancedCal && (
+                          <div className="mt-3 p-4 bg-[#070b13] border border-gray-800 rounded-xl space-y-3 animate-fadeIn">
+                            <p className="text-gray-400 text-[11px] leading-relaxed">
+                              Por defecto, la plataforma utiliza las credenciales maestras de GENIA. Si deseas que este agente específico use un proyecto propio de Google Cloud, ingresa sus datos aquí:
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Client ID de Google</label>
+                                <input
+                                  type="text"
+                                  placeholder="Ingresa tu Google Client ID"
+                                  value={form.google_calendar_client_id}
+                                  onChange={e => setForm(prev => ({ ...prev, google_calendar_client_id: e.target.value }))}
+                                  className="w-full bg-[#0c101c] border border-gray-850 focus:border-emerald-500 rounded-xl px-4 py-2 text-white focus:outline-none text-xs transition-all font-mono"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-gray-400 font-semibold mb-1 text-[11px]">Client Secret de Google</label>
+                                <div className="relative">
+                                  <input
+                                    type={showCalSecrets ? "text" : "password"}
+                                    placeholder={agent.google_calendar_client_id ? "•••••••••••••••• (Cifrado)" : "Ingresa tu Google Client Secret"}
+                                    value={form.google_calendar_client_secret}
+                                    onChange={e => setForm(prev => ({ ...prev, google_calendar_client_secret: e.target.value }))}
+                                    className="w-full bg-[#0c101c] border border-gray-850 focus:border-emerald-500 rounded-xl pl-4 pr-10 py-2 text-white focus:outline-none text-xs transition-all font-mono"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowCalSecrets(!showCalSecrets)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition"
+                                  >
+                                    {showCalSecrets ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
