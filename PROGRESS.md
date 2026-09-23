@@ -4,6 +4,25 @@
 > **Lo leen y lo actualizan TODAS las plataformas** (Kiro, opencode, Antigravity, etc.).
 > Si entras al proyecto desde cualquier herramienta, empieza leyendo este archivo.
 
+## 2026-09-22 19:22 (COT) — Corrección de Error "This page couldn't load" en `/agents/[id]` y Despliegue de Producción
+**Plataforma:** Antigravity
+**Tipo:** 🐛 Bugfix Crítico de Frontend & Despliegue de Producción
+
+### Acciones ejecutadas:
+- **[MODIFICADO]** `dashboard/src/app/(dashboard)/agents/[id]/page.tsx`:
+  1. Corregida la extracción de parámetros de ruta dinámica en Next.js 16 Client Component: reemplazado `use(params)` (que provocaba `ReferenceError: use is not defined` o `TypeError: unsupported type`) por `useParams()` de `next/navigation`.
+  2. Agregados imports explícitos de React (`useState`, `useEffect`, `useRef`) y Lucide (`Settings`).
+  3. Aplicado optional chaining `agent?.google_calendar_client_id` para evitar fallos de lectura sobre `null` durante el montaje inicial.
+  4. Agregado fallback con `authenticatedFetch('/api/agents/' + id)` para cargar el agente de forma autónoma e inmediata al recargar la página directamente sin depender de la carga diferida del contexto global.
+  5. Migradas todas las llamadas directas de `fetch` en módulos Wasi y Contactos a `authenticatedFetch` para incluir automáticamente los tokens JWT y API keys.
+- **[VALIDACIÓN LOCAL]** `npm run build` ejecutado en Next.js 16 Turbopack completado con éxito (`exit code 0`, 16/16 páginas estáticas y rutas dinámicas generadas).
+- **[DESPLIEGUE & ALIAS]** Código subido a Git (`16b5881`) y desplegado a producción en Vercel (`dpl_3VFKMyEh7dTfDY3gGq8QvPuii5hc`). Dominios `genia.com.co` y `www.genia.com.co` vinculados y validados con respuesta HTTP 200 OK.
+
+**Estado:** ✅ Página de configuración del agente 100% operativa y funcional en vivo.
+**Siguiente paso:** Acceder a la URL del agente y pulsar "Conectar mi Google Calendar".
+
+---
+
 ## 2026-09-22 18:52 (COT) — Activación Total en Producción: Google Calendar OAuth 2.0 (1-Clic)
 **Plataforma:** Antigravity
 **Tipo:** 🚀 Despliegue de Producción & Activación de Credenciales
