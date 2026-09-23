@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef, use } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { useAppContext } from "../../../../lib/AppContext";
 import { authenticatedFetch } from "../../../../lib/api";
 import { Agent, KbImage, checkIsAdmin } from "../../../../lib/types";
@@ -36,11 +36,13 @@ import {
   FileSpreadsheet,
   Search,
   Users,
-  ShieldAlert
+  ShieldAlert,
+  Settings
 } from "lucide-react";
 
-export default function AgentConfigPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function AgentConfigPage({ params }: { params?: any }) {
+  const routeParams = useParams();
+  const id = (routeParams?.id as string) || (params && typeof params.then !== "function" ? params?.id : "") || "";
   const router = useRouter();
   
   const {
@@ -221,6 +223,33 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
         wasi_company_id: foundAgent.wasi_company_id || "",
         wasi_token: "",
       });
+    } else if (id) {
+      authenticatedFetch(`/api/agents/${id}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data && data.id) {
+            setAgent(data);
+            setForm({
+              name: data.name,
+              description: data.description || "",
+              system_prompt: data.system_prompt,
+              provider: data.provider,
+              model: data.model,
+              temperature: data.temperature,
+              max_tokens: data.max_tokens,
+              custom_fields: data.custom_fields || [],
+              channels: data.channels || ["web"],
+              notification_phone: data.notification_phone || "",
+              stt_provider: data.stt_provider || "groq_whisper",
+              timezone: data.timezone || "America/Bogota",
+              google_calendar_client_id: data.google_calendar_client_id || "",
+              google_calendar_client_secret: "",
+              wasi_company_id: data.wasi_company_id || "",
+              wasi_token: "",
+            });
+          }
+        })
+        .catch(err => console.error("Error fetching agent directly:", err));
     }
   }, [id, agents]);
 
@@ -455,9 +484,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     if (!id) return;
     setWasiStatusLoading(true);
     try {
-      const res = await fetch(`/api/wasi/status/${id}`, {
-        headers: { "x-api-key": localStorage.getItem("apiKey") || "" },
-      });
+      const res = await authenticatedFetch(`/api/wasi/status/${id}`);
       if (res.ok) {
         const data = await res.json();
         setWasiStatus(data);
@@ -476,12 +503,8 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     }
     setWasiConnecting(true);
     try {
-      const res = await fetch(`/api/wasi/connect/${id}`, {
+      const res = await authenticatedFetch(`/api/wasi/connect/${id}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": localStorage.getItem("apiKey") || "",
-        },
         body: JSON.stringify({
           company_id: form.wasi_company_id,
           wasi_token: form.wasi_token,
@@ -506,9 +529,8 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     if (!id) return;
     setWasiSyncing(true);
     try {
-      const res = await fetch(`/api/wasi/sync/${id}`, {
+      const res = await authenticatedFetch(`/api/wasi/sync/${id}`, {
         method: "POST",
-        headers: { "x-api-key": localStorage.getItem("apiKey") || "" },
       });
       const data = await res.json();
       if (res.ok) {
@@ -529,9 +551,8 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     if (!confirm("¿Desconectar Wasi.co? Las credenciales se eliminarán del agente.")) return;
     setWasiDisconnecting(true);
     try {
-      const res = await fetch(`/api/wasi/disconnect/${id}`, {
+      const res = await authenticatedFetch(`/api/wasi/disconnect/${id}`, {
         method: "POST",
-        headers: { "x-api-key": localStorage.getItem("apiKey") || "" },
       });
       if (res.ok) {
         setWasiStatus({ wasi_connected: false, wasi_company_id: null, wasi_sync_status: "idle", wasi_last_sync_at: null, wasi_properties_count: 0 });
@@ -549,9 +570,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     if (!id) return;
     setDbLoading(true);
     try {
-      const res = await fetch(`/api/agents/${id}/contacts`, {
-        headers: { "x-api-key": localStorage.getItem("apiKey") || "" },
-      });
+      const res = await authenticatedFetch(`/api/agents/${id}/contacts`);
       if (res.ok) {
         const data = await res.json();
         setDbContacts(Array.isArray(data) ? data : []);
@@ -571,9 +590,8 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch(`/api/agents/${id}/contacts/upload`, {
+      const res = await authenticatedFetch(`/api/agents/${id}/contacts/upload`, {
         method: "POST",
-        headers: { "x-api-key": localStorage.getItem("apiKey") || "" },
         body: formData,
       });
       const data = await res.json();
@@ -593,9 +611,8 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
   const handleDeleteDbContact = async (contactId: string) => {
     if (!id) return;
     try {
-      const res = await fetch(`/api/agents/${id}/contacts/${contactId}`, {
+      const res = await authenticatedFetch(`/api/agents/${id}/contacts/${contactId}`, {
         method: "DELETE",
-        headers: { "x-api-key": localStorage.getItem("apiKey") || "" },
       });
       if (res.ok) {
         setDbContacts(prev => prev.filter(c => c.id !== contactId));
@@ -610,9 +627,8 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
     if (!confirm("¿Estás seguro de vaciar toda la base de datos de este agente? Esta acción no se puede deshacer.")) return;
     setDbClearing(true);
     try {
-      const res = await fetch(`/api/agents/${id}/contacts/clear`, {
+      const res = await authenticatedFetch(`/api/agents/${id}/contacts/clear`, {
         method: "DELETE",
-        headers: { "x-api-key": localStorage.getItem("apiKey") || "" },
       });
       if (res.ok) {
         setDbContacts([]);
@@ -2566,7 +2582,7 @@ export default function AgentConfigPage({ params }: { params: Promise<{ id: stri
                                 <div className="relative">
                                   <input
                                     type={showCalSecrets ? "text" : "password"}
-                                    placeholder={agent.google_calendar_client_id ? "•••••••••••••••• (Cifrado)" : "Ingresa tu Google Client Secret"}
+                                    placeholder={agent?.google_calendar_client_id ? "•••••••••••••••• (Cifrado)" : "Ingresa tu Google Client Secret"}
                                     value={form.google_calendar_client_secret}
                                     onChange={e => setForm(prev => ({ ...prev, google_calendar_client_secret: e.target.value }))}
                                     className="w-full bg-[#0c101c] border border-gray-850 focus:border-emerald-500 rounded-xl pl-4 pr-10 py-2 text-white focus:outline-none text-xs transition-all font-mono"
