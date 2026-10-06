@@ -19,6 +19,7 @@ from schemas.conversation import ChatRequest, ChatResponse
 from services.ai_service import chat_with_agent
 from services.knowledge_service import retrieve_context
 from services.lead_service import extract_and_save_lead
+from services.auth_service import get_current_user
 from rate_limit import limiter
 
 
@@ -28,19 +29,18 @@ router = APIRouter(prefix="/chat", tags=["Chat Sandbox"])
 
 @router.post("", response_model=ChatResponse)
 @limiter.limit("30/minute")
-async def chat_sandbox(request: Request, chat_request: ChatRequest, db: Session = Depends(get_db)):
+async def chat_sandbox(
+    request: Request,
+    chat_request: ChatRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Envía un mensaje a un agente y recibe su respuesta.
-
-    Si no se envía un `conversation_id`, se inicia una nueva conversación.
+    Valida autorización multi-tenant del agente antes de procesar el chat.
     """
-    # 1. Verificar si el agente existe
-    agent = db.query(Agent).filter(Agent.id == chat_request.agent_id).first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontró ningún agente con el ID {chat_request.agent_id}",
-        )
+    from security import require_agent_access
+    agent = require_agent_access(chat_request.agent_id, db, current_user)
 
     # 2. Obtener o crear la conversación
     conversation = None
@@ -96,6 +96,7 @@ async def transcribe_audio_endpoint(
     file: UploadFile = File(...),
     agent_id: str | None = None,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Recibe un archivo de audio y devuelve su transcripción en texto usando el proveedor del agente.
@@ -108,8 +109,9 @@ async def transcribe_audio_endpoint(
 
     stt_provider = "groq_whisper"
     if agent_id:
-        agent = db.query(Agent).filter(Agent.id == agent_id).first()
-        if agent and hasattr(agent, "stt_provider") and agent.stt_provider:
+        from security import require_agent_access
+        agent = require_agent_access(agent_id, db, current_user)
+        if hasattr(agent, "stt_provider") and agent.stt_provider:
             stt_provider = agent.stt_provider
 
     try:

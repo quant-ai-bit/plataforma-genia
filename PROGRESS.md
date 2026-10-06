@@ -4,7 +4,40 @@
 > **Lo leen y lo actualizan TODAS las plataformas** (Kiro, opencode, Antigravity, etc.).
 > Si entras al proyecto desde cualquier herramienta, empieza leyendo este archivo.
 
-## 2026-09-22 19:22 (COT) — Corrección de Error "This page couldn't load" en `/agents/[id]` y Despliegue de Producción
+## 2026-10-06 17:10 (COT) — Implementación de Endurecimiento de Seguridad y Multi-Tenant (Fases 0 - 2)
+**Plataforma:** Antigravity
+**Tipo:** 🛡️ Seguridad, Aislamiento Multi-Tenant & Protección de Producción
+
+### Acciones ejecutadas:
+- **[NUEVO MÓDULO DE SEGURIDAD]** Creado `backend/security.py` con dependencias centralizadas y reutilizables:
+  1. `verify_cron_secret`: Autenticación para cron jobs de Vercel/GitHub vía `Authorization: Bearer <CRON_SECRET>` o `X-Cron-Secret`.
+  2. `verify_waha_webhook`: Autenticación de webhooks entrantes de WhatsApp con modo dual `WAHA_WEBHOOK_AUTH_MODE` (`log` para cero downtime / `enforce`).
+  3. `require_agent_access`: Control estricto de acceso multi-tenant que garantiza que usuarios regulares solo interactúen con su `assigned_agent_id` activo.
+  4. `require_admin` & `get_user_role_and_account`: Autorización basada en rol de base de datos (`user_accounts.role == 'admin'`).
+- **[CIERRE DE ENDPOINTS PÚBLICOS & DEPURACIÓN]**
+  - Eliminados endpoints inseguros que filtraban prompts e información sensible: `POST /api/whatsapp/webhook/waha/ai-test` y `GET /api/whatsapp/webhook/waha/diag`.
+  - Protegidos endpoints operativos: `/api/whatsapp/waha/sessions` y `/api/whatsapp/waha/cleanup` (requieren admin); `/api/whatsapp/waha/monitor` y `/api/whatsapp/check-inactivity` (requieren `CRON_SECRET`).
+  - Higienizado `/api/whatsapp/health` para ser solo lectura ligera sin exponer sesiones privadas de clientes.
+  - Protegido `GET /api/whatsapp/{agent_id}/qr/debug-state` con `require_agent_access`.
+- **[OAUTH SEGURO DE GOOGLE CALENDAR]**
+  - Migrado el flujo OAuth en `services/google_calendar_service.py` y `routers/google_calendar.py` a tokens `state` firmados criptográficamente (HS256 con expiración de 15 minutos), evitando ataques de CSRF o secuestro de calendarios entre agentes.
+- **[AISLAMIENTO MULTI-TENANT EN ROUTERS]**
+  - Aplicado `require_agent_access` en endpoints de `contacts.py` (upload, list, delete, clear, search) y `chat.py` (sandbox y transcribe), previniendo fuga o mutación de datos entre clientes.
+  - Endurecido `public_chat.py` verificando que el agente esté activo (`Agent.status == 'active'`) y limitando mensajes a un máximo de 2000 caracteres.
+- **[RATE LIMITING & CORS DISTRIBUIDO]**
+  - Actualizado `rate_limit.py` para extraer IPs reales detrás de proxies en Vercel (`x-forwarded-for`) y soportar almacenamiento distribuido (`RATE_LIMIT_STORAGE_URI`).
+  - Restringida la expresión regular de CORS en `backend/main.py` para admitir únicamente dominios y previsualizaciones oficiales de GENIA.
+- **[HIGIENE DE SECRETOS Y PII]**
+  - Removidos del índice de Git los archivos `vercel_webhook_logs*.json` y `vercel_logs*.json`.
+  - Actualizado `.gitignore` para ignorar dumps de logs y backups.
+  - Eliminado el fallback hardcodeado de Supabase anon key en `backend/services/auth_service.py` y sustituidos los `print` con payloads crudos de WhatsApp por logs sanitizados.
+- **[VALIDACIÓN DE SINTAXIS]** Compilación limpia ejecutada con `py_compile` en todos los archivos modificados.
+
+**Rama de trabajo:** `security/hardening-fase-0-2`
+**Estado:** ✅ Fases 0 a 2 implementadas en código con preservación de cero downtime.
+**Siguiente paso:** Configurar `CRON_SECRET` y variables en Vercel antes de fusionar y promover a producción.
+
+---
 **Plataforma:** Antigravity
 **Tipo:** 🐛 Bugfix Crítico de Frontend & Despliegue de Producción
 

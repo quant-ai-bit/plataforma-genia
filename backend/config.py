@@ -122,6 +122,28 @@ class Settings(BaseSettings):
     default_tts_provider: str = "google_tts"
     elevenlabs_api_key: str = ""
 
+    # --- Endurecimiento de seguridad (Fase 1/2) ---
+    # Secreto compartido para endpoints de cron (Vercel Cron envía
+    # "Authorization: Bearer $CRON_SECRET" automáticamente).
+    cron_secret: str = ""
+    # Modo de autenticación de webhooks WAHA: "log" (solo advierte) | "enforce" (401).
+    # Desplegar primero en "log", verificar 24 h y luego cambiar a "enforce".
+    waha_webhook_auth_mode: str = "log"
+    # Secreto para firmar el parámetro `state` del flujo OAuth de Google Calendar.
+    # Si está vacío se usa encryption_key como respaldo.
+    oauth_state_secret: str = ""
+    # Backend de almacenamiento para el rate limiter (ej. Upstash: "rediss://...").
+    # "memory://" no es efectivo en serverless (cada lambda tiene su contador).
+    rate_limit_storage_uri: str = "memory://"
+    # Emails de bootstrap de super-admin (separados por comas). Solo se promueven
+    # a role='admin' si el email está verificado en Supabase.
+    admin_emails: str = ""
+
+    @property
+    def is_production(self) -> bool:
+        import os
+        return os.getenv("ENVIRONMENT", "development") == "production" or os.getenv("VERCEL") == "1"
+
     @property
     def allowed_origins_list(self) -> list[str]:
         """Devuelve la lista blanca de origenes CORS a partir de `allowed_origins`."""

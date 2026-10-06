@@ -65,3 +65,12 @@ nul
 
 *.env
 production.env
+
+# Webhook logs & backups
+vercel_*.json
+vercel_*.log
+*.bak
+*.pulled
+*.temp
+*.tmp
+

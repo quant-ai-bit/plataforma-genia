@@ -68,6 +68,7 @@ from services.ai_service import chat_with_agent
 from services.knowledge_service import retrieve_context
 from services.lead_service import extract_and_save_lead
 from services.auth_service import get_current_user
+from security import verify_cron_secret, verify_waha_webhook
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/whatsapp", tags=["WhatsApp Integration"])
@@ -542,17 +543,14 @@ async def configure_webhook_meta(
 async def debug_qr_state(
     agent_id: str,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """
-    ENDPOINT DE DIAGNÓSTICO TEMPORAL (público). Verifica el estado de la
-    instancia Evolution usando el token de instancia almacenado (desencriptado
-    en runtime). No expone el token en la respuesta.
+    ENDPOINT DE DIAGNÓSTICO (autenticado). Verifica el estado de la
+    instancia Evolution usando el token de instancia almacenado.
     """
-    from services.whatsapp_qr_service import _candidate_api_keys
-
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        return {"error": "agente no encontrado"}
+    from security import require_agent_access
+    agent = require_agent_access(agent_id, db, current_user)
 
     instance = agent.whatsapp_qr_instance_name
     token_dec = decrypt(agent.whatsapp_qr_instance_token) if agent.whatsapp_qr_instance_token else None
@@ -1562,30 +1560,46 @@ async def restart_whatsapp_waha(
 
 
 @router.get("/{agent_id}/waha/health")
-async def health_whatsapp_waha():
-    """Verifica el estado del servidor WAHA."""
+async def health_whatsapp_waha(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Verifica el estado del servidor WAHA para el agente."""
+    from security import require_agent_access
+    _agent = require_agent_access(agent_id, db, current_user)
     health = await check_waha_health()
-    # Include deploy version marker
     health["_deploy"] = "v20260712_voice_fix"
     return health
 
 
 @router.get("/waha/sessions")
-async def list_all_waha_sessions():
+async def list_all_waha_sessions(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Lista todas las sesiones WAHA activas con su estado.
-    Útil para monitorear múltiples agentes simultáneamente.
+    Requiere permisos de administrador.
     """
+    from security import require_admin
+    require_admin(db, current_user)
     from services.whatsapp_waha_service import get_multi_session_stats
     stats = await get_multi_session_stats()
     return stats
 
 
 @router.post("/waha/cleanup")
-async def cleanup_waha_sessions():
+async def cleanup_waha_sessions(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Limpia sesiones WAHA huérfanas o caídas automáticamente.
+    Requiere permisos de administrador.
     """
+    from security import require_admin
+    require_admin(db, current_user)
     from services.whatsapp_waha_service import cleanup_stale_sessions
     result = await cleanup_stale_sessions()
     return result
@@ -1594,10 +1608,11 @@ async def cleanup_waha_sessions():
 @router.post("/waha/monitor")
 async def monitor_waha_sessions(
     db: Session = Depends(get_db),
+    _cron: bool = Depends(verify_cron_secret),
 ):
     """
     Monitorea todos los agentes con proveedor WAHA y recupera sesiones perdidas.
-    Ideal para ejecutar como cron job cada 5-10 minutos (Vercel Cron).
+    Protegido con CRON_SECRET (Vercel Cron / GitHub Actions).
     """
     from services.whatsapp_waha_service import monitor_and_recover_all_agents
     result = await monitor_and_recover_all_agents(db_session=db)
@@ -1605,52 +1620,18 @@ async def monitor_waha_sessions(
 
 
 @router.get("/health")
-async def health_check(db: Session = Depends(get_db)):
+async def health_check():
     """
-    Endpoint público de health check. No requiere autenticación.
-    Verifica conectividad con WAHA, monitorea sesiones caídas y reporta estado general.
-    Diseñado para ser usado por servicios externos de monitoreo (cron-job.org, UptimeRobot, etc.).
-    Uso sugerido: configurar un cron externo cada 5-10 minutos.
+    Endpoint público de health check ligero (solo lectura).
+    No expone nombres de sesiones de clientes ni ejecuta mutaciones de base de datos.
     """
-    from services.whatsapp_waha_service import (
-        check_waha_health, monitor_and_recover_all_agents, list_waha_sessions,
-        waha_is_mock_mode, get_multi_session_stats,
-    )
-    from config import settings as cfg
+    from services.whatsapp_waha_service import check_waha_health, waha_is_mock_mode
 
-    # 1. Verificar conectividad con WAHA
     waha_health = await check_waha_health()
-
-    # 2. Listar sesiones activas
-    sessions = []
-    active_count = 0
-    try:
-        all_sessions = await list_waha_sessions()
-        for s in all_sessions:
-            status = s.get("status", "").upper()
-            sessions.append({"name": s.get("name"), "status": status})
-            if status in ("WORKING", "CONNECTED"):
-                active_count += 1
-    except Exception as e:
-        logger.warning(f"[HEALTH] Error listando sesiones: {e}")
-
-    # 3. Ejecutar monitor de recuperación
-    monitor_result = await monitor_and_recover_all_agents(db_session=db)
-
     return {
-        "status": "healthy" if waha_health.get("healthy") else "unhealthy",
-        "waha": {
-            "connected": waha_health.get("healthy", False),
-            "error": waha_health.get("error"),
-            "mode": "production" if not waha_is_mock_mode() else "mock",
-        },
-        "sessions": {
-            "total": len(sessions),
-            "active": active_count,
-            "list": sessions,
-        },
-        "monitor": monitor_result,
-        "agents_needing_qr": monitor_result.get("agents_needing_qr", []),
+        "status": "healthy" if waha_health.get("healthy") else "degraded",
+        "waha_connected": waha_health.get("healthy", False),
+        "mode": "production" if not waha_is_mock_mode() else "mock",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -1793,139 +1774,13 @@ async def simulate_scan_waha(
     }
 
 
-@router.get("/webhook/waha/diag")
-async def waha_webhook_diag(db: Session = Depends(get_db)):
-    """Diagnóstico: verifica API keys y configuración del agente."""
-    from config import settings
-    agents = db.query(Agent).limit(5).all()
-    agent_info = [
-        {
-            "id": str(a.id)[:20],
-            "name": a.name,
-            "provider": a.provider,
-            "model": a.model,
-            "status": a.status,
-            "instance": a.whatsapp_qr_instance_name,
-        }
-        for a in agents
-    ]
-    return {
-        "api_keys": {
-            "groq": bool(settings.groq_api_key),
-            "gemini": bool(settings.gemini_api_key),
-            "openrouter": bool(settings.openrouter_api_key),
-        },
-        "agents": agent_info,
-        "db_connected": True,
-    }
-
-
-@router.post("/webhook/waha/ai-test")
-async def waha_ai_test(db: Session = Depends(get_db)):
-    """Prueba directa de IA para diagnosticar errores."""
-    from config import settings
-    import traceback, sys
-    results = {}
-    from services.ai_service import chat_with_agent
-
-    agent = db.query(Agent).filter(Agent.status == "active", Agent.whatsapp_qr_instance_name.isnot(None)).first()
-    if not agent:
-        return {"error": "No active WAHA agent found"}
-
-    # Test 1: Direct Gemini call to see exact error
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=settings.gemini_api_key)
-        gm = genai.GenerativeModel("gemini-2.0-flash")
-        gr = gm.generate_content("Hi", generation_config={"max_output_tokens": 10})
-        results["direct_gemini"] = {"ok": True, "text": gr.text[:50]}
-    except Exception as e:
-        results["direct_gemini"] = {"ok": False, "error": str(e)[:300], "type": type(e).__name__}
-
-    # Test 2: chat_with_agent with Gemini (agent's actual config)
-    from services.ai_service import chat_with_agent
-    from services.mcp_registry import mcp_registry
-
-    # Test 2a: MCP registry - get tools
-    try:
-        tools, origin_map = await mcp_registry.get_tools_for_agent(
-            db=db, agent_id=agent.id, custom_fields=agent.custom_fields or []
-        )
-        results["mcp_tools"] = {"count": len(tools), "names": [t["function"]["name"] for t in tools]}
-    except Exception as e:
-        results["mcp_tools"] = {"error": str(e)[:300], "type": type(e).__name__}
-        tools, origin_map = [], {}  # fallback
-
-    # Test 2b: Execute save_lead_info directly
-    if tools:
-        try:
-            result = await mcp_registry.execute_tool(
-                tool_name="save_lead_info",
-                arguments={"name": "Test"},
-                tool_origin_map=origin_map,
-                agent_id=agent.id,
-                db=db,
-            )
-            results["mcp_save_lead"] = {"ok": True, "result": str(result)[:200]}
-        except Exception as e:
-            results["mcp_save_lead"] = {"ok": False, "error": str(e)[:300], "type": type(e).__name__}
-
-    # Show system prompt preview and full length
-    sys_prompt = agent.system_prompt or ""
-    results["system_prompt_info"] = {
-        "length": len(sys_prompt),
-        "preview": sys_prompt[:500],
-        "has_unicode": any(ord(c) > 127 for c in sys_prompt),
-        "has_url": "http" in sys_prompt.lower(),
-    }
-
-    # Test 3: Call Groq API directly with the real system prompt
-    from groq import AsyncGroq
-    groq_direct = AsyncGroq(api_key=settings.groq_api_key)
-    try:
-        groq_resp = await groq_direct.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": "Hola, ¿cómo estás?"},
-            ],
-            temperature=0.7,
-            max_tokens=100,
-        )
-        groq_text = groq_resp.choices[0].message.content or ""
-        results["groq_direct_real_prompt"] = {"ok": True, "reply": groq_text[:200]}
-    except Exception as e:
-        results["groq_direct_real_prompt"] = {"ok": False, "error": str(e)[:300], "type": type(e).__name__}
-
-    # Test 4: Also test with truncated prompt (first 1000 chars)
-    try:
-        groq_resp2 = await groq_direct.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": sys_prompt[:1000]},
-                {"role": "user", "content": "Hola, ¿cómo estás?"},
-            ],
-            temperature=0.7,
-            max_tokens=100,
-        )
-        groq_text2 = groq_resp2.choices[0].message.content or ""
-        results["groq_direct_truncated"] = {"ok": True, "reply": groq_text2[:200]}
-    except Exception as e:
-        results["groq_direct_truncated"] = {"ok": False, "error": str(e)[:200]}
-
-    # Test 4: agent details
-    results["agent_info"] = {
-        "name": agent.name, "provider": agent.provider, "model": agent.model,
-        "has_system_prompt": bool(agent.system_prompt),
-        "temperature": agent.temperature, "max_tokens": agent.max_tokens,
-    }
-
-    return results
-
-
 @router.post("/webhook/waha")
-async def receive_waha_webhook_auto(request: Request, db: Session = Depends(get_db)):
-    """Webhook WAHA sin agent_id — auto-detecta el agente desde la sesión."""
+async def receive_waha_webhook_auto(
+    request: Request,
+    db: Session = Depends(get_db),
+    _auth: bool = Depends(verify_waha_webhook),
+):
+    """Webhook WAHA sin agent_id — auto-detecta el agente desde la sesión protegida."""
     try:
         data = await request.json()
     except Exception:
@@ -1979,9 +1834,11 @@ async def receive_waha_webhook(
     agent_id: str,
     request: Request,
     db: Session = Depends(get_db),
+    _auth: bool = Depends(verify_waha_webhook),
 ):
     """
     Webhook para recibir eventos de WAHA (mensajes, qr, session.status).
+    Protegido con verificación de API Key.
     """
     try:
         data = await request.json()
@@ -1991,9 +1848,11 @@ async def receive_waha_webhook(
             detail="Payload JSON no válido.",
         )
 
-    print(f"[WAHA WEBHOOK PRINT] Recibido para agent_id={agent_id}, event={data.get('event')}, payload={data}")
     logger.info(
-        f"[WAHA WEBHOOK] Recibido para agent_id={agent_id}, event={data.get('event')}"
+        "[WAHA WEBHOOK] Evento '%s' recibido para agent_id=%s (sesión: %s)",
+        data.get("event"),
+        agent_id,
+        data.get("session"),
     )
 
     # Sincronizar session name si WAHA reporta uno diferente
@@ -2791,10 +2650,14 @@ async def send_agent_whatsapp_msg(db: Session, agent: Agent, to_phone: str, text
 
 
 @router.get("/check-inactivity")
-async def check_inactivity(db: Session = Depends(get_db)):
+async def check_inactivity(
+    db: Session = Depends(get_db),
+    _cron: bool = Depends(verify_cron_secret),
+):
     """
     Cron endpoint called periodically (e.g. every 5-10 minutes) to find abandoned conversations 
     and send follow-up messages or notify the commercial team.
+    Protegido con CRON_SECRET.
     """
     now = datetime.now(timezone.utc)
     

@@ -44,12 +44,8 @@ async def upload_agent_contacts(
     Carga masivamente una base de datos de contactos (CSV o Excel) para un agente específico.
     Guarda los registros asociados de forma aislada a `agent_id`.
     """
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente {agent_id} no encontrado.",
-        )
+    from security import require_agent_access
+    agent = require_agent_access(agent_id, db, current_user)
 
     filename = file.filename or ""
     contents = await file.read()
@@ -202,6 +198,8 @@ def list_agent_contacts(
     current_user: dict = Depends(get_current_user),
 ):
     """Lista todos los contactos precargados pertenecientes exclusivamente a un agente."""
+    from security import require_agent_access
+    require_agent_access(agent_id, db, current_user)
     contacts = (
         db.query(PreloadedContact)
         .filter(PreloadedContact.agent_id == agent_id)
@@ -219,6 +217,8 @@ def delete_agent_contact(
     current_user: dict = Depends(get_current_user),
 ):
     """Elimina un contacto precargado de la base privada del agente."""
+    from security import require_agent_access
+    require_agent_access(agent_id, db, current_user)
     contact = (
         db.query(PreloadedContact)
         .filter(
@@ -246,6 +246,8 @@ def clear_agent_contacts(
     current_user: dict = Depends(get_current_user),
 ):
     """Elimina todos los contactos precargados de la base de datos de un agente."""
+    from security import require_agent_access
+    require_agent_access(agent_id, db, current_user)
     deleted = (
         db.query(PreloadedContact)
         .filter(PreloadedContact.agent_id == agent_id)
@@ -270,6 +272,8 @@ def search_agent_contacts(
     Busca contactos/inmuebles en la base de datos del agente por texto libre
     (nombre, teléfono, cédula, notas o cualquier campo en custom_data).
     """
+    from security import require_agent_access
+    require_agent_access(agent_id, db, current_user)
     query_str = (payload.get("query") or "").strip().lower()
     if not query_str:
         contacts = (

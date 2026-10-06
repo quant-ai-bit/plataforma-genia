@@ -80,54 +80,23 @@ class PendingUsersCountResponse(BaseModel):
     users: List[UserAccountResponse]
 
 
-# --- Dependencia para verificar rol Admin ---
+# --- Dependencia para verificar rol Admin (Centralizada en security.py) ---
+from security import (
+    require_admin as _sec_require_admin,
+    get_user_role_and_account as _sec_get_user_role_and_account,
+)
 
 def require_admin(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ) -> UserAccount:
     """Verifica que el usuario solicitante tenga rol de administrador."""
-    user_id = current_user.get("id")
-    email = (current_user.get("email") or "").strip().lower()
-    admin_emails = get_admin_emails()
-
-    # Buscar usuario en la base de datos
-    user_acc = db.query(UserAccount).filter(
-        (UserAccount.id == user_id) | (UserAccount.email == email)
-    ).first()
-
-    is_admin = False
-    if email in admin_emails:
-        is_admin = True
-    elif user_acc and user_acc.role == "admin":
-        is_admin = True
-
-    if not is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acceso restringido: Se requieren permisos de Administrador.",
-        )
-
-    return user_acc
+    return _sec_require_admin(db=db, current_user=current_user)
 
 
 def get_user_role_and_account(db: Session, current_user: dict) -> tuple[bool, Optional[UserAccount]]:
     """Determina si el usuario es administrador y retorna su cuenta si existe."""
-    user_id = current_user.get("id")
-    email = (current_user.get("email") or "").strip().lower()
-    admin_emails = get_admin_emails()
-
-    user_acc = db.query(UserAccount).filter(
-        (UserAccount.id == user_id) | (UserAccount.email == email)
-    ).first()
-
-    if email in admin_emails or user_id == "local_dev_user":
-        return True, user_acc
-
-    if user_acc and user_acc.role == "admin":
-        return True, user_acc
-
-    return False, user_acc
+    return _sec_get_user_role_and_account(db=db, current_user=current_user)
 
 
 # --- Endpoints ---

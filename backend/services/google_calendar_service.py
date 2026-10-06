@@ -73,7 +73,37 @@ def _get_client_config(agent, redirect_uri: str = "") -> dict:
     }
 
 
-def get_auth_url(agent_id: str, db, base_url: str = "") -> str:
+def generate_oauth_state(agent_id: str, user_id: str = "") -> str:
+    """Genera un token firmado temporal (15 minutos) para proteger el flujo OAuth."""
+    import time
+    secret = getattr(settings, "oauth_state_secret", "") or getattr(settings, "encryption_key", "") or "genia_calendar_fallback_secret"
+    payload = {
+        "agent_id": agent_id,
+        "user_id": user_id,
+        "exp": int(time.time()) + 900,  # 15 minutos
+    }
+    return jwt.encode(payload, secret, algorithm="HS256")
+
+
+def verify_oauth_state(state_token: str) -> dict:
+    """
+    Verifica el token de estado de OAuth.
+    Soporta fallback transitorio si el state recibido es simplemente un agent_id.
+    """
+    secret = getattr(settings, "oauth_state_secret", "") or getattr(settings, "encryption_key", "") or "genia_calendar_fallback_secret"
+    try:
+        data = jwt.decode(state_token, secret, algorithms=["HS256"])
+        return data
+    except Exception as e:
+        # Fallback transitorio: si state_token no es un JWT pero coincide con formato de ID
+        if state_token and len(state_token) <= 40 and not "." in state_token:
+            logger.warning("[OAUTH_STATE] Usando fallback de state no firmado (legacy): %s", state_token)
+            return {"agent_id": state_token, "user_id": None}
+        logger.error("[OAUTH_STATE] Error decodificando estado de OAuth: %s", str(e))
+        raise ValueError("Estado de OAuth inválido o expirado.")
+
+
+def get_auth_url(agent_id: str, db, base_url: str = "", user_id: str = "") -> str:
     """
     Genera la URL de autorización OAuth 2.0 para conectar Google Calendar.
 
@@ -81,6 +111,7 @@ def get_auth_url(agent_id: str, db, base_url: str = "") -> str:
         agent_id: ID del agente que se está conectando.
         db: Sesión de base de datos.
         base_url: URL base de la aplicación.
+        user_id: ID del usuario solicitante para vincular en el token de estado.
 
     Returns:
         URL de autorización de Google para que el usuario inicie sesión.
@@ -91,6 +122,7 @@ def get_auth_url(agent_id: str, db, base_url: str = "") -> str:
         raise ValueError("Agente no encontrado.")
 
     redirect_uri = _resolve_redirect_uri(base_url, agent_id)
+    signed_state = generate_oauth_state(agent_id, user_id)
 
     flow = Flow.from_client_config(
         _get_client_config(agent, redirect_uri),
@@ -102,7 +134,7 @@ def get_auth_url(agent_id: str, db, base_url: str = "") -> str:
         access_type="offline",
         include_granted_scopes="true",
         prompt="consent",
-        state=agent_id,
+        state=signed_state,
     )
 
     return auth_url
