@@ -5,11 +5,14 @@ Usa pydantic-settings para cargar variables de entorno desde .env
 y expone las listas de modelos disponibles por proveedor.
 """
 
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     """Configuración global de la aplicación."""
+
+    model_config = ConfigDict(env_file=".env", extra="ignore")
 
     # Base de datos
     database_url: str = ""
@@ -148,10 +151,6 @@ class Settings(BaseSettings):
     def allowed_origins_list(self) -> list[str]:
         """Devuelve la lista blanca de origenes CORS a partir de `allowed_origins`."""
         return [o.strip() for o in (self.allowed_origins or "").split(",") if o.strip()]
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
 
 
 settings = Settings()

@@ -10,7 +10,7 @@ import io
 import logging
 import uuid
 
-from PyPDF2 import PdfReader
+from pypdf import PdfReader
 from sqlalchemy.orm import Session
 
 from config import settings
