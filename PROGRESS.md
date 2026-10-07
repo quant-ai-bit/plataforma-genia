@@ -4,6 +4,25 @@
 > **Lo leen y lo actualizan TODAS las plataformas** (Kiro, opencode, Antigravity, etc.).
 > Si entras al proyecto desde cualquier herramienta, empieza leyendo este archivo.
 
+## 2026-10-07 13:21 (COT) — Migración Completa de SDK Google GenAI (Cero Advertencias en Pytest)
+**Plataforma:** Antigravity  
+**Tipo:** ⚡ Modernización de SDK IA & Calidad de Código
+
+### Acciones ejecutadas:
+- **[MIGRACIÓN A LA NUEVA SDK OFICIAL `google-genai`]**
+  - Removido el paquete obsoleto `google-generativeai>=0.8.0` de `backend/requirements.txt` y `requirements.txt`.
+  - Añadido `google-genai>=1.0.0` como SDK estándar unificado de Google.
+- **[ACTUALIZACIÓN EN SERVICIOS DE VISIÓN Y EMBEDDINGS]**
+  - `backend/services/vision_service.py`: Migradas las funciones `analyze_image_for_agent`, `generate_image_training_rule` y `extract_payment_receipt` para utilizar `genai.Client(api_key=...)`, `types.Part.from_bytes(data=image_bytes, mime_type=mime_type)` y `types.GenerateContentConfig(response_mime_type="application/json")`.
+  - `backend/services/embedding_service.py`: Migrado el fallback secundario de embeddings de Google AI Studio a `client.models.embed_content` con `types.EmbedContentConfig`.
+- **[VALIDACIÓN DE SUITE DE PRUEBAS AUTOMATIZADA]**
+  - **Resultado:** 11/11 pruebas pasando exitosamente en 5.31s con **0 advertencias** (eliminado el 100% de los `FutureWarning` y deprecaciones).
+
+**Rama de trabajo:** `security/hardening-fase-0-2`  
+**Estado:** ✅ SDK de Google modernizada al estándar oficial vigente.  
+
+---
+
 ## 2026-10-07 11:48 (COT) — Pull Request #1 Publicado, CI Verde (100%) y Modernización de Dependencias
 **Plataforma:** Antigravity  
 **Tipo:** 🚀 Publicación de PR, CI/CD Verde & Modernización de Librerías
