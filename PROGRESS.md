@@ -4,6 +4,29 @@
 > **Lo leen y lo actualizan TODAS las plataformas** (Kiro, opencode, Antigravity, etc.).
 > Si entras al proyecto desde cualquier herramienta, empieza leyendo este archivo.
 
+## 2026-10-07 11:48 (COT) — Pull Request #1 Publicado, CI Verde (100%) y Modernización de Dependencias
+**Plataforma:** Antigravity  
+**Tipo:** 🚀 Publicación de PR, CI/CD Verde & Modernización de Librerías
+
+### Acciones ejecutadas:
+- **[PULL REQUEST #1 ABIERTO EN GITHUB]**
+  - Rama `security/hardening-fase-0-2` subida a GitHub con PR oficial creado: [PR #1](https://github.com/quant-ai-bit/plataforma-genia/pull/1).
+  - Incluye documentación completa de variables de entorno requeridas en Vercel antes de fusión.
+- **[EJECUCIÓN EXITOSA DE GITHUB ACTIONS CI]**
+  - Flujo `.github/workflows/ci.yml` ejecutado en dos runs automáticos contra Ubuntu y Python 3.11:
+    - Run push (`37652797686`): Pasó en 34s.
+    - Run pull_request (`37652878238`): Pasó en 24s.
+    - 11/11 tests de seguridad pasaron al 100%.
+- **[MODERNIZACIÓN DE DEPENDENCIAS & CORRECCIÓN DE DEPRECACIONES]**
+  - `pypdf2` -> `pypdf`: Migrado `from PyPDF2 import PdfReader` a `from pypdf import PdfReader` en `backend/services/knowledge_service.py` y actualizado `requirements.txt` / `backend/requirements.txt` a `pypdf>=4.0.0`.
+  - Pydantic v2 `ConfigDict`: Reemplazado el patrón obsoleto `class Config:` en `backend/config.py` por `model_config = ConfigDict(env_file=".env", extra="ignore")`.
+  - Eliminadas 2 de las 3 advertencias de pytest; tests locales corren en 2.53 segundos limpios.
+
+**Rama de trabajo:** `security/hardening-fase-0-2`  
+**Estado:** ✅ PR #1 abierto, CI 100% verde y dependencias modernizadas.  
+
+---
+
 ## 2026-10-07 10:50 (COT) — Implementación de CI, Higiene del Repositorio y Blindaje Multi-Tenant Total (Fases 3 y 4)
 **Plataforma:** Antigravity  
 **Tipo:** 🧹 Mantenimiento, CI/CD, Aislamiento Multi-Tenant & Suite Automatizada de Pruebas
