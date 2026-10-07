@@ -17,6 +17,8 @@ from database import get_db
 from models.agent import Agent
 from models.mcp_server_config import MCPServerConfig
 from services.mcp_client import mcp_client_manager
+from services.auth_service import get_current_user
+from security import require_agent_access
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/mcp", tags=["MCP Servers"])
@@ -102,14 +104,13 @@ class MCPTestResponse(BaseModel):
     "/agents/{agent_id}/servers",
     response_model=list[MCPServerResponse],
 )
-def list_mcp_servers(agent_id: str, db: Session = Depends(get_db)):
+def list_mcp_servers(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     """Lista todos los servidores MCP configurados para un agente."""
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente con ID '{agent_id}' no encontrado.",
-        )
+    agent = require_agent_access(agent_id, db, current_user)
 
     configs = (
         db.query(MCPServerConfig)
@@ -125,15 +126,14 @@ def list_mcp_servers(agent_id: str, db: Session = Depends(get_db)):
     response_model=MCPServerResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_mcp_server(data: MCPServerCreate, db: Session = Depends(get_db)):
+def create_mcp_server(
+    data: MCPServerCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     """Crea una nueva configuración de servidor MCP para un agente."""
-    # Validar que el agente exista
-    agent = db.query(Agent).filter(Agent.id == data.agent_id).first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agente con ID '{data.agent_id}' no encontrado.",
-        )
+    # Validar que el agente exista y el usuario tenga acceso
+    agent = require_agent_access(data.agent_id, db, current_user)
 
     # Validar campos según tipo de servidor
     if data.server_type == "stdio" and not data.command:
@@ -177,6 +177,7 @@ def update_mcp_server(
     server_id: str,
     data: MCPServerUpdate,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """Actualiza una configuración de servidor MCP existente."""
     config = (
@@ -189,6 +190,7 @@ def update_mcp_server(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Configuración MCP con ID '{server_id}' no encontrada.",
         )
+    require_agent_access(config.agent_id, db, current_user)
 
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -216,7 +218,11 @@ def update_mcp_server(
 
 
 @router.delete("/servers/{server_id}", status_code=status.HTTP_200_OK)
-def delete_mcp_server(server_id: str, db: Session = Depends(get_db)):
+def delete_mcp_server(
+    server_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     """Elimina una configuración de servidor MCP."""
     config = (
         db.query(MCPServerConfig)
@@ -228,6 +234,7 @@ def delete_mcp_server(server_id: str, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Configuración MCP con ID '{server_id}' no encontrada.",
         )
+    require_agent_access(config.agent_id, db, current_user)
 
     agent_id = config.agent_id
 
@@ -256,7 +263,11 @@ def delete_mcp_server(server_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/servers/{server_id}/test", response_model=MCPTestResponse)
-async def test_mcp_server(server_id: str, db: Session = Depends(get_db)):
+async def test_mcp_server(
+    server_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Prueba la conexión a un servidor MCP y descubre las herramientas disponibles.
     """
@@ -270,6 +281,7 @@ async def test_mcp_server(server_id: str, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Configuración MCP con ID '{server_id}' no encontrada.",
         )
+    require_agent_access(config.agent_id, db, current_user)
 
     try:
         tools = await mcp_client_manager.connect_to_server(

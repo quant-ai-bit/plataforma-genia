@@ -134,20 +134,30 @@ def get_embeddings(
             str(e_vertex),
         )
 
-    # 2. Fallback: Google AI Studio SDK (gemini-embedding-001 / text-embedding-004)
+    # 2. Fallback: Google GenAI SDK (text-embedding-004)
     if settings.gemini_api_key:
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=settings.gemini_api_key)
-            result = genai.embed_content(
-                model="models/gemini-embedding-001",
-                content=texts,
-                task_type=task_type,
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=settings.gemini_api_key)
+            task_type_mapped = task_type.upper() if task_type else "RETRIEVAL_DOCUMENT"
+            config = types.EmbedContentConfig(
                 output_dimensionality=768,
+                task_type=task_type_mapped,
             )
-            return result["embedding"]
+            result = client.models.embed_content(
+                model="text-embedding-004",
+                contents=texts,
+                config=config,
+            )
+            if hasattr(result, "embeddings") and result.embeddings:
+                return [e.values for e in result.embeddings]
+            elif hasattr(result, "embedding") and result.embedding:
+                return [result.embedding.values]
+            return []
         except Exception as e_gemini:
-            logger.error("Error al generar embeddings en batch con Gemini API Studio: %s", str(e_gemini), exc_info=True)
+            logger.error("Error al generar embeddings en batch con Google GenAI: %s", str(e_gemini), exc_info=True)
             raise e_gemini
 
     raise RuntimeError(

@@ -7,16 +7,18 @@ generar reglas de entrenamiento basadas en la información ingresada por el usua
 
 import json
 import logging
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from config import settings
 
 logger = logging.getLogger(__name__)
 
-# Configurar el SDK de Google Generative AI
-if settings.gemini_api_key:
-    genai.configure(api_key=settings.gemini_api_key)
-else:
-    logger.warning("GEMINI_API_KEY no está configurada. El análisis y entrenamiento visual no funcionarán.")
+
+def _get_genai_client() -> genai.Client:
+    """Retorna una instancia configurada del cliente oficial de Google GenAI."""
+    if not settings.gemini_api_key:
+        raise ValueError("GEMINI_API_KEY no está configurada en las variables de entorno.")
+    return genai.Client(api_key=settings.gemini_api_key)
 
 
 def analyze_image_for_agent(image_bytes: bytes, mime_type: str) -> dict:
@@ -36,7 +38,7 @@ def analyze_image_for_agent(image_bytes: bytes, mime_type: str) -> dict:
 
     try:
         logger.info("Enviando imagen (%s) a gemini-2.5-flash para análisis visual...", mime_type)
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        client = _get_genai_client()
         
         prompt = (
             "Analiza detalladamente esta imagen de un producto, espacio físico, coworking, oficina, servicio o recurso, "
@@ -48,9 +50,13 @@ def analyze_image_for_agent(image_bytes: bytes, mime_type: str) -> dict:
             "- 'suggested_rule': Una instrucción clara e imperativa para el Prompt del Sistema del agente que le indique bajo qué intención/palabras del usuario debe incluir/mostrar exactamente esta imagen utilizando la sintaxis de Markdown e insertando el placeholder {url} exacto de la imagen (ej. 'Si el cliente pregunta por la sala de juntas, salas de reuniones o fotos de los espacios, debes responder de forma entusiasta mostrando la imagen usando: ![Sala de Juntas]({url})').\n"
         )
 
-        response = model.generate_content(
-            [prompt, {"mime_type": mime_type, "data": image_bytes}],
-            generation_config={"response_mime_type": "application/json"}
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                prompt,
+                types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+            ],
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
 
         # Parsear la respuesta estructurada
@@ -88,7 +94,7 @@ def generate_image_training_rule(product_name: str, description: str, price: str
 
     try:
         logger.info("Generando regla de entrenamiento de prompt para el producto '%s'...", product_name)
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        client = _get_genai_client()
         
         prompt = (
             "Eres un experto en ingeniería de prompts para agentes conversacionales de IA.\n"
@@ -103,9 +109,10 @@ def generate_image_training_rule(product_name: str, description: str, price: str
             "- 'suggested_rule': Una instrucción clara e imperativa para el Prompt del Sistema del agente que le indique bajo qué intención/palabras del usuario debe responder mostrando esta imagen exacta usando la sintaxis de Markdown e insertando la URL exacta provista: ![Nombre]({url}). Asegúrate de incluir el precio y los detalles clave en la instrucción para que el agente proporcione información correcta.\n"
         )
 
-        response = model.generate_content(
-            prompt,
-            generation_config={"response_mime_type": "application/json"}
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
 
         data = json.loads(response.text)
@@ -147,7 +154,7 @@ def extract_payment_receipt(image_bytes: bytes, mime_type: str) -> dict:
 
     try:
         logger.info("Enviando comprobante (%s) a gemini-2.5-flash para extracción...", mime_type)
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        client = _get_genai_client()
 
         prompt = (
             "Eres un verificador de comprobantes de pago bancarios/Bre-B en Colombia. "
@@ -163,9 +170,13 @@ def extract_payment_receipt(image_bytes: bytes, mime_type: str) -> dict:
             "Si la imagen es ilegible o no es un comprobante de pago, devuelve un JSON vacío {}."
         )
 
-        response = model.generate_content(
-            [prompt, {"mime_type": mime_type, "data": image_bytes}],
-            generation_config={"response_mime_type": "application/json"},
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                prompt,
+                types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+            ],
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
 
         data = json.loads(response.text)

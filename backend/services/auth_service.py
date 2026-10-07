@@ -23,14 +23,13 @@ security = HTTPBearer(auto_error=False)
 
 def verify_token_via_supabase_api(token: str) -> dict | None:
     supabase_url = getattr(settings, "supabase_url", "")
-    anon_key = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY") or getattr(settings, "supabase_service_key", "") or "sb_publishable_Ceu7xc_zhyotWO9lkWBJKg_oUrkw8D3"
+    anon_key = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY") or getattr(settings, "supabase_service_key", "")
     
-    if not supabase_url:
-        print("[AUTH_DEBUG] Supabase URL not configured for API fallback verification")
+    if not supabase_url or not anon_key:
+        logger.debug("[AUTH] Supabase URL o Anon Key no configuradas para verificación por API")
         return None
         
     try:
-        print(f"[AUTH_DEBUG] Attempting token verification via Supabase Auth API: {supabase_url}/auth/v1/user")
         headers = {
             "apikey": anon_key,
             "Authorization": f"Bearer {token}"
@@ -42,15 +41,14 @@ def verify_token_via_supabase_api(token: str) -> dict | None:
             user_data = response.json()
             user_id = user_data.get("id")
             email = user_data.get("email")
-            print(f"[AUTH_DEBUG] Supabase Auth API verification succeeded. User ID: {user_id}")
             return {
                 "id": user_id,
                 "email": email
             }
         else:
-            print(f"[AUTH_DEBUG] Supabase Auth API verification failed. Status code: {response.status_code}")
+            logger.warning("[AUTH] Verificación de token vía Supabase API falló con status %s", response.status_code)
     except Exception as e:
-        print(f"[AUTH_DEBUG] Exception during Supabase Auth API verification: {str(e)}")
+        logger.error("[AUTH] Excepción durante verificación en Supabase Auth API: %s", str(e))
         
     return None
 

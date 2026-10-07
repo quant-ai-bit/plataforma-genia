@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models.agent import Agent
 from services.auth_service import get_current_user
+from security import require_agent_access
 from services.whatsapp_diagnostic_service import (
     fetch_whatsapp_contacts,
     fetch_chat_messages,
@@ -80,9 +81,7 @@ def get_business_context(
     current_user: dict = Depends(get_current_user),
 ):
     """Obtiene el contexto de negocio del agente para el diagnóstico."""
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agente no encontrado.")
+    agent = require_agent_access(agent_id, db, current_user)
 
     context = getattr(agent, "diagnostic_business_context", None) or {}
     return {
@@ -101,9 +100,7 @@ def update_business_context(
     current_user: dict = Depends(get_current_user),
 ):
     """Guarda o edita el contexto de negocio del agente (2 campos obligatorios, 5 opcionales)."""
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agente no encontrado.")
+    agent = require_agent_access(agent_id, db, current_user)
 
     if not payload.business_name.strip() or not payload.business_type.strip():
         raise HTTPException(
@@ -133,9 +130,7 @@ async def get_whatsapp_contacts(
     Obtiene la lista de contactos/chats desde la base local de WAHA (riesgo nulo).
     Permite filtrar por número de chats y por rango de días.
     """
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agente no encontrado.")
+    agent = require_agent_access(agent_id, db, current_user)
 
     session_name = agent.whatsapp_qr_instance_name or f"genia_{agent_id[:8]}"
     contacts = await fetch_whatsapp_contacts(session_name, limit=limit, days_back=days)
@@ -151,9 +146,7 @@ async def get_chat_messages(
     current_user: dict = Depends(get_current_user),
 ):
     """Obtiene el historial completo de mensajes de un chat específico."""
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agente no encontrado.")
+    agent = require_agent_access(agent_id, db, current_user)
 
     session_name = agent.whatsapp_qr_instance_name or f"genia_{agent_id[:8]}"
     messages = await fetch_chat_messages(session_name, chat_id, limit=limit)
@@ -173,9 +166,7 @@ async def run_whatsapp_diagnostic(
     """
     Inicia el diagnóstico de WhatsApp (Manual o Automático) en segundo plano con throttling seguro.
     """
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agente no encontrado.")
+    agent = require_agent_access(agent_id, db, current_user)
 
     agent.diagnostic_status = "running"
     db.commit()
@@ -198,9 +189,9 @@ def get_diagnostic_status(
     current_user: dict = Depends(get_current_user),
 ):
     """Obtiene el estado en tiempo real y progreso (%) del diagnóstico del agente."""
+    agent = require_agent_access(agent_id, db, current_user)
     state = diagnostic_progress_store.get(agent_id)
     if not state:
-        agent = db.query(Agent).filter(Agent.id == agent_id).first()
         state = {
             "status": getattr(agent, "diagnostic_status", "idle") or "idle",
             "progress": 100 if getattr(agent, "diagnostic_status", "") == "completed" else 0,
@@ -221,6 +212,7 @@ def import_diagnostic_contacts(
     current_user: dict = Depends(get_current_user),
 ):
     """Importa contactos analizados a PreloadedContacts (fusión inteligente)."""
+    require_agent_access(agent_id, db, current_user)
     res = import_analyzed_contacts_to_db(agent_id, payload.results, db)
     return res
 
@@ -233,6 +225,7 @@ def create_pipeline_leads(
     current_user: dict = Depends(get_current_user),
 ):
     """Crea automáticamente leads en el CRM Kanban a partir del diagnóstico."""
+    require_agent_access(agent_id, db, current_user)
     res = create_leads_from_diagnostic_results(agent_id, payload.results, db)
     return res
 
@@ -247,9 +240,7 @@ async def suggest_outbound_followup(
     current_user: dict = Depends(get_current_user),
 ):
     """Genera una sugerencia de mensaje de seguimiento redactada por IA."""
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agente no encontrado.")
+    agent = require_agent_access(agent_id, db, current_user)
 
     res = await suggest_followup_message(
         agent=agent,
@@ -268,9 +259,7 @@ async def send_outbound_message(
     current_user: dict = Depends(get_current_user),
 ):
     """Envía un mensaje outbound individual con presencia de escritura simulada."""
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agente no encontrado.")
+    agent = require_agent_access(agent_id, db, current_user)
 
     res = await send_single_outbound(
         agent=agent,
@@ -291,9 +280,7 @@ async def send_outbound_batch_messages(
     current_user: dict = Depends(get_current_user),
 ):
     """Envía un lote pequeño (máximo 5) con retardos de 2 a 4 minutos entre envíos."""
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agente no encontrado.")
+    agent = require_agent_access(agent_id, db, current_user)
 
     items_dict = [item.model_dump() for item in payload.items]
     res = await send_batch_outbound(agent=agent, items=items_dict, db=db)

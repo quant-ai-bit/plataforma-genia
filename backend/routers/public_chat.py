@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/public", tags=["Public Chat (Share)"])
 
 class PublicChatRequest(BaseModel):
     agent_id: str = Field(..., description="ID del agente a contactar")
-    message: str = Field(..., description="Mensaje del usuario")
+    message: str = Field(..., max_length=2000, description="Mensaje del usuario (máximo 2000 caracteres)")
     conversation_id: str | None = Field(default=None, description="ID de conversacion existente o null para crear nueva")
 
 
@@ -31,17 +31,20 @@ class PublicAgentInfo(BaseModel):
 
 
 @router.post("/chat", response_model=PublicChatResponse)
-@limiter.limit("30/minute")
+@limiter.limit("20/minute")
 async def public_chat(
     request: Request,
     body: PublicChatRequest,
     db: Session = Depends(get_db),
 ):
-    agent = db.query(Agent).filter(Agent.id == body.agent_id).first()
+    agent = db.query(Agent).filter(
+        Agent.id == body.agent_id,
+        Agent.status == "active",
+    ).first()
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Agente no encontrado",
+            detail="Agente no encontrado o no disponible para chat público.",
         )
 
     if body.conversation_id:

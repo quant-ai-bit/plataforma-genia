@@ -1,0 +1,36 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, master, "security/**", "chore/**"]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test-backend:
+    name: Backend Tests & Security Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Run Test Suite
+        env:
+          CRON_SECRET: "test-cron-secret-ci"
+          WAHA_API_KEY: "test-waha-key-ci"
+          SECRET_KEY: "test-secret-key-ci-32-bytes-minimum"
+          JWT_SECRET: "test-jwt-secret-ci"
+          ENCRYPTION_KEY: "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="
+          OAUTH_STATE_SECRET: "test-oauth-state-secret-ci"
+          ENVIRONMENT: "testing"
+        run: |
+          uv run --with-requirements backend/requirements.txt python -m pytest backend/tests -v

@@ -74,18 +74,17 @@ async def get_calendar_auth_url(
 ):
     """
     Genera la URL de autorización OAuth 2.0 de Google Calendar.
-
-    El usuario del dashboard debe ser redirigido a esta URL para autorizar
-    el acceso a su Google Calendar.
+    Requiere que el usuario tenga acceso legítimo sobre el agente.
     """
-    # Verificar que el agente pertenece al usuario
-    agent = get_agent_for_user(db, agent_id, current_user)
+    from security import require_agent_access
+    agent = require_agent_access(agent_id, db, current_user)
 
     try:
         auth_url = google_calendar_service.get_auth_url(
             agent_id=agent_id,
             db=db,
             base_url=base_url,
+            user_id=current_user.get("id", ""),
         )
         return {"auth_url": auth_url, "agent_id": agent_id}
     except ValueError as e:
@@ -98,27 +97,36 @@ async def get_calendar_auth_url(
 @router.get("/callback")
 async def unified_calendar_oauth_callback(
     code: str = Query(..., description="Código de autorización de Google OAuth"),
-    state: str = Query("", description="Estado de seguridad (agent_id)"),
+    state: str = Query("", description="Estado de seguridad firmado (JWT)"),
     db: Session = Depends(get_db),
 ):
     """
     Callback universal SaaS de Google OAuth 2.0.
-    Permite registrar un solo URI de redirección en Google Cloud Console:
-    https://genia.com.co/api/calendar/callback
-    El agent_id viaja en el parámetro state.
+    Verifica criptográficamente el token 'state' para extraer de forma segura el agent_id.
     """
     if not state:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Falta el parámetro de estado de seguridad (agent_id).",
+            detail="Falta el parámetro de estado de seguridad (state).",
         )
+
+    try:
+        state_data = google_calendar_service.verify_oauth_state(state)
+        target_agent_id = state_data.get("agent_id")
+    except Exception as e:
+        logger.error("[CALENDAR_CALLBACK] State inválido: %s", str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Estado de autorización OAuth inválido o expirado.",
+        )
+
     result = google_calendar_service.handle_callback(
-        agent_id=state,
+        agent_id=target_agent_id,
         auth_code=code,
         db=db,
     )
     if result["connected"]:
-        return _build_success_html(state, result["email"])
+        return _build_success_html(target_agent_id, result["email"])
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -130,20 +138,17 @@ async def unified_calendar_oauth_callback(
 async def calendar_oauth_callback(
     agent_id: str,
     code: str = Query(..., description="Código de autorización de Google OAuth"),
-    state: str = Query("", description="Estado de seguridad (agent_id)"),
+    state: str = Query("", description="Estado de seguridad firmado"),
     db: Session = Depends(get_db),
 ):
-    """
-    Callback de Google OAuth 2.0.
-
-    Recibe el código de autorización, lo intercambia por tokens
-    y los almacena cifrados para el agente.
-
-    NOTA: Este endpoint NO requiere autenticación JWT porque Google
-    redirige al usuario directamente aquí.
-    """
-    # Usar state como agent_id si viene (para seguridad)
-    effective_agent_id = state if state else agent_id
+    """Callback de Google OAuth 2.0 específico por agente."""
+    effective_agent_id = agent_id
+    if state:
+        try:
+            state_data = google_calendar_service.verify_oauth_state(state)
+            effective_agent_id = state_data.get("agent_id") or agent_id
+        except Exception as e:
+            logger.warning("[CALENDAR_CALLBACK] Error decodificando state: %s. Usando path agent_id.", str(e))
 
     result = google_calendar_service.handle_callback(
         agent_id=effective_agent_id,
@@ -152,7 +157,6 @@ async def calendar_oauth_callback(
     )
 
     if result["connected"]:
-        # Retornar HTML que cierre la ventana popup o redirija al dashboard
         return _build_success_html(effective_agent_id, result["email"])
     else:
         raise HTTPException(

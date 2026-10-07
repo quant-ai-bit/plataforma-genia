@@ -4,7 +4,113 @@
 > **Lo leen y lo actualizan TODAS las plataformas** (Kiro, opencode, Antigravity, etc.).
 > Si entras al proyecto desde cualquier herramienta, empieza leyendo este archivo.
 
-## 2026-09-22 19:22 (COT) — Corrección de Error "This page couldn't load" en `/agents/[id]` y Despliegue de Producción
+## 2026-10-07 13:21 (COT) — Migración Completa de SDK Google GenAI (Cero Advertencias en Pytest)
+**Plataforma:** Antigravity  
+**Tipo:** ⚡ Modernización de SDK IA & Calidad de Código
+
+### Acciones ejecutadas:
+- **[MIGRACIÓN A LA NUEVA SDK OFICIAL `google-genai`]**
+  - Removido el paquete obsoleto `google-generativeai>=0.8.0` de `backend/requirements.txt` y `requirements.txt`.
+  - Añadido `google-genai>=1.0.0` como SDK estándar unificado de Google.
+- **[ACTUALIZACIÓN EN SERVICIOS DE VISIÓN Y EMBEDDINGS]**
+  - `backend/services/vision_service.py`: Migradas las funciones `analyze_image_for_agent`, `generate_image_training_rule` y `extract_payment_receipt` para utilizar `genai.Client(api_key=...)`, `types.Part.from_bytes(data=image_bytes, mime_type=mime_type)` y `types.GenerateContentConfig(response_mime_type="application/json")`.
+  - `backend/services/embedding_service.py`: Migrado el fallback secundario de embeddings de Google AI Studio a `client.models.embed_content` con `types.EmbedContentConfig`.
+- **[VALIDACIÓN DE SUITE DE PRUEBAS AUTOMATIZADA]**
+  - **Resultado:** 11/11 pruebas pasando exitosamente en 5.31s con **0 advertencias** (eliminado el 100% de los `FutureWarning` y deprecaciones).
+
+**Rama de trabajo:** `security/hardening-fase-0-2`  
+**Estado:** ✅ SDK de Google modernizada al estándar oficial vigente.  
+
+---
+
+## 2026-10-07 11:48 (COT) — Pull Request #1 Publicado, CI Verde (100%) y Modernización de Dependencias
+**Plataforma:** Antigravity  
+**Tipo:** 🚀 Publicación de PR, CI/CD Verde & Modernización de Librerías
+
+### Acciones ejecutadas:
+- **[PULL REQUEST #1 ABIERTO EN GITHUB]**
+  - Rama `security/hardening-fase-0-2` subida a GitHub con PR oficial creado: [PR #1](https://github.com/quant-ai-bit/plataforma-genia/pull/1).
+  - Incluye documentación completa de variables de entorno requeridas en Vercel antes de fusión.
+- **[EJECUCIÓN EXITOSA DE GITHUB ACTIONS CI]**
+  - Flujo `.github/workflows/ci.yml` ejecutado en dos runs automáticos contra Ubuntu y Python 3.11:
+    - Run push (`37652797686`): Pasó en 34s.
+    - Run pull_request (`37652878238`): Pasó en 24s.
+    - 11/11 tests de seguridad pasaron al 100%.
+- **[MODERNIZACIÓN DE DEPENDENCIAS & CORRECCIÓN DE DEPRECACIONES]**
+  - `pypdf2` -> `pypdf`: Migrado `from PyPDF2 import PdfReader` a `from pypdf import PdfReader` en `backend/services/knowledge_service.py` y actualizado `requirements.txt` / `backend/requirements.txt` a `pypdf>=4.0.0`.
+  - Pydantic v2 `ConfigDict`: Reemplazado el patrón obsoleto `class Config:` en `backend/config.py` por `model_config = ConfigDict(env_file=".env", extra="ignore")`.
+  - Eliminadas 2 de las 3 advertencias de pytest; tests locales corren en 2.53 segundos limpios.
+
+**Rama de trabajo:** `security/hardening-fase-0-2`  
+**Estado:** ✅ PR #1 abierto, CI 100% verde y dependencias modernizadas.  
+
+---
+
+## 2026-10-07 10:50 (COT) — Implementación de CI, Higiene del Repositorio y Blindaje Multi-Tenant Total (Fases 3 y 4)
+**Plataforma:** Antigravity  
+**Tipo:** 🧹 Mantenimiento, CI/CD, Aislamiento Multi-Tenant & Suite Automatizada de Pruebas
+
+### Acciones ejecutadas:
+- **[BLINDAJE MULTI-TENANT EN KNOWLEDGE, MCP Y DIAGNÓSTICO]**
+  1. `backend/routers/knowledge.py`: Protegidos todos los endpoints de carga, listado, detalle y eliminación de documentos (`upload_document`, `add_manual_text_document`, `list_agent_documents`, `get_document_detail`, `delete_agent_document`, `update_manual_text_document`) y de imágenes (`upload_agent_image`, `list_agent_images`, `upload_and_generate_training`, `confirm_image_training`, `delete_agent_image`) inyectando `require_agent_access`.
+  2. `backend/routers/mcp.py`: Autenticado y aislado completamente el router MCP (`list_mcp_servers`, `create_mcp_server`, `update_mcp_server`, `delete_mcp_server`, `test_mcp_server`) impidiendo que usuarios no autorizados lean o ejecuten comandos stdio/sse en agentes ajenos.
+  3. `backend/routers/whatsapp_diagnostic.py`: Asegurados todos los endpoints de contexto empresarial, lectura de mensajes/contactos, ejecución de diagnóstico y envíos outbound con `require_agent_access`.
+- **[ORGANIZACIÓN Y LIMPIEZA DE CÓDIGO (FASE 4)]**
+  - Reubicados 25 scripts sueltos de pruebas manuales y depuración (`test_*.py`, `scratch_*.py`, `debug_*.py`) a carpetas estructuradas:
+    - `backend/scripts/manual/`: Scripts de validación puntual ejecutable.
+    - `backend/scripts/legacy/`: Scripts obsoletos de migración y scratch.
+  - Removidos artefactos basura de la raíz y frontend (`nul`, `page.react.bak`).
+- **[INTEGRACIÓN CONTINUA (CI)]**
+  - Creado `.github/workflows/ci.yml`: Pipeline automatizado en GitHub Actions con `astral-sh/setup-uv` ejecutando el runner de tests en Python 3.11 con secretos mockeados para validación continua ante cada push o PR.
+- **[SUITE DE PRUEBAS DE SEGURIDAD AUTOMATIZADA]**
+  - Creados fixtures en `backend/tests/conftest.py` con SQLite in-memory y `StaticPool`.
+  - Ampliado `backend/tests/test_security.py` cubriendo:
+    - Verificación de secreto cron en `/waha/monitor` y `/check-inactivity`.
+    - Eliminación de endpoints inseguros `/ai-test` y `/diag`.
+    - Sanitización del endpoint público `/health`.
+    - Modo `enforce` en webhooks de WAHA.
+    - Aislamiento multi-tenant en Contactos, Base de Conocimiento (Knowledge), Servidores MCP y Diagnóstico de WhatsApp.
+  - **Resultado:** 11 de 11 pruebas pasando exitosamente (100% pass rate) vía `pytest`.
+
+**Rama de trabajo:** `chore/fase-3-ci-and-cleanup`  
+**Estado:** ✅ Fases 3 y 4 completadas con cero downtime y cero regresiones.  
+
+---
+
+## 2026-10-06 17:10 (COT) — Implementación de Endurecimiento de Seguridad y Multi-Tenant (Fases 0 - 2)
+**Plataforma:** Antigravity
+**Tipo:** 🛡️ Seguridad, Aislamiento Multi-Tenant & Protección de Producción
+
+### Acciones ejecutadas:
+- **[NUEVO MÓDULO DE SEGURIDAD]** Creado `backend/security.py` con dependencias centralizadas y reutilizables:
+  1. `verify_cron_secret`: Autenticación para cron jobs de Vercel/GitHub vía `Authorization: Bearer <CRON_SECRET>` o `X-Cron-Secret`.
+  2. `verify_waha_webhook`: Autenticación de webhooks entrantes de WhatsApp con modo dual `WAHA_WEBHOOK_AUTH_MODE` (`log` para cero downtime / `enforce`).
+  3. `require_agent_access`: Control estricto de acceso multi-tenant que garantiza que usuarios regulares solo interactúen con su `assigned_agent_id` activo.
+  4. `require_admin` & `get_user_role_and_account`: Autorización basada en rol de base de datos (`user_accounts.role == 'admin'`).
+- **[CIERRE DE ENDPOINTS PÚBLICOS & DEPURACIÓN]**
+  - Eliminados endpoints inseguros que filtraban prompts e información sensible: `POST /api/whatsapp/webhook/waha/ai-test` y `GET /api/whatsapp/webhook/waha/diag`.
+  - Protegidos endpoints operativos: `/api/whatsapp/waha/sessions` y `/api/whatsapp/waha/cleanup` (requieren admin); `/api/whatsapp/waha/monitor` y `/api/whatsapp/check-inactivity` (requieren `CRON_SECRET`).
+  - Higienizado `/api/whatsapp/health` para ser solo lectura ligera sin exponer sesiones privadas de clientes.
+  - Protegido `GET /api/whatsapp/{agent_id}/qr/debug-state` con `require_agent_access`.
+- **[OAUTH SEGURO DE GOOGLE CALENDAR]**
+  - Migrado el flujo OAuth en `services/google_calendar_service.py` y `routers/google_calendar.py` a tokens `state` firmados criptográficamente (HS256 con expiración de 15 minutos), evitando ataques de CSRF o secuestro de calendarios entre agentes.
+- **[AISLAMIENTO MULTI-TENANT EN ROUTERS]**
+  - Aplicado `require_agent_access` en endpoints de `contacts.py` (upload, list, delete, clear, search) y `chat.py` (sandbox y transcribe), previniendo fuga o mutación de datos entre clientes.
+  - Endurecido `public_chat.py` verificando que el agente esté activo (`Agent.status == 'active'`) y limitando mensajes a un máximo de 2000 caracteres.
+- **[RATE LIMITING & CORS DISTRIBUIDO]**
+  - Actualizado `rate_limit.py` para extraer IPs reales detrás de proxies en Vercel (`x-forwarded-for`) y soportar almacenamiento distribuido (`RATE_LIMIT_STORAGE_URI`).
+  - Restringida la expresión regular de CORS en `backend/main.py` para admitir únicamente dominios y previsualizaciones oficiales de GENIA.
+- **[HIGIENE DE SECRETOS Y PII]**
+  - Removidos del índice de Git los archivos `vercel_webhook_logs*.json` y `vercel_logs*.json`.
+  - Actualizado `.gitignore` para ignorar dumps de logs y backups.
+  - Eliminado el fallback hardcodeado de Supabase anon key en `backend/services/auth_service.py` y sustituidos los `print` con payloads crudos de WhatsApp por logs sanitizados.
+- **[VALIDACIÓN DE SINTAXIS]** Compilación limpia ejecutada con `py_compile` en todos los archivos modificados.
+
+**Rama de trabajo:** `security/hardening-fase-0-2`
+**Estado:** ✅ Fases 0 a 2 implementadas en código con preservación de cero downtime.
+**Siguiente paso:** Configurar `CRON_SECRET` y variables en Vercel antes de fusionar y promover a producción.
+
+---
 **Plataforma:** Antigravity
 **Tipo:** 🐛 Bugfix Crítico de Frontend & Despliegue de Producción
 

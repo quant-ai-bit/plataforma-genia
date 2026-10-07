@@ -21,7 +21,12 @@ jobs:
 
       - name: Ping monitor endpoint
         run: |
+          AUTH_HEADER=""
+          if [ -n "${{ secrets.CRON_SECRET }}" ]; then
+            AUTH_HEADER="-H \"Authorization: Bearer ${{ secrets.CRON_SECRET }}\""
+          fi
           response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 -X POST \
+            $AUTH_HEADER \
             "https://plataforma-genia.vercel.app/api/whatsapp/waha/monitor")
           echo "Monitor endpoint returned HTTP $response"
           if [ "$response" != "200" ]; then
