@@ -107,3 +107,102 @@ def test_require_agent_access_isolation(db_session, client):
         assert response_ok.status_code == 200
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_knowledge_isolation(db_session, client):
+    """Verifica que un usuario cliente no puede listar documentos ni imágenes de otro agente."""
+    agent_a = Agent(id="agent_kb_a", name="Agente KB A", system_prompt="Prompt A", status="active")
+    agent_b = Agent(id="agent_kb_b", name="Agente KB B", system_prompt="Prompt B", status="active")
+    db_session.add_all([agent_a, agent_b])
+
+    user_a = UserAccount(
+        id="user_kb_a",
+        email="cliente_kb_a@empresa.com",
+        role="user",
+        status="active",
+        assigned_agent_id="agent_kb_a",
+    )
+    db_session.add(user_a)
+    db_session.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: {"id": "user_kb_a", "email": "cliente_kb_a@empresa.com"}
+
+    try:
+        # Documentos de agente B -> 403
+        res_docs_forbidden = client.get("/api/agents/agent_kb_b/documents")
+        assert res_docs_forbidden.status_code == 403
+
+        # Documentos de agente A -> 200
+        res_docs_ok = client.get("/api/agents/agent_kb_a/documents")
+        assert res_docs_ok.status_code == 200
+
+        # Imágenes de agente B -> 403
+        res_imgs_forbidden = client.get("/api/agents/agent_kb_b/images")
+        assert res_imgs_forbidden.status_code == 403
+
+        # Imágenes de agente A -> 200
+        res_imgs_ok = client.get("/api/agents/agent_kb_a/images")
+        assert res_imgs_ok.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_mcp_servers_isolation(db_session, client):
+    """Verifica que un usuario cliente no puede listar ni crear servidores MCP para otro agente."""
+    agent_a = Agent(id="agent_mcp_a", name="Agente MCP A", system_prompt="Prompt A", status="active")
+    agent_b = Agent(id="agent_mcp_b", name="Agente MCP B", system_prompt="Prompt B", status="active")
+    db_session.add_all([agent_a, agent_b])
+
+    user_a = UserAccount(
+        id="user_mcp_a",
+        email="cliente_mcp_a@empresa.com",
+        role="user",
+        status="active",
+        assigned_agent_id="agent_mcp_a",
+    )
+    db_session.add(user_a)
+    db_session.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: {"id": "user_mcp_a", "email": "cliente_mcp_a@empresa.com"}
+
+    try:
+        # Servidores MCP de agente B -> 403
+        res_forbidden = client.get("/api/mcp/agents/agent_mcp_b/servers")
+        assert res_forbidden.status_code == 403
+
+        # Servidores MCP de agente A -> 200
+        res_ok = client.get("/api/mcp/agents/agent_mcp_a/servers")
+        assert res_ok.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_whatsapp_diagnostic_isolation(db_session, client):
+    """Verifica que un usuario cliente no puede consultar contexto ni diagnóstico de otro agente."""
+    agent_a = Agent(id="agent_diag_a", name="Agente Diag A", system_prompt="Prompt A", status="active")
+    agent_b = Agent(id="agent_diag_b", name="Agente Diag B", system_prompt="Prompt B", status="active")
+    db_session.add_all([agent_a, agent_b])
+
+    user_a = UserAccount(
+        id="user_diag_a",
+        email="cliente_diag_a@empresa.com",
+        role="user",
+        status="active",
+        assigned_agent_id="agent_diag_a",
+    )
+    db_session.add(user_a)
+    db_session.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: {"id": "user_diag_a", "email": "cliente_diag_a@empresa.com"}
+
+    try:
+        # Contexto diagnóstico de agente B -> 403
+        res_forbidden = client.get("/api/agents/agent_diag_b/diagnostic/context")
+        assert res_forbidden.status_code == 403
+
+        # Contexto diagnóstico de agente A -> 200
+        res_ok = client.get("/api/agents/agent_diag_a/diagnostic/context")
+        assert res_ok.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+

@@ -23,6 +23,8 @@ from schemas.agent_image import AgentImageResponse
 from services.knowledge_service import delete_document, process_and_index_document
 from services.vision_service import analyze_image_for_agent, generate_image_training_rule
 from services.storage_service import upload_file
+from services.auth_service import get_current_user
+from security import require_agent_access
 
 logger = logging.getLogger(__name__)
 
@@ -80,18 +82,14 @@ async def add_manual_text_document(
     agent_id: str,
     payload: ManualTextCreate,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Agrega un documento de conocimiento de forma manual ingresando texto plano.
 
     El texto es segmentado en chunks e indexado en ChromaDB para el agente.
     """
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontró ningún agente con el ID {agent_id}",
-        )
+    agent = require_agent_access(agent_id, db, current_user)
 
     try:
         # Convertir a bytes de texto plano UTF-8 para reusar el servicio
@@ -137,19 +135,15 @@ async def upload_document(
     agent_id: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Carga un documento (TXT, PDF, etc.) para alimentar la base de conocimiento de un agente.
 
     El archivo es procesado en fragmentos y vectorizado en ChromaDB de forma síncrona.
     """
-    # 1. Verificar si el agente existe
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontró ningún agente con el ID {agent_id}",
-        )
+    # 1. Verificar si el agente existe y pertenece al usuario
+    agent = require_agent_access(agent_id, db, current_user)
 
     # 2. Leer contenido del archivo
     try:
@@ -196,15 +190,13 @@ async def upload_document(
     "/agents/{agent_id}/documents",
     response_model=list[KnowledgeDocumentResponse],
 )
-def list_agent_documents(agent_id: str, db: Session = Depends(get_db)):
+def list_agent_documents(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     """Lista todos los documentos de conocimiento cargados para un agente específico."""
-    # Verificar si el agente existe
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontró ningún agente con el ID {agent_id}",
-        )
+    agent = require_agent_access(agent_id, db, current_user)
 
     documents = (
         db.query(KnowledgeDocument)
@@ -217,7 +209,11 @@ def list_agent_documents(agent_id: str, db: Session = Depends(get_db)):
 
 @router.get("/documents/{doc_id}", response_model=KnowledgeDocumentDetail)
 @router.get("/knowledge/documents/{doc_id}", response_model=KnowledgeDocumentDetail)
-def get_document_detail(doc_id: str, db: Session = Depends(get_db)):
+def get_document_detail(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     """Obtiene el detalle completo de un documento de conocimiento, incluyendo su texto crudo."""
     doc = db.query(KnowledgeDocument).filter(KnowledgeDocument.id == doc_id).first()
     if not doc:
@@ -225,13 +221,25 @@ def get_document_detail(doc_id: str, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No se encontró ningún documento con el ID {doc_id}",
         )
+    require_agent_access(doc.agent_id, db, current_user)
     return doc
 
 
 @router.delete("/documents/{doc_id}", status_code=status.HTTP_200_OK)
 @router.delete("/knowledge/documents/{doc_id}", status_code=status.HTTP_200_OK)
-def delete_agent_document(doc_id: str, db: Session = Depends(get_db)):
+def delete_agent_document(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     """Elimina un documento de conocimiento de SQL y de la base vectorial ChromaDB."""
+    doc = db.query(KnowledgeDocument).filter(KnowledgeDocument.id == doc_id).first()
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No se encontró ningún documento con el ID {doc_id}",
+        )
+    require_agent_access(doc.agent_id, db, current_user)
     success = delete_document(db=db, doc_id=doc_id)
     if not success:
         raise HTTPException(
@@ -258,10 +266,18 @@ async def update_manual_text_document(
     doc_id: str,
     payload: ManualTextUpdate,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Actualiza el título y el contenido de un documento de conocimiento en SQL y ChromaDB.
     """
+    doc = db.query(KnowledgeDocument).filter(KnowledgeDocument.id == doc_id).first()
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No se encontró ningún documento con el ID {doc_id}",
+        )
+    require_agent_access(doc.agent_id, db, current_user)
     try:
         from services.knowledge_service import update_document_content
         filename = payload.title
@@ -305,18 +321,14 @@ async def upload_agent_image(
     file: UploadFile = File(...),
     description: str = Form(None),
     db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Sube una imagen para la biblioteca de un agente (no para RAG).
     Sube a Supabase Storage o localmente según configuración.
     """
-    # 1. Verificar si el agente existe
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontró ningún agente con el ID {agent_id}",
-        )
+    # 1. Verificar si el agente existe y pertenece al usuario
+    agent = require_agent_access(agent_id, db, current_user)
 
     # 2. Validar que el archivo sea una imagen
     if not file.content_type or not file.content_type.startswith("image/"):
@@ -374,14 +386,13 @@ async def upload_agent_image(
     "/agents/{agent_id}/images",
     response_model=list[AgentImageResponse],
 )
-def list_agent_images(agent_id: str, db: Session = Depends(get_db)):
+def list_agent_images(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     """Lista todas las imágenes de la biblioteca de un agente específico."""
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontró ningún agente con el ID {agent_id}",
-        )
+    agent = require_agent_access(agent_id, db, current_user)
 
     images = (
         db.query(AgentImage)
@@ -404,18 +415,14 @@ async def upload_and_generate_training(
     description: str = Form(...),
     price: str = Form(...),
     db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Sube una imagen, la guarda en almacenamiento (Supabase o local), crea un registro temporal
     en la base de datos con la descripción combinada (Nombre, Descripción, Precio)
     y utiliza Gemini para sugerir reglas de prompt y palabras clave.
     """
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontró ningún agente con el ID {agent_id}",
-        )
+    agent = require_agent_access(agent_id, db, current_user)
 
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(
@@ -490,17 +497,13 @@ def confirm_image_training(
     image_id: str,
     payload: ConfirmTrainingRequest,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Confirma la descripción de la imagen y la regla de prompt, guardando la
     descripción definitiva y actualizando el system prompt del agente.
     """
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontró ningún agente con el ID {agent_id}",
-        )
+    agent = require_agent_access(agent_id, db, current_user)
 
     db_image = db.query(AgentImage).filter(AgentImage.id == image_id, AgentImage.agent_id == agent_id).first()
     if not db_image:
@@ -558,7 +561,11 @@ def confirm_image_training(
 
 
 @router.delete("/images/{image_id}", status_code=status.HTTP_200_OK)
-def delete_agent_image(image_id: str, db: Session = Depends(get_db)):
+def delete_agent_image(
+    image_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     """Elimina una imagen de la biblioteca del agente (de la DB y del disco)."""
     db_image = db.query(AgentImage).filter(AgentImage.id == image_id).first()
     if not db_image:
@@ -566,6 +573,7 @@ def delete_agent_image(image_id: str, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No se encontró ninguna imagen con el ID {image_id}",
         )
+    require_agent_access(db_image.agent_id, db, current_user)
 
     # 1. Limpiar del system prompt del agente si tiene alguna regla vinculada a esta imagen
     try:

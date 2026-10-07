@@ -4,6 +4,37 @@
 > **Lo leen y lo actualizan TODAS las plataformas** (Kiro, opencode, Antigravity, etc.).
 > Si entras al proyecto desde cualquier herramienta, empieza leyendo este archivo.
 
+## 2026-10-07 10:50 (COT) — Implementación de CI, Higiene del Repositorio y Blindaje Multi-Tenant Total (Fases 3 y 4)
+**Plataforma:** Antigravity  
+**Tipo:** 🧹 Mantenimiento, CI/CD, Aislamiento Multi-Tenant & Suite Automatizada de Pruebas
+
+### Acciones ejecutadas:
+- **[BLINDAJE MULTI-TENANT EN KNOWLEDGE, MCP Y DIAGNÓSTICO]**
+  1. `backend/routers/knowledge.py`: Protegidos todos los endpoints de carga, listado, detalle y eliminación de documentos (`upload_document`, `add_manual_text_document`, `list_agent_documents`, `get_document_detail`, `delete_agent_document`, `update_manual_text_document`) y de imágenes (`upload_agent_image`, `list_agent_images`, `upload_and_generate_training`, `confirm_image_training`, `delete_agent_image`) inyectando `require_agent_access`.
+  2. `backend/routers/mcp.py`: Autenticado y aislado completamente el router MCP (`list_mcp_servers`, `create_mcp_server`, `update_mcp_server`, `delete_mcp_server`, `test_mcp_server`) impidiendo que usuarios no autorizados lean o ejecuten comandos stdio/sse en agentes ajenos.
+  3. `backend/routers/whatsapp_diagnostic.py`: Asegurados todos los endpoints de contexto empresarial, lectura de mensajes/contactos, ejecución de diagnóstico y envíos outbound con `require_agent_access`.
+- **[ORGANIZACIÓN Y LIMPIEZA DE CÓDIGO (FASE 4)]**
+  - Reubicados 25 scripts sueltos de pruebas manuales y depuración (`test_*.py`, `scratch_*.py`, `debug_*.py`) a carpetas estructuradas:
+    - `backend/scripts/manual/`: Scripts de validación puntual ejecutable.
+    - `backend/scripts/legacy/`: Scripts obsoletos de migración y scratch.
+  - Removidos artefactos basura de la raíz y frontend (`nul`, `page.react.bak`).
+- **[INTEGRACIÓN CONTINUA (CI)]**
+  - Creado `.github/workflows/ci.yml`: Pipeline automatizado en GitHub Actions con `astral-sh/setup-uv` ejecutando el runner de tests en Python 3.11 con secretos mockeados para validación continua ante cada push o PR.
+- **[SUITE DE PRUEBAS DE SEGURIDAD AUTOMATIZADA]**
+  - Creados fixtures en `backend/tests/conftest.py` con SQLite in-memory y `StaticPool`.
+  - Ampliado `backend/tests/test_security.py` cubriendo:
+    - Verificación de secreto cron en `/waha/monitor` y `/check-inactivity`.
+    - Eliminación de endpoints inseguros `/ai-test` y `/diag`.
+    - Sanitización del endpoint público `/health`.
+    - Modo `enforce` en webhooks de WAHA.
+    - Aislamiento multi-tenant en Contactos, Base de Conocimiento (Knowledge), Servidores MCP y Diagnóstico de WhatsApp.
+  - **Resultado:** 11 de 11 pruebas pasando exitosamente (100% pass rate) vía `pytest`.
+
+**Rama de trabajo:** `chore/fase-3-ci-and-cleanup`  
+**Estado:** ✅ Fases 3 y 4 completadas con cero downtime y cero regresiones.  
+
+---
+
 ## 2026-10-06 17:10 (COT) — Implementación de Endurecimiento de Seguridad y Multi-Tenant (Fases 0 - 2)
 **Plataforma:** Antigravity
 **Tipo:** 🛡️ Seguridad, Aislamiento Multi-Tenant & Protección de Producción
